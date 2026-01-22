@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Calendar, AlertCircle, Phone, User, Search, Filter, ChevronDown } from 'lucide-react';
+import { Calendar, AlertCircle, Phone, Search, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,24 +12,28 @@ import { useAuth } from '@/lib/contexts/auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-type OverdueScheme = {
-  id: string;
-  scheme_id: string;
-  scheme_name: string;
+type OverdueEnrollment = {
+  enrollment_id: string;
+  retailer_id: string;
+
+  plan_name: string;
+
   customer_id: string;
   customer_name: string;
   customer_phone: string;
-  billing_month: string;
-  due_date: string;
+
+  billing_month: string; // date string
+  due_date: string; // date string
   status: string;
   days_overdue: number;
+
   monthly_amount: number;
 };
 
 export default function DuePage() {
   const { user } = useAuth();
-  const [overdueSchemes, setOverdueSchemes] = useState<OverdueScheme[]>([]);
-  const [filteredSchemes, setFilteredSchemes] = useState<OverdueScheme[]>([]);
+  const [overdues, setOverdues] = useState<OverdueEnrollment[]>([]);
+  const [filtered, setFiltered] = useState<OverdueEnrollment[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -40,57 +44,90 @@ export default function DuePage() {
       router.push('/login');
       return;
     }
-
-    loadOverdueSchemes();
+    void loadOverdues();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, router]);
 
   useEffect(() => {
     applyFilters();
-  }, [searchTerm, filterStatus, overdueSchemes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, filterStatus, overdues]);
 
-  async function loadOverdueSchemes() {
+  async function loadOverdues() {
     if (!user) return;
 
+    setLoading(true);
+
     try {
-      const { data, error } = await supabase
+      let q = supabase
         .from('overdue_billing_months')
         .select('*')
         .order('days_overdue', { ascending: false });
 
+      // If your dashboard user object has retailer_id, scope it.
+      // If not available, you MUST rely on RLS / view filtering.
+      const retailerId = (user as any)?.retailer_id;
+      if (retailerId) q = q.eq('retailer_id', retailerId);
+
+      const { data, error } = await q;
       if (error) throw error;
 
-      if (data) {
-        setOverdueSchemes(data);
-      }
+      setOverdues((data || []) as OverdueEnrollment[]);
     } catch (error) {
-      console.error('Error loading overdue schemes:', error);
+      console.error('Error loading overdue enrollments:', error);
     } finally {
       setLoading(false);
     }
   }
 
   function applyFilters() {
-    let filtered = [...overdueSchemes];
+    let f = [...overdues];
 
-    if (searchTerm) {
-      filtered = filtered.filter(
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      f = f.filter(
         (s) =>
-          s.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.customer_phone.includes(searchTerm) ||
-          s.scheme_name.toLowerCase().includes(searchTerm.toLowerCase())
+          (s.customer_name || '').toLowerCase().includes(term) ||
+          (s.customer_phone || '').includes(searchTerm) ||
+          (s.plan_name || '').toLowerCase().includes(term)
       );
     }
 
     if (filterStatus !== 'all') {
-      filtered = filtered.filter((s) => s.status === filterStatus);
+      f = f.filter((s) => s.status === filterStatus);
     }
 
-    setFilteredSchemes(filtered);
+    setFiltered(f);
   }
 
-  const totalOverdue = overdueSchemes.length;
-  const totalDueAmount = overdueSchemes.reduce((sum, s) => sum + Number(s.monthly_amount), 0);
-  const criticalOverdue = overdueSchemes.filter((s) => s.days_overdue > 14).length;
+  const totalOverdue = overdues.length;
+  const totalDueAmount = overdues.reduce((sum, s) => sum + Number(s.monthly_amount || 0), 0);
+  const criticalOverdue = overdues.filter((s) => Number(s.days_overdue || 0) > 14).length;
+
+  async function sendReminder(enrollmentId?: string) {
+    try {
+      // Safer RPC patterns:
+      // 1) enqueue_due_reminders(p_retailer uuid, p_enrollment uuid default null)
+      // OR
+      // 2) enqueue_due_reminders_for_enrollment(p_enrollment uuid)
+      //
+      // Choose ONE and implement in DB.
+      const retailerId = (user as any)?.retailer_id;
+
+      const { error } = await supabase.rpc('enqueue_due_reminders', {
+        p_retailer: retailerId ?? null,
+        p_enrollment: enrollmentId ?? null,
+      });
+
+      if (error) throw error;
+
+      alert('Reminder queued!');
+      await loadOverdues();
+    } catch (error) {
+      console.error('Error sending reminder:', error);
+      alert('Failed to send reminder');
+    }
+  }
 
   if (loading) {
     return (
@@ -153,7 +190,7 @@ export default function DuePage() {
               <div className="relative flex-1 sm:w-64">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search customer, phone, scheme..."
+                  placeholder="Search customer, phone, plan..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9"
@@ -173,15 +210,16 @@ export default function DuePage() {
             </div>
           </div>
         </CardHeader>
+
         <CardContent>
           <div className="space-y-3">
-            {filteredSchemes.map((scheme) => (
+            {filtered.map((row) => (
               <div
-                key={scheme.id}
+                key={`${row.enrollment_id}-${row.billing_month}`}
                 className={`p-4 rounded-lg border-2 transition-all hover:shadow-md ${
-                  scheme.days_overdue > 14
+                  row.days_overdue > 14
                     ? 'border-red-200 bg-red-50 dark:bg-red-900/10'
-                    : scheme.days_overdue > 7
+                    : row.days_overdue > 7
                     ? 'border-orange-200 bg-orange-50 dark:bg-orange-900/10'
                     : 'border-yellow-200 bg-yellow-50 dark:bg-yellow-900/10'
                 }`}
@@ -191,23 +229,24 @@ export default function DuePage() {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-bold">{scheme.customer_name}</h3>
-                          {scheme.days_overdue > 14 && (
+                          <h3 className="font-bold">{row.customer_name}</h3>
+                          {row.days_overdue > 14 && (
                             <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
                               Critical
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground">{scheme.scheme_name}</p>
+                        <p className="text-sm text-muted-foreground">{row.plan_name}</p>
                       </div>
+
                       <Badge
                         className={`${
-                          scheme.days_overdue > 14
+                          row.days_overdue > 14
                             ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
                             : 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400'
                         }`}
                       >
-                        {scheme.days_overdue} days overdue
+                        {row.days_overdue} days overdue
                       </Badge>
                     </div>
 
@@ -216,30 +255,27 @@ export default function DuePage() {
                         <span className="text-muted-foreground">Phone:</span>
                         <div className="font-medium flex items-center gap-1">
                           <Phone className="w-3 h-3" />
-                          {scheme.customer_phone}
+                          {row.customer_phone}
                         </div>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Due Date:</span>
                         <div className="font-medium">
-                          {new Date(scheme.due_date).toLocaleDateString('en-IN', {
+                          {new Date(row.due_date).toLocaleDateString('en-IN', {
                             day: 'numeric',
                             month: 'short',
-                            year: 'numeric'
+                            year: 'numeric',
                           })}
                         </div>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Amount:</span>
-                        <div className="font-bold">₹{scheme.monthly_amount.toLocaleString()}</div>
+                        <div className="font-bold">₹{Number(row.monthly_amount || 0).toLocaleString()}</div>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Month:</span>
                         <div className="font-medium">
-                          {new Date(scheme.billing_month).toLocaleDateString('en-IN', {
-                            month: 'short',
-                            year: 'numeric'
-                          })}
+                          {new Date(row.billing_month).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
                         </div>
                       </div>
                     </div>
@@ -247,46 +283,33 @@ export default function DuePage() {
                 </div>
 
                 <div className="flex gap-2 mt-4 pt-4 border-t border-border">
-                  <Link href={`tel:${scheme.customer_phone}`} className="flex-1">
+                  <Link href={`tel:${row.customer_phone}`} className="flex-1">
                     <Button variant="outline" className="w-full" size="sm">
                       <Phone className="w-4 h-4 mr-2" />
                       Call Customer
                     </Button>
                   </Link>
-                  <Link href={`/dashboard/schemes?customer=${scheme.customer_id}`} className="flex-1">
+
+                  {/* Adjust to your actual admin route for viewing an enrollment */}
+                  <Link href={`/dashboard/passbook/${row.enrollment_id}`} className="flex-1">
                     <Button variant="outline" className="w-full" size="sm">
-                      View Scheme
+                      View Plan
                     </Button>
                   </Link>
-                  <Button
-                    variant="default"
-                    className="flex-1"
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        await supabase.rpc('enqueue_due_reminders');
-                        alert('Reminder sent!');
-                        loadOverdueSchemes();
-                      } catch (error) {
-                        console.error('Error sending reminder:', error);
-                        alert('Failed to send reminder');
-                      }
-                    }}
-                  >
+
+                  <Button variant="default" className="flex-1" size="sm" onClick={() => sendReminder(row.enrollment_id)}>
                     Send Reminder
                   </Button>
                 </div>
               </div>
             ))}
 
-            {filteredSchemes.length === 0 && (
+            {filtered.length === 0 && (
               <div className="text-center text-muted-foreground py-12">
                 <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p className="text-lg mb-2">No overdue payments</p>
                 <p className="text-sm">
-                  {searchTerm || filterStatus !== 'all'
-                    ? 'Try adjusting your filters'
-                    : 'All customers are up to date!'}
+                  {searchTerm || filterStatus !== 'all' ? 'Try adjusting your filters' : 'All customers are up to date!'}
                 </p>
               </div>
             )}

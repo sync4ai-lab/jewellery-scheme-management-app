@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Sparkles, AlertCircle, CheckCircle, Calendar, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,12 +14,18 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-type Scheme = {
+type Enrollment = {
   id: string;
-  scheme_name: string;
-  monthly_amount: number;
-  karat: string;
   retailer_id: string;
+  customer_id: string;
+  status: string | null;
+  commitment_amount: number | null;
+  plans: {
+    id: string;
+    name: string;
+    installment_amount: number;
+    duration_months: number;
+  } | null;
 };
 
 type GoldRate = {
@@ -31,92 +37,130 @@ type GoldRate = {
 type PaymentType = 'PRIMARY_INSTALLMENT' | 'TOP_UP';
 
 export default function PaymentPage({ params }: { params: { schemeId: string } }) {
+  const enrollmentId = params.schemeId;
+
   const { customer } = useCustomerAuth();
-  const [scheme, setScheme] = useState<Scheme | null>(null);
+  const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [goldRate, setGoldRate] = useState<GoldRate | null>(null);
   const [paymentType, setPaymentType] = useState<PaymentType | null>(null);
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('UPI');
+
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [monthlyInstallmentPaid, setMonthlyInstallmentPaid] = useState(false);
+
   const router = useRouter();
+
+  const currentMonthStr = useMemo(() => {
+    const today = new Date();
+    const m = new Date(today.getFullYear(), today.getMonth(), 1);
+    m.setHours(0, 0, 0, 0);
+    return m.toISOString().split('T')[0];
+  }, []);
 
   useEffect(() => {
     if (!customer) {
       router.push('/c/login');
       return;
     }
-
-    loadData();
-  }, [customer, params.schemeId, router]);
+    void loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer, enrollmentId, router]);
 
   async function loadData() {
     if (!customer) return;
 
+    setLoading(true);
+
     try {
-      const schemeResult = await supabase
-        .from('schemes')
-        .select('id, scheme_name, monthly_amount, karat, retailer_id')
-        .eq('id', params.schemeId)
+      const enrollmentResult = await supabase
+        .from('enrollments')
+        .select('id, retailer_id, customer_id, status, commitment_amount, plans(id, name, installment_amount, duration_months)')
+        .eq('id', enrollmentId)
         .eq('customer_id', customer.id)
         .maybeSingle();
 
-      if (schemeResult.data) {
-        setScheme(schemeResult.data);
+      const enr = enrollmentResult.data as Enrollment | null;
+      if (!enr) {
+        setEnrollment(null);
+        setGoldRate(null);
+        return;
+      }
 
+      setEnrollment(enr);
+
+      // Rate: use RPC if possible; fallback to table
+      let rate: GoldRate | null = null;
+
+      try {
+        const { data: rateRow, error: rateErr } = await supabase.rpc('get_latest_rate', {
+          p_retailer: enr.retailer_id,
+          p_karat: '22K',
+          p_time: new Date().toISOString(),
+        });
+
+        if (!rateErr && rateRow) {
+          rate = {
+            id: (rateRow as any).id,
+            rate_per_gram: (rateRow as any).rate_per_gram,
+            valid_from: (rateRow as any).valid_from,
+          };
+        }
+      } catch {
+        // ignore
+      }
+
+      if (!rate) {
         const rateResult = await supabase
           .from('gold_rates')
           .select('id, rate_per_gram, valid_from')
-          .eq('retailer_id', schemeResult.data.retailer_id)
-          .eq('karat', schemeResult.data.karat)
+          .eq('retailer_id', enr.retailer_id)
+          .eq('karat', '22K')
           .order('valid_from', { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (rateResult.data) {
-          setGoldRate(rateResult.data);
-        }
-
-        const currentMonth = new Date();
-        currentMonth.setDate(1);
-        currentMonth.setHours(0, 0, 0, 0);
-        const currentMonthStr = currentMonth.toISOString().split('T')[0];
-
-        const { data: existingInstallment } = await supabase
-          .from('transactions')
-          .select('id')
-          .eq('scheme_id', params.schemeId)
-          .eq('billing_month', currentMonthStr)
-          .eq('txn_type', 'PRIMARY_INSTALLMENT')
-          .eq('payment_status', 'SUCCESS')
-          .maybeSingle();
-
-        setMonthlyInstallmentPaid(!!existingInstallment);
+        if (rateResult.data) rate = rateResult.data as GoldRate;
       }
-    } catch (error) {
-      console.error('Error loading payment data:', error);
+
+      setGoldRate(rate);
+
+      // monthly installment already paid?
+      const { data: existingInstallment } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('enrollment_id', enrollmentId)
+        .eq('billing_month', currentMonthStr)
+        .eq('txn_type', 'PRIMARY_INSTALLMENT')
+        .eq('payment_status', 'SUCCESS')
+        .maybeSingle();
+
+      setMonthlyInstallmentPaid(!!existingInstallment);
+    } catch (e) {
+      console.error('Error loading payment data:', e);
     } finally {
       setLoading(false);
     }
   }
 
+  const monthlyMinimum =
+    (typeof enrollment?.commitment_amount === 'number' && enrollment.commitment_amount > 0
+      ? enrollment.commitment_amount
+      : enrollment?.plans?.installment_amount) || 0;
+
   function selectPaymentType(type: PaymentType) {
     setPaymentType(type);
     setError('');
-
-    if (type === 'PRIMARY_INSTALLMENT' && scheme) {
-      setAmount(scheme.monthly_amount.toString());
-    } else {
-      setAmount('');
-    }
+    if (type === 'PRIMARY_INSTALLMENT') setAmount(String(monthlyMinimum));
+    else setAmount('');
   }
 
   async function handlePayment(e: React.FormEvent) {
     e.preventDefault();
-    if (!scheme || !goldRate || !customer || !paymentType) return;
+    if (!enrollment || !goldRate || !customer || !paymentType) return;
 
     setError('');
     setProcessing(true);
@@ -124,18 +168,17 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
     const paymentAmount = parseFloat(amount);
 
     if (paymentType === 'PRIMARY_INSTALLMENT') {
-      if (paymentAmount < scheme.monthly_amount) {
-        setError(`Monthly installment must be ≥ ₹${scheme.monthly_amount.toLocaleString()}`);
+      if (paymentAmount < monthlyMinimum) {
+        setError(`Monthly installment must be ≥ ₹${Number(monthlyMinimum).toLocaleString()}`);
         setProcessing(false);
         return;
       }
-
       if (monthlyInstallmentPaid) {
         setError('Monthly installment already paid for this month. Use Top-Up for additional payments.');
         setProcessing(false);
         return;
       }
-    } else if (paymentType === 'TOP_UP') {
+    } else {
       if (paymentAmount <= 0) {
         setError('Top-up amount must be greater than 0');
         setProcessing(false);
@@ -145,39 +188,39 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
 
     try {
       const gramsAllocated = paymentAmount / goldRate.rate_per_gram;
-      const receiptNumber = `RCP${Date.now()}${Math.floor(Math.random() * 1000)}`;
       const currentTimestamp = new Date().toISOString();
 
-      const { error: insertError } = await supabase
-        .from('transactions')
-        .insert({
-          retailer_id: scheme.retailer_id,
-          scheme_id: scheme.id,
-          customer_id: customer.id,
-          transaction_type: 'INSTALLMENT',
-          txn_type: paymentType,
-          amount: paymentAmount,
-          payment_method: paymentMethod,
-          gold_rate_id: goldRate.id,
-          rate_per_gram: goldRate.rate_per_gram,
-          grams_allocated: gramsAllocated,
-          paid_at: currentTimestamp,
-          recorded_at: currentTimestamp,
-          transaction_date: currentTimestamp.split('T')[0],
-          payment_status: 'SUCCESS',
-          source: 'CUSTOMER_ONLINE',
-          receipt_number: receiptNumber,
-        });
+      // IMPORTANT: transactions has enrollment_id (not scheme_id).
+      // Keep payload fields you already use; your triggers/functions rely on them.
+      const { error: insertError } = await supabase.from('transactions').insert({
+        retailer_id: enrollment.retailer_id,
+        enrollment_id: enrollment.id,
+        customer_id: customer.id,
+
+        txn_type: paymentType,
+        amount: paymentAmount,
+        payment_method: paymentMethod,
+        gold_rate_id: goldRate.id,
+        rate_per_gram: goldRate.rate_per_gram,
+        grams_allocated: gramsAllocated,
+
+        paid_at: currentTimestamp,
+        recorded_at: currentTimestamp,
+        transaction_date: currentTimestamp.split('T')[0],
+        billing_month: currentMonthStr,
+
+        payment_status: 'SUCCESS',
+        source: 'CUSTOMER_ONLINE',
+        // receipt_number should be generated server-side ideally (you have next_receipt trigger/rpc); keep fallback:
+        receipt_number: `RCP${Date.now()}${Math.floor(Math.random() * 1000)}`,
+      });
 
       if (insertError) throw insertError;
 
       setSuccess(true);
-
-      setTimeout(() => {
-        router.push(`/c/passbook/${scheme.id}`);
-      }, 2000);
-    } catch (error: any) {
-      setError(error.message || 'Failed to process payment');
+      setTimeout(() => router.push(`/c/passbook/${enrollment.id}`), 1200);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to process payment');
     } finally {
       setProcessing(false);
     }
@@ -193,12 +236,12 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
     );
   }
 
-  if (!scheme || !goldRate) {
+  if (!enrollment || !goldRate) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground">Scheme not found or gold rate not available</p>
+            <p className="text-muted-foreground">Plan not found or gold rate not available</p>
             <Link href="/c/schemes">
               <Button className="mt-4" variant="outline">
                 <ArrowLeft className="w-4 h-4 mr-2" />
@@ -210,6 +253,9 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
       </div>
     );
   }
+
+  const planName = enrollment.plans?.name || 'Gold Plan';
+  const currentMonthName = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 
   if (success) {
     return (
@@ -223,9 +269,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
               <div>
                 <h2 className="text-2xl font-bold mb-2">Payment Successful!</h2>
                 <p className="text-muted-foreground">
-                  {paymentType === 'PRIMARY_INSTALLMENT'
-                    ? 'Your monthly installment has been recorded.'
-                    : 'Your top-up has been added to your scheme.'}
+                  {paymentType === 'PRIMARY_INSTALLMENT' ? 'Your monthly installment has been recorded.' : 'Your top-up has been added to your plan.'}
                 </p>
               </div>
               <div className="p-4 rounded-lg bg-muted">
@@ -235,17 +279,13 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
                   <span className="text-lg ml-1">g</span>
                 </p>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Redirecting to your passbook...
-              </p>
+              <p className="text-sm text-muted-foreground">Redirecting to your passbook...</p>
             </div>
           </CardContent>
         </Card>
       </div>
     );
   }
-
-  const currentMonthName = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-gold-50/10 to-background">
@@ -258,7 +298,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
           </Link>
           <div>
             <h1 className="text-2xl font-bold">Make Payment</h1>
-            <p className="text-muted-foreground">{scheme.scheme_name}</p>
+            <p className="text-muted-foreground">{planName}</p>
           </div>
         </div>
 
@@ -266,7 +306,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
-              Current Gold Rate ({scheme.karat})
+              Current Gold Rate (22K)
             </CardTitle>
             <CardDescription>Rate locked at payment time</CardDescription>
           </CardHeader>
@@ -305,18 +345,14 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
                         <p className="text-sm text-muted-foreground">{currentMonthName}</p>
                       </div>
                     </div>
-                    <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
-                      Due
-                    </Badge>
+                    <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">Due</Badge>
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Commitment Amount</span>
-                      <span className="font-bold">₹{scheme.monthly_amount.toLocaleString()}</span>
+                      <span className="font-bold">₹{Number(monthlyMinimum).toLocaleString()}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      This is your monthly commitment. You can pay equal to or more than this amount.
-                    </p>
+                    <p className="text-xs text-muted-foreground">You can pay equal to or more than this amount.</p>
                   </div>
                 </button>
               ) : (
@@ -344,9 +380,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
                     <p className="text-sm text-muted-foreground">Boost your gold savings</p>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Pay any amount beyond your monthly commitment. You can make multiple top-ups anytime.
-                </p>
+                <p className="text-xs text-muted-foreground">Pay any amount beyond your commitment. Unlimited top-ups anytime.</p>
               </button>
             </CardContent>
           </Card>
@@ -357,12 +391,10 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>
-                    {paymentType === 'PRIMARY_INSTALLMENT' ? 'Monthly Installment' : 'Top-Up Payment'}
-                  </CardTitle>
+                  <CardTitle>{paymentType === 'PRIMARY_INSTALLMENT' ? 'Monthly Installment' : 'Top-Up Payment'}</CardTitle>
                   <CardDescription>
                     {paymentType === 'PRIMARY_INSTALLMENT'
-                      ? `Minimum: ₹${scheme.monthly_amount.toLocaleString()} • Can pay more`
+                      ? `Minimum: ₹${Number(monthlyMinimum).toLocaleString()} • Can pay more`
                       : 'Any amount to boost your savings'}
                   </CardDescription>
                 </div>
@@ -385,21 +417,15 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
                   <Input
                     id="amount"
                     type="number"
-                    min={paymentType === 'PRIMARY_INSTALLMENT' ? scheme.monthly_amount : 1}
+                    min={paymentType === 'PRIMARY_INSTALLMENT' ? Number(monthlyMinimum) : 1}
                     step="0.01"
-                    placeholder={
-                      paymentType === 'PRIMARY_INSTALLMENT'
-                        ? scheme.monthly_amount.toString()
-                        : 'Enter amount'
-                    }
+                    placeholder={paymentType === 'PRIMARY_INSTALLMENT' ? String(monthlyMinimum) : 'Enter amount'}
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     required
                   />
                   {paymentType === 'PRIMARY_INSTALLMENT' && (
-                    <p className="text-xs text-muted-foreground">
-                      This payment satisfies your monthly commitment for {currentMonthName}
-                    </p>
+                    <p className="text-xs text-muted-foreground">This payment satisfies your monthly commitment for {currentMonthName}</p>
                   )}
                 </div>
 
@@ -421,9 +447,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
                   <div className="p-4 rounded-lg bg-muted space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Payment Type</span>
-                      <Badge variant="outline">
-                        {paymentType === 'PRIMARY_INSTALLMENT' ? 'Monthly Installment' : 'Top-Up'}
-                      </Badge>
+                      <Badge variant="outline">{paymentType === 'PRIMARY_INSTALLMENT' ? 'Monthly Installment' : 'Top-Up'}</Badge>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Amount to Pay</span>
@@ -436,9 +460,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
                     <div className="border-t border-border pt-2 mt-2">
                       <div className="flex justify-between">
                         <span className="font-medium">Gold You'll Get</span>
-                        <span className="text-xl font-bold gold-text">
-                          {calculatedGrams.toFixed(4)}g
-                        </span>
+                        <span className="text-xl font-bold gold-text">{calculatedGrams.toFixed(4)}g</span>
                       </div>
                     </div>
                   </div>
@@ -447,11 +469,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
                 <Button
                   type="submit"
                   className="w-full gold-gradient text-white hover:opacity-90"
-                  disabled={
-                    processing ||
-                    !amount ||
-                    (paymentType === 'PRIMARY_INSTALLMENT' && parseFloat(amount) < scheme.monthly_amount)
-                  }
+                  disabled={processing || !amount || (paymentType === 'PRIMARY_INSTALLMENT' && parseFloat(amount) < Number(monthlyMinimum))}
                   size="lg"
                 >
                   {processing ? 'Processing...' : `Pay ₹${amount || '0'}`}
@@ -464,9 +482,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="pt-6">
             <div className="space-y-3">
-              <h3 className="font-semibold flex items-center gap-2">
-                💡 Payment Types Explained
-              </h3>
+              <h3 className="font-semibold flex items-center gap-2">💡 Payment Types Explained</h3>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <div className="flex gap-2">
                   <Calendar className="w-4 h-4 mt-0.5 flex-shrink-0 text-primary" />
@@ -477,13 +493,11 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
                 <div className="flex gap-2">
                   <TrendingUp className="w-4 h-4 mt-0.5 flex-shrink-0 text-primary" />
                   <div>
-                    <strong className="text-foreground">Top-Up:</strong> Additional payments to accelerate your gold savings. You can make unlimited top-ups anytime.
+                    <strong className="text-foreground">Top-Up:</strong> Additional payments to accelerate your gold savings. Unlimited top-ups anytime.
                   </div>
                 </div>
                 <div className="mt-3 p-3 rounded bg-muted/50">
-                  <p className="text-xs">
-                    🔒 Both payment types lock the gold rate permanently at the moment of payment. Your grams are calculated and stored forever.
-                  </p>
+                  <p className="text-xs">🔒 Both payment types lock the gold rate permanently at the moment of payment.</p>
                 </div>
               </div>
             </div>
@@ -493,7 +507,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
         <Alert>
           <Sparkles className="h-4 w-4" />
           <AlertDescription>
-            <strong>Demo Mode:</strong> Payment gateway integration pending. In production, this would integrate with Razorpay/Paytm for secure online payments.
+            <strong>Demo Mode:</strong> Payment gateway integration pending. In production, integrate Razorpay/Paytm for secure online payments.
           </AlertDescription>
         </Alert>
       </div>

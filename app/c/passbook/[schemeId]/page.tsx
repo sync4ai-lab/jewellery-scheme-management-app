@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Calendar, Download, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,37 +16,45 @@ type Transaction = {
   amount: number;
   rate_per_gram: number;
   grams_allocated: number;
-  paid_at: string;
-  transaction_date: string;
-  payment_method: string;
+  paid_at: string | null;
+  transaction_date: string | null;
+  payment_method: string | null;
   receipt_number: string | null;
-  transaction_type: string;
+  transaction_type?: string | null;
   txn_type: string | null;
   billing_month: string | null;
-  source: string;
+  source: string | null;
 };
 
-type Scheme = {
+type Enrollment = {
   id: string;
-  scheme_name: string;
-  monthly_amount: number;
-  total_paid: number;
-  total_grams_allocated: number;
-  karat: string;
-  billing_day_of_month: number;
+  status: string | null;
+  commitment_amount: number | null;
+  total_paid: number | null;
+  total_grams_allocated: number | null;
+  created_at?: string | null;
+  plans: {
+    id: string;
+    name: string;
+    duration_months: number;
+    installment_amount: number;
+  } | null;
 };
 
 type BillingMonth = {
   billing_month: string;
-  due_date: string;
-  primary_paid: boolean;
-  status: string;
+  due_date: string | null;
+  primary_paid: boolean | null;
+  status: string | null;
   days_overdue: number;
 };
 
 export default function PassbookPage({ params }: { params: { schemeId: string } }) {
+  // NOTE: params.schemeId is actually enrollmentId now
+  const enrollmentId = params.schemeId;
+
   const { customer } = useCustomerAuth();
-  const [scheme, setScheme] = useState<Scheme | null>(null);
+  const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [currentBillingMonth, setCurrentBillingMonth] = useState<BillingMonth | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
@@ -55,76 +63,87 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  const currentMonthStr = useMemo(() => {
+    const today = new Date();
+    const m = new Date(today.getFullYear(), today.getMonth(), 1);
+    m.setHours(0, 0, 0, 0);
+    return m.toISOString().split('T')[0];
+  }, []);
+
   useEffect(() => {
     if (!customer) {
       router.push('/c/login');
       return;
     }
-
-    loadData();
-  }, [customer, params.schemeId, router]);
+    void loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer, enrollmentId, router]);
 
   useEffect(() => {
     filterTransactions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedMonth, transactions]);
 
   async function loadData() {
     if (!customer) return;
 
-    try {
-      const currentMonth = new Date();
-      currentMonth.setDate(1);
-      currentMonth.setHours(0, 0, 0, 0);
-      const currentMonthStr = currentMonth.toISOString().split('T')[0];
+    setLoading(true);
 
-      const [schemeResult, transactionsResult, billingMonthResult] = await Promise.all([
+    try {
+      const [enrollmentResult, transactionsResult, billingMonthResult] = await Promise.all([
         supabase
-          .from('schemes')
-          .select('id, scheme_name, monthly_amount, total_paid, total_grams_allocated, karat, billing_day_of_month')
-          .eq('id', params.schemeId)
+          .from('enrollments')
+          .select('id, status, commitment_amount, total_paid, total_grams_allocated, created_at, plans(id, name, duration_months, installment_amount)')
+          .eq('id', enrollmentId)
           .eq('customer_id', customer.id)
           .maybeSingle(),
 
         supabase
           .from('transactions')
           .select('*')
-          .eq('scheme_id', params.schemeId)
+          .eq('enrollment_id', enrollmentId)
           .eq('customer_id', customer.id)
           .order('paid_at', { ascending: false }),
 
         supabase
           .from('enrollment_billing_months')
           .select('billing_month, due_date, primary_paid, status')
-          .eq('scheme_id', params.schemeId)
+          .eq('enrollment_id', enrollmentId)
           .eq('billing_month', currentMonthStr)
-          .maybeSingle()
+          .maybeSingle(),
       ]);
 
-      if (schemeResult.data) {
-        setScheme(schemeResult.data);
-      }
+      if (enrollmentResult.data) setEnrollment(enrollmentResult.data as Enrollment);
 
       if (billingMonthResult.data) {
-        const daysOverdue = billingMonthResult.data.due_date && new Date(billingMonthResult.data.due_date) < new Date()
-          ? Math.floor((new Date().getTime() - new Date(billingMonthResult.data.due_date).getTime()) / (1000 * 60 * 60 * 24))
-          : 0;
+        const due = billingMonthResult.data.due_date ? new Date(billingMonthResult.data.due_date) : null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        let daysOverdue = 0;
+        if (due) {
+          due.setHours(0, 0, 0, 0);
+          if (due < today && !billingMonthResult.data.primary_paid) {
+            daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+          }
+        }
 
         setCurrentBillingMonth({
           ...billingMonthResult.data,
-          days_overdue: daysOverdue
-        });
+          days_overdue: daysOverdue,
+        } as BillingMonth);
       }
 
       if (transactionsResult.data) {
-        setTransactions(transactionsResult.data);
+        const txns = transactionsResult.data as Transaction[];
+        setTransactions(txns);
 
         const monthsSet = new Set<string>();
-        transactionsResult.data.forEach(txn => {
-          const date = new Date(txn.paid_at || txn.transaction_date);
-          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        txns.forEach((txn) => {
+          const d = new Date(txn.paid_at || txn.transaction_date || new Date().toISOString());
+          const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
           monthsSet.add(monthKey);
         });
-
         setMonths(Array.from(monthsSet).sort().reverse());
       }
     } catch (error) {
@@ -137,20 +156,22 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
   function filterTransactions() {
     if (selectedMonth === 'all') {
       setFilteredTransactions(transactions);
-    } else {
-      const filtered = transactions.filter(txn => {
-        const date = new Date(txn.paid_at || txn.transaction_date);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        return monthKey === selectedMonth;
-      });
-      setFilteredTransactions(filtered);
+      return;
     }
+
+    const filtered = transactions.filter((txn) => {
+      const d = new Date(txn.paid_at || txn.transaction_date || new Date().toISOString());
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return monthKey === selectedMonth;
+    });
+
+    setFilteredTransactions(filtered);
   }
 
   function getMonthDisplay(monthKey: string) {
     const [year, month] = monthKey.split('-');
-    const date = new Date(parseInt(year), parseInt(month) - 1);
-    return date.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const d = new Date(parseInt(year), parseInt(month) - 1);
+    return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
   }
 
   if (loading) {
@@ -161,12 +182,12 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
     );
   }
 
-  if (!scheme) {
+  if (!enrollment) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Card>
           <CardContent className="pt-6">
-            <p className="text-muted-foreground">Scheme not found</p>
+            <p className="text-muted-foreground">Plan not found</p>
             <Link href="/c/schemes">
               <Button className="mt-4" variant="outline">
                 <ArrowLeft className="w-4 h-4 mr-2" />
@@ -179,6 +200,12 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
     );
   }
 
+  const planName = enrollment.plans?.name || 'Gold Plan';
+  const monthlyAmount =
+    (typeof enrollment.commitment_amount === 'number' && enrollment.commitment_amount > 0
+      ? enrollment.commitment_amount
+      : enrollment.plans?.installment_amount) || 0;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-gold-50/10 to-background">
       <div className="max-w-4xl mx-auto p-4 space-y-6">
@@ -190,7 +217,7 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
           </Link>
           <div className="flex-1">
             <h1 className="text-2xl font-bold">Gold Passbook</h1>
-            <p className="text-muted-foreground">{scheme.scheme_name}</p>
+            <p className="text-muted-foreground">{planName}</p>
           </div>
           <Button variant="outline" size="icon">
             <Download className="w-4 h-4" />
@@ -202,7 +229,7 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground mb-1">Total Gold Accumulated</p>
               <p className="text-3xl font-bold gold-text">
-                {scheme.total_grams_allocated.toFixed(4)}
+                {Number(enrollment.total_grams_allocated || 0).toFixed(4)}
                 <span className="text-lg ml-1">g</span>
               </p>
             </CardContent>
@@ -211,21 +238,21 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
           <Card className="glass-card">
             <CardContent className="pt-6">
               <p className="text-sm text-muted-foreground mb-1">Total Amount Paid</p>
-              <p className="text-3xl font-bold">
-                ₹{scheme.total_paid.toLocaleString()}
-              </p>
+              <p className="text-3xl font-bold">₹{Number(enrollment.total_paid || 0).toLocaleString()}</p>
             </CardContent>
           </Card>
         </div>
 
         {currentBillingMonth && (
-          <Card className={`border-2 ${
-            currentBillingMonth.primary_paid
-              ? 'border-green-200 bg-green-50 dark:bg-green-900/10'
-              : currentBillingMonth.days_overdue > 0
-              ? 'border-orange-200 bg-orange-50 dark:bg-orange-900/10'
-              : 'border-primary/20 bg-primary/5'
-          }`}>
+          <Card
+            className={`border-2 ${
+              currentBillingMonth.primary_paid
+                ? 'border-green-200 bg-green-50 dark:bg-green-900/10'
+                : currentBillingMonth.days_overdue > 0
+                ? 'border-orange-200 bg-orange-50 dark:bg-orange-900/10'
+                : 'border-primary/20 bg-primary/5'
+            }`}
+          >
             <CardContent className="pt-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -235,46 +262,42 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
                       {new Date(currentBillingMonth.billing_month).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })} Billing
                     </h3>
                   </div>
+
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Due Date:</span>
                       <span className="font-medium">
-                        {new Date(currentBillingMonth.due_date).toLocaleDateString('en-IN', {
-                          day: 'numeric',
-                          month: 'long',
-                          year: 'numeric'
-                        })} (Day {scheme.billing_day_of_month})
+                        {currentBillingMonth.due_date
+                          ? new Date(currentBillingMonth.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+                          : '—'}
                       </span>
                     </div>
+
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Monthly Amount:</span>
-                      <span className="font-bold">₹{scheme.monthly_amount.toLocaleString()}</span>
+                      <span className="font-bold">₹{Number(monthlyAmount).toLocaleString()}</span>
                     </div>
+
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Status:</span>
                       {currentBillingMonth.primary_paid ? (
-                        <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                          ✓ Paid
-                        </Badge>
+                        <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">✓ Paid</Badge>
                       ) : currentBillingMonth.days_overdue > 0 ? (
                         <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
                           Overdue ({currentBillingMonth.days_overdue} days)
                         </Badge>
                       ) : (
-                        <Badge variant="outline">
-                          Upcoming
-                        </Badge>
+                        <Badge variant="outline">Upcoming</Badge>
                       )}
                     </div>
                   </div>
                 </div>
               </div>
+
               {!currentBillingMonth.primary_paid && (
                 <div className="mt-4 pt-4 border-t border-border">
-                  <Link href={`/c/pay/${scheme.id}`}>
-                    <Button className="w-full gold-gradient text-white hover:opacity-90">
-                      Pay Monthly Installment
-                    </Button>
+                  <Link href={`/c/pay/${enrollment.id}`}>
+                    <Button className="w-full gold-gradient text-white hover:opacity-90">Pay Monthly Installment</Button>
                   </Link>
                 </div>
               )}
@@ -294,9 +317,9 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Months</SelectItem>
-                    {months.map(month => (
-                      <SelectItem key={month} value={month}>
-                        {getMonthDisplay(month)}
+                    {months.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {getMonthDisplay(m)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -304,50 +327,44 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
               </div>
             </div>
           </CardHeader>
+
           <CardContent>
             <div className="space-y-3">
-              {filteredTransactions.map((txn, idx) => (
-                <div
-                  key={txn.id}
-                  className="p-4 rounded-lg glass-card border border-border hover:shadow-md transition-all"
-                >
+              {filteredTransactions.map((txn) => (
+                <div key={txn.id} className="p-4 rounded-lg glass-card border border-border hover:shadow-md transition-all">
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         {txn.txn_type === 'PRIMARY_INSTALLMENT' && (
-                          <Badge className="bg-primary text-primary-foreground text-xs">
-                            Monthly Installment
-                          </Badge>
+                          <Badge className="bg-primary text-primary-foreground text-xs">Monthly Installment</Badge>
                         )}
                         {txn.txn_type === 'TOP_UP' && (
-                          <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 text-xs">
-                            Top-Up
-                          </Badge>
+                          <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 text-xs">Top-Up</Badge>
                         )}
                         {!txn.txn_type && (
                           <Badge variant="outline" className="text-xs">
-                            {txn.transaction_type}
+                            {txn.transaction_type || 'Payment'}
                           </Badge>
                         )}
                         {txn.source === 'CUSTOMER_ONLINE' && (
-                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-xs">
-                            Online
-                          </Badge>
+                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-xs">Online</Badge>
                         )}
                       </div>
+
                       <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
                         <Calendar className="w-3 h-3" />
                         <span>
-                          {new Date(txn.paid_at || txn.transaction_date).toLocaleDateString('en-IN', {
+                          {new Date(txn.paid_at || txn.transaction_date || new Date().toISOString()).toLocaleDateString('en-IN', {
                             day: '2-digit',
                             month: 'short',
                             year: 'numeric',
                             hour: '2-digit',
-                            minute: '2-digit'
+                            minute: '2-digit',
                           })}
                         </span>
                       </div>
                     </div>
+
                     <div className="text-right">
                       <p className="text-sm text-muted-foreground">Receipt</p>
                       <p className="font-mono text-xs">{txn.receipt_number || `#${txn.id.slice(0, 8)}`}</p>
@@ -357,20 +374,20 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
                   <div className="grid grid-cols-3 gap-4 p-3 rounded bg-muted/50">
                     <div>
                       <p className="text-xs text-muted-foreground">Amount Paid</p>
-                      <p className="font-bold">₹{txn.amount.toLocaleString()}</p>
+                      <p className="font-bold">₹{Number(txn.amount || 0).toLocaleString()}</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Rate Locked</p>
-                      <p className="font-bold text-sm">₹{txn.rate_per_gram}/g</p>
+                      <p className="font-bold text-sm">₹{Number(txn.rate_per_gram || 0)}/g</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Gold Added</p>
-                      <p className="font-bold gold-text">{txn.grams_allocated.toFixed(4)}g</p>
+                      <p className="font-bold gold-text">{Number(txn.grams_allocated || 0).toFixed(4)}g</p>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
-                    <span>{txn.payment_method}</span>
+                    <span>{txn.payment_method || '—'}</span>
                     <span className="flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full bg-green-500"></span>
                       Locked Forever
@@ -391,11 +408,9 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
         <Card className="bg-primary/5 border-primary/20">
           <CardContent className="pt-6">
             <div className="space-y-2">
-              <h3 className="font-semibold flex items-center gap-2">
-                🔒 Rate Locking Guarantee
-              </h3>
+              <h3 className="font-semibold flex items-center gap-2">🔒 Rate Locking Guarantee</h3>
               <p className="text-sm text-muted-foreground">
-                Every payment you make is permanently locked at that day's gold rate. Even if rates go up or down later, your locked rates never change. This ensures complete transparency and protects your investment.
+                Every payment you make is permanently locked at that day's gold rate. Even if rates change later, your locked rates never change. This ensures complete transparency and protects your investment.
               </p>
             </div>
           </CardContent>

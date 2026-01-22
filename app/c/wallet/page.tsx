@@ -1,20 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  Gem,
-  ArrowRight,
-  Plus,
-  TrendingUp,
-  Calendar,
-  Wallet,
-  LogOut,
-  Bell,
-  Receipt,
-} from 'lucide-react';
+import { Gem, ArrowRight, Plus, TrendingUp, Calendar, Wallet, LogOut, Bell } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
@@ -23,14 +12,38 @@ import Link from 'next/link';
 type WalletData = {
   totalGold: number;
   totalPaid: number;
-  activeSchemes: number;
+  activeEnrollments: number;
   nextDue: {
     amount: number;
     date: string;
-    schemeId: string;
-    schemeName: string;
+    enrollmentId: string;
+    planName: string;
   } | null;
   currentRate: number | null;
+};
+
+type Plan = {
+  id: string;
+  name: string;
+  installment_amount: number;
+  duration_months: number;
+};
+
+type EnrollmentRow = {
+  id: string;
+  status?: string | null;
+  customer_id: string;
+  retailer_id: string;
+  commitment_amount?: number | null;
+  total_paid?: number | null;
+  total_grams_allocated?: number | null;
+  plans?: Plan | null;
+};
+
+type BillingRow = {
+  enrollment_id: string;
+  due_date: string | null;
+  primary_paid: boolean | null;
 };
 
 export default function CustomerWalletPage() {
@@ -39,63 +52,100 @@ export default function CustomerWalletPage() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  const currentMonthStr = useMemo(() => {
+    const today = new Date();
+    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    currentMonth.setHours(0, 0, 0, 0);
+    return currentMonth.toISOString().split('T')[0];
+  }, []);
+
   useEffect(() => {
     if (!customer) {
       router.push('/c/login');
       return;
     }
-
-    loadWallet();
+    void loadWallet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer, router]);
 
   async function loadWallet() {
     if (!customer) return;
 
     try {
-      const [schemesResult, rateResult] = await Promise.all([
-        supabase
-          .from('schemes')
-          .select('*')
-          .eq('customer_id', customer.id)
-          .eq('status', 'ACTIVE'),
+      const { data: enrollmentsData, error: enrollmentsError } = await supabase
+        .from('enrollments')
+        .select('id, status, customer_id, retailer_id, commitment_amount, total_paid, total_grams_allocated, plans(id, name, installment_amount, duration_months)')
+        .eq('customer_id', customer.id)
+        .eq('status', 'ACTIVE');
 
-        supabase
+      if (enrollmentsError) throw enrollmentsError;
+
+      const enrollments = (enrollmentsData || []) as EnrollmentRow[];
+
+      // Gold rate (best effort)
+      let currentRate: number | null = null;
+      try {
+        const { data: rateRow, error: rateErr } = await supabase.rpc('get_latest_rate', {
+          p_retailer: customer.retailer_id,
+          p_karat: '22K',
+          p_time: new Date().toISOString(),
+        });
+
+        if (!rateErr && rateRow) currentRate = (rateRow as any).rate_per_gram ?? null;
+      } catch {
+        // ignore; fallback below
+      }
+
+      if (currentRate === null) {
+        const { data: fallbackRate } = await supabase
           .from('gold_rates')
           .select('rate_per_gram')
+          .eq('retailer_id', customer.retailer_id)
           .eq('karat', '22K')
           .order('valid_from', { ascending: false })
           .limit(1)
-          .maybeSingle(),
-      ]);
-
-      const schemes = schemesResult.data || [];
-      const totalGold = schemes.reduce((sum, s) => sum + parseFloat(s.total_grams_allocated.toString()), 0);
-      const totalPaid = schemes.reduce((sum, s) => sum + parseFloat(s.total_paid.toString()), 0);
-
-      let nextDue = null;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      for (const scheme of schemes) {
-        const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-        const currentMonthStr = currentMonth.toISOString().split('T')[0];
-
-        const { data: billingMonth } = await supabase
-          .from('enrollment_billing_months')
-          .select('due_date, primary_paid')
-          .eq('scheme_id', scheme.id)
-          .eq('billing_month', currentMonthStr)
           .maybeSingle();
 
-        if (billingMonth && !billingMonth.primary_paid) {
-          const dueDate = new Date(billingMonth.due_date);
-          if (!nextDue || dueDate < new Date(nextDue.date)) {
-            nextDue = {
-              amount: parseFloat(scheme.monthly_amount.toString()),
-              date: billingMonth.due_date,
-              schemeId: scheme.id,
-              schemeName: scheme.scheme_name,
-            };
+        currentRate = (fallbackRate as any)?.rate_per_gram ?? null;
+      }
+
+      const totalGold = enrollments.reduce((sum, e) => sum + Number(e.total_grams_allocated || 0), 0);
+      const totalPaid = enrollments.reduce((sum, e) => sum + Number(e.total_paid || 0), 0);
+
+      let nextDue: WalletData['nextDue'] = null;
+
+      const enrollmentIds = enrollments.map((e) => e.id);
+      if (enrollmentIds.length > 0) {
+        const { data: billingRows, error: billingErr } = await supabase
+          .from('enrollment_billing_months')
+          .select('enrollment_id, due_date, primary_paid')
+          .in('enrollment_id', enrollmentIds)
+          .eq('billing_month', currentMonthStr);
+
+        if (!billingErr && billingRows) {
+          const unpaid = (billingRows as BillingRow[]).filter((b) => !b.primary_paid && b.due_date);
+
+          for (const row of unpaid) {
+            const dueDate = new Date(row.due_date as string);
+
+            const enrollment = enrollments.find((e) => e.id === row.enrollment_id);
+            const plan = enrollment?.plans;
+
+            const amount =
+              (typeof enrollment?.commitment_amount === 'number' && enrollment.commitment_amount > 0
+                ? enrollment.commitment_amount
+                : plan?.installment_amount) ?? 0;
+
+            const planName = plan?.name ?? 'Gold Plan';
+
+            if (!nextDue || dueDate < new Date(nextDue.date)) {
+              nextDue = {
+                amount: Number(amount),
+                date: row.due_date as string,
+                enrollmentId: row.enrollment_id,
+                planName,
+              };
+            }
           }
         }
       }
@@ -103,9 +153,9 @@ export default function CustomerWalletPage() {
       setWallet({
         totalGold,
         totalPaid,
-        activeSchemes: schemes.length,
+        activeEnrollments: enrollments.length,
         nextDue,
-        currentRate: rateResult.data?.rate_per_gram || null,
+        currentRate,
       });
     } catch (error) {
       console.error('Error loading wallet:', error);
@@ -160,7 +210,7 @@ export default function CustomerWalletPage() {
               <div>
                 <p className="text-sm text-muted-foreground mb-2">Total Gold Balance</p>
                 <div className="text-6xl font-bold gold-text mb-2">
-                  {wallet?.totalGold.toFixed(4)}
+                  {Number(wallet?.totalGold || 0).toFixed(4)}
                   <span className="text-2xl ml-2">g</span>
                 </div>
                 <p className="text-sm text-muted-foreground">
@@ -171,11 +221,11 @@ export default function CustomerWalletPage() {
               <div className="grid grid-cols-2 gap-4 py-6 border-y border-gold-200/30">
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Total Invested</p>
-                  <p className="text-2xl font-bold">₹{wallet?.totalPaid.toLocaleString()}</p>
+                  <p className="text-2xl font-bold">₹{Number(wallet?.totalPaid || 0).toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Active Plans</p>
-                  <p className="text-2xl font-bold">{wallet?.activeSchemes}</p>
+                  <p className="text-2xl font-bold">{wallet?.activeEnrollments || 0}</p>
                 </div>
               </div>
 
@@ -198,17 +248,15 @@ export default function CustomerWalletPage() {
                   <Calendar className="w-6 h-6 text-orange-600" />
                 </div>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-orange-800 dark:text-orange-400 mb-1">
-                    Payment Due
-                  </p>
+                  <p className="text-sm font-medium text-orange-800 dark:text-orange-400 mb-1">Payment Due</p>
                   <p className="text-2xl font-bold text-orange-900 dark:text-orange-300">
                     ₹{wallet.nextDue.amount.toLocaleString()}
                   </p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {wallet.nextDue.schemeName} • Due: {new Date(wallet.nextDue.date).toLocaleDateString('en-IN')}
+                    {wallet.nextDue.planName} • Due: {new Date(wallet.nextDue.date).toLocaleDateString('en-IN')}
                   </p>
                 </div>
-                <Link href={`/c/pay/${wallet.nextDue.schemeId}`}>
+                <Link href={`/c/pay/${wallet.nextDue.enrollmentId}`}>
                   <Button className="jewel-gradient text-white hover:opacity-90 rounded-xl">
                     Pay Now
                     <ArrowRight className="w-4 h-4 ml-2" />
@@ -229,7 +277,7 @@ export default function CustomerWalletPage() {
                       <Gem className="w-7 h-7 text-blue-600" />
                     </div>
                     <div>
-                      <p className="font-semibold text-lg">My Schemes</p>
+                      <p className="font-semibold text-lg">My Plans</p>
                       <p className="text-sm text-muted-foreground">View all active plans</p>
                     </div>
                   </div>
@@ -240,7 +288,7 @@ export default function CustomerWalletPage() {
           </Link>
 
           {wallet?.nextDue && (
-            <Link href={`/c/pay/${wallet.nextDue.schemeId}`}>
+            <Link href={`/c/pay/${wallet.nextDue.enrollmentId}`}>
               <Card className="jewel-card hover:scale-[1.02] transition-transform cursor-pointer border-2 border-gold-300/50">
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
@@ -280,7 +328,7 @@ export default function CustomerWalletPage() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-gold-600 mt-0.5">•</span>
-                    <span>Top-ups are unlimited - add more gold anytime</span>
+                    <span>Top-ups are unlimited — add more gold anytime</span>
                   </li>
                 </ul>
               </div>
