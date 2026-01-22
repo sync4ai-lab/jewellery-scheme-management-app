@@ -1,311 +1,452 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Sparkles, TrendingUp, AlertCircle, Users, Plus, ArrowUpRight, Calendar } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { useEffect, useMemo, useState } from 'react';
+import { Search, Plus, User, Phone, Calendar, Users } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/contexts/auth-context';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { cn } from '@/lib/utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 
-type GoldRate = {
-  karat: string;
-  rate_per_gram: number;
-  valid_from: string;
-};
-
-type DashboardStats = {
-  today_collections: number;
-  today_grams: number;
-  active_schemes: number;
-  due_today: number;
-  total_customers: number;
-};
-
-type RecentActivity = {
+type Customer = {
   id: string;
-  customer_name: string;
-  amount: number;
-  grams_allocated: number;
-  transaction_type: string;
-  created_at: string;
+  full_name: string;
+  phone: string;
+  customer_code: string;
 };
 
-export default function DashboardPage() {
-  const { user, profile } = useAuth();
-  const [goldRates, setGoldRates] = useState<GoldRate[]>([]);
-  const [stats, setStats] = useState<DashboardStats>({
-    today_collections: 0,
-    today_grams: 0,
-    active_schemes: 0,
-    due_today: 0,
-    total_customers: 0,
-  });
-  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+type Plan = {
+  id: string;
+  plan_name: string;
+  monthly_amount: number;
+  tenure_months: number;
+  karat: string;
+};
+
+type Enrollment = {
+  id: string;
+  customer_id: string;
+  plan_id: string;
+  status: string;
+  start_date: string;
+  billing_day_of_month: number;
+  commitment_amount: number | null;
+  created_at: string;
+
+  customers: Customer | null;
+  plans: Plan | null;
+};
+
+type Txn = {
+  id: string;
+  amount_paid: number;
+  rate_per_gram_snapshot: number;
+  grams_allocated_snapshot: number;
+  mode: string;
+  txn_type: string;
+  billing_month: string | null;
+
+  payment_received_at: string | null;
+  paid_at: string | null;
+  created_at: string;
+  receipt_number: string | null;
+};
+
+function safeNumber(v: any): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function pickTxnTime(t: Txn): string {
+  return t.paid_at || t.payment_received_at || t.created_at || new Date().toISOString();
+}
+
+export default function SchemesPage() {
+  const { profile } = useAuth();
+  const [search, setSearch] = useState('');
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
+  const [transactions, setTransactions] = useState<Txn[]>([]);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
 
   useEffect(() => {
-    if (!user) {
-      router.push('/login');
-      return;
-    }
+    void loadEnrollments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.retailer_id]);
 
-    loadDashboardData();
-  }, [user, router]);
+  async function loadEnrollments() {
+    if (!profile?.retailer_id) return;
 
-  async function loadDashboardData() {
-    if (!profile) return;
-
+    setLoading(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
-
-      const [ratesResult, statsResult, activityResult] = await Promise.all([
-        supabase
-          .from('gold_rates')
-          .select('karat, rate_per_gram, valid_from')
-          .eq('retailer_id', profile.retailer_id)
-          .order('valid_from', { ascending: false })
-          .limit(3),
-
-        Promise.all([
-          supabase
-            .from('transactions')
-            .select('amount, grams_allocated')
-            .eq('retailer_id', profile.retailer_id)
-            .gte('created_at', today)
-            .eq('payment_status', 'SUCCESS'),
-
-          supabase
-            .from('schemes')
-            .select('id')
-            .eq('retailer_id', profile.retailer_id)
-            .eq('status', 'ACTIVE'),
-
-          supabase
-            .from('overdue_billing_months')
-            .select('id')
-            .eq('retailer_id', profile.retailer_id)
-            .lte('due_date', today),
-
-          supabase
-            .from('customers')
-            .select('id')
-            .eq('retailer_id', profile.retailer_id)
-            .eq('status', 'active'),
-        ]),
-
-        supabase
-          .from('transactions')
-          .select(`
+      const { data, error } = await supabase
+        .from('enrollments')
+        .select(`
+          id,
+          retailer_id,
+          customer_id,
+          plan_id,
+          start_date,
+          status,
+          billing_day_of_month,
+          commitment_amount,
+          created_at,
+          customers (
             id,
-            amount,
-            grams_allocated,
-            transaction_type,
-            created_at,
-            customer_id,
-            customers!inner(full_name)
-          `)
-          .eq('retailer_id', profile.retailer_id)
-          .eq('payment_status', 'SUCCESS')
-          .order('created_at', { ascending: false })
-          .limit(5),
-      ]);
+            full_name,
+            phone,
+            customer_code
+          ),
+          plans (
+            id,
+            plan_name,
+            monthly_amount,
+            tenure_months,
+            karat
+          )
+        `)
+        .eq('retailer_id', profile.retailer_id)
+        .order('created_at', { ascending: false });
 
-      if (ratesResult.data) {
-        setGoldRates(ratesResult.data);
-      }
+      if (error) throw error;
 
-      const [todayTxns, activeSchemes, dueToday, customers] = statsResult;
-
-      const todayCollections = todayTxns.data?.reduce((sum, t) => sum + Number(t.amount), 0) || 0;
-      const todayGrams = todayTxns.data?.reduce((sum, t) => sum + Number(t.grams_allocated), 0) || 0;
-
-      setStats({
-        today_collections: todayCollections,
-        today_grams: todayGrams,
-        active_schemes: activeSchemes.data?.length || 0,
-        due_today: dueToday.data?.length || 0,
-        total_customers: customers.data?.length || 0,
-      });
-
-      if (activityResult.data) {
-        setRecentActivity(
-          activityResult.data.map((t: any) => ({
-            id: t.id,
-            customer_name: t.customers.full_name,
-            amount: t.amount,
-            grams_allocated: t.grams_allocated,
-            transaction_type: t.transaction_type,
-            created_at: t.created_at,
-          }))
-        );
-      }
-    } catch (error) {
-      console.error('Error loading dashboard:', error);
+      setEnrollments((data || []) as Enrollment[]);
+    } catch (err) {
+      console.error('Error loading enrollments:', err);
+      setEnrollments([]);
     } finally {
       setLoading(false);
     }
   }
 
+  async function loadTransactions(enrollmentId: string) {
+    if (!profile?.retailer_id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select(`
+          id,
+          amount_paid,
+          rate_per_gram_snapshot,
+          grams_allocated_snapshot,
+          mode,
+          txn_type,
+          billing_month,
+          payment_received_at,
+          paid_at,
+          created_at,
+          receipt_number
+        `)
+        .eq('retailer_id', profile.retailer_id)
+        .eq('enrollment_id', enrollmentId)
+        // prefer actual payment time; nulls will go last
+        .order('paid_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setTransactions((data || []) as Txn[]);
+    } catch (err) {
+      console.error('Error loading transactions:', err);
+      setTransactions([]);
+    }
+  }
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return enrollments;
+
+    return enrollments.filter((e) => {
+      const c = e.customers;
+      if (!c) return false;
+
+      return (
+        (c.full_name || '').toLowerCase().includes(q) ||
+        (c.customer_code || '').toLowerCase().includes(q) ||
+        (c.phone || '').includes(search.trim())
+      );
+    });
+  }, [enrollments, search]);
+
+  function getStatusBadge(status: string) {
+    const variants: Record<string, string> = {
+      ACTIVE: 'status-active',
+      PAUSED: 'status-due',
+      COMPLETED: 'status-ready',
+      CANCELLED: 'status-missed',
+    };
+
+    return (
+      <Badge className={cn('text-xs', variants[status] || 'bg-gray-100')}>
+        {status}
+      </Badge>
+    );
+  }
+
+  function getMonthlyAmount(e: Enrollment): number {
+    const commitment = safeNumber(e.commitment_amount);
+    if (commitment > 0) return commitment;
+    return safeNumber(e.plans?.monthly_amount);
+  }
+
+  function getTenure(e: Enrollment): number {
+    return safeNumber(e.plans?.tenure_months);
+  }
+
+  function computeTotals(txns: Txn[]) {
+    const totalPaid = txns.reduce((sum, t) => sum + safeNumber(t.amount_paid), 0);
+    const totalGrams = txns.reduce((sum, t) => sum + safeNumber(t.grams_allocated_snapshot), 0);
+    return { totalPaid, totalGrams };
+  }
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full jewel-gradient animate-pulse mx-auto flex items-center justify-center">
-            <Sparkles className="w-8 h-8 text-white" />
-          </div>
-          <p className="text-muted-foreground">Loading dashboard...</p>
-        </div>
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-pulse text-xl gold-text">Loading schemes...</div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-8 space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Welcome back, {profile?.full_name}!</h1>
-          <p className="text-muted-foreground">
-            {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          </p>
+          <h1 className="text-3xl font-bold tracking-tight">Schemes</h1>
+          <p className="text-muted-foreground">Manage customer gold savings journey</p>
         </div>
-        <Link href="/dashboard/enroll">
-          <Button className="jewel-gradient text-white hover:opacity-90 shadow-lg">
-            <Plus className="w-4 h-4 mr-2" />
-            New Enrollment
-          </Button>
-        </Link>
+
+        <Button className="gold-gradient text-white hover:opacity-90">
+          <Plus className="w-4 h-4 mr-2" />
+          New Enrollment
+        </Button>
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          placeholder="Search by name, phone, or customer code..."
+          className="pl-10"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {goldRates.map((rate) => (
-          <Card key={rate.karat} className="jewel-card border-gold-300">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Gold Rate</p>
-                  <h3 className="text-2xl font-bold gold-text">{rate.karat}</h3>
-                </div>
-                <Sparkles className="w-8 h-8 text-gold-500 animate-pulse-gold" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-3xl font-bold">₹{rate.rate_per_gram.toLocaleString()}</p>
-                <p className="text-sm text-muted-foreground">per gram</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        {filtered.map((enrollment) => {
+          const c = enrollment.customers;
+          const p = enrollment.plans;
+
+          const monthly = getMonthlyAmount(enrollment);
+          const tenure = getTenure(enrollment);
+          const planName = p?.plan_name || 'Plan';
+          const karat = p?.karat || '';
+
+          return (
+            <Dialog
+              key={enrollment.id}
+              onOpenChange={(open) => {
+                if (open) {
+                  setSelectedEnrollment(enrollment);
+                  void loadTransactions(enrollment.id);
+                } else {
+                  setSelectedEnrollment(null);
+                  setTransactions([]);
+                }
+              }}
+            >
+              <DialogTrigger asChild>
+                <Card className="cursor-pointer hover:shadow-lg transition-all glass-card">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                          <User className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">{c?.full_name || 'Unknown Customer'}</CardTitle>
+                          <p className="text-xs text-muted-foreground">{c?.customer_code || '—'}</p>
+                        </div>
+                      </div>
+                      {getStatusBadge(enrollment.status)}
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Phone className="w-4 h-4" />
+                      <span>{c?.phone || '—'}</span>
+                    </div>
+
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <p className="text-xs text-muted-foreground mb-1">Plan</p>
+                      <p className="font-medium">
+                        {planName} {karat ? `• ${karat}` : ''}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Monthly</p>
+                        <p className="text-lg font-bold">₹{monthly.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Tenure</p>
+                        <p className="text-lg font-bold">{tenure || '—'} mo</p>
+                      </div>
+                    </div>
+
+                    <div className="text-sm text-muted-foreground">
+                      Billing Day: <span className="font-medium">{enrollment.billing_day_of_month}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </DialogTrigger>
+
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  {/* IMPORTANT: use the enrollment in scope (not selectedEnrollment) to avoid cross-dialog bugs */}
+                  <DialogTitle className="flex items-center gap-2">
+                    <span>{enrollment.customers?.full_name || 'Customer'}</span>
+                    {getStatusBadge(enrollment.status)}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Customer Code: {enrollment.customers?.customer_code || '—'} | Phone:{' '}
+                    {enrollment.customers?.phone || '—'}
+                  </DialogDescription>
+                </DialogHeader>
+
+                {(() => {
+                  const totals = computeTotals(transactions);
+                  const monthlyAmt = getMonthlyAmount(enrollment);
+                  const tenureMo = getTenure(enrollment);
+
+                  const primaryCount = transactions.filter((t) => t.txn_type === 'PRIMARY_INSTALLMENT').length;
+                  const progressPct = tenureMo > 0 ? Math.min(100, (primaryCount / tenureMo) * 100) : 0;
+
+                  return (
+                    <div className="space-y-6 py-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <Card>
+                          <CardContent className="pt-6">
+                            <p className="text-sm text-muted-foreground">Total Gold</p>
+                            <p className="text-2xl font-bold gold-text">{totals.totalGrams.toFixed(4)}g</p>
+                          </CardContent>
+                        </Card>
+                        <Card>
+                          <CardContent className="pt-6">
+                            <p className="text-sm text-muted-foreground">Total Paid</p>
+                            <p className="text-2xl font-bold">₹{Math.floor(totals.totalPaid).toLocaleString()}</p>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      <Card className="glass-card">
+                        <CardContent className="pt-6 space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Progress</span>
+                            <span className="font-medium">
+                              {primaryCount}/{tenureMo || '—'} installments
+                            </span>
+                          </div>
+                          <div className="w-full bg-muted rounded-full h-2">
+                            <div
+                              className="gold-gradient h-2 rounded-full transition-all"
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Monthly: ₹{monthlyAmt.toLocaleString()} • Billing Day: {enrollment.billing_day_of_month}
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold">Payment History</h3>
+                          <Button size="sm" className="gold-gradient text-white">
+                            Record Payment
+                          </Button>
+                        </div>
+
+                        <div className="space-y-3">
+                          {transactions.map((txn, idx) => (
+                            <div key={txn.id} className="flex items-center gap-4 p-4 rounded-lg glass-card">
+                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                                <span className="text-sm font-bold text-primary">#{transactions.length - idx}</span>
+                              </div>
+
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-medium">₹{safeNumber(txn.amount_paid).toLocaleString()}</p>
+                                  <span className="text-xs text-muted-foreground">•</span>
+                                  <p className="text-sm text-muted-foreground">
+                                    @ ₹{safeNumber(txn.rate_per_gram_snapshot).toLocaleString()}/g
+                                  </p>
+                                  <Badge variant="outline" className="text-xs">
+                                    {txn.txn_type}
+                                  </Badge>
+                                  {txn.billing_month && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      {new Date(txn.billing_month).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                                    </Badge>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                                  <Calendar className="w-3 h-3" />
+                                  <span>{new Date(pickTxnTime(txn)).toLocaleDateString('en-IN')}</span>
+                                  {txn.receipt_number && (
+                                    <>
+                                      <span className="text-xs text-muted-foreground">•</span>
+                                      <span className="font-mono">{txn.receipt_number}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="text-right">
+                                <p className="font-bold gold-text">
+                                  {safeNumber(txn.grams_allocated_snapshot).toFixed(4)}g
+                                </p>
+                                <p className="text-xs text-muted-foreground">{txn.mode}</p>
+                              </div>
+                            </div>
+                          ))}
+
+                          {transactions.length === 0 && (
+                            <p className="text-center text-muted-foreground py-8">No transactions yet</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </DialogContent>
+            </Dialog>
+          );
+        })}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="premium-card border-green-200">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-muted-foreground">Today's Collections</p>
-              <TrendingUp className="w-5 h-5 text-green-600" />
-            </div>
-            <p className="text-2xl font-bold">₹{stats.today_collections.toLocaleString()}</p>
-            <p className="text-sm text-muted-foreground mt-1">{stats.today_grams.toFixed(3)}g accumulated</p>
-          </CardContent>
-        </Card>
-
-        <Card className="premium-card border-blue-200">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-muted-foreground">Active Schemes</p>
-              <Users className="w-5 h-5 text-blue-600" />
-            </div>
-            <p className="text-2xl font-bold">{stats.active_schemes}</p>
-            <p className="text-sm text-muted-foreground mt-1">{stats.total_customers} customers</p>
-          </CardContent>
-        </Card>
-
-        <Link href="/dashboard/due" className="block">
-          <Card className={`premium-card ${stats.due_today > 0 ? 'border-orange-200' : 'border-gray-200'}`}>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-muted-foreground">Due Today</p>
-                <AlertCircle className={`w-5 h-5 ${stats.due_today > 0 ? 'text-orange-600' : 'text-gray-400'}`} />
-              </div>
-              <p className="text-2xl font-bold">{stats.due_today}</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {stats.due_today > 0 ? 'Requires attention' : 'All up to date'}
-              </p>
-            </CardContent>
-          </Card>
-        </Link>
-
-        <Link href="/dashboard/enroll">
-          <Card className="premium-card border-gold-200 bg-gradient-to-br from-gold-50 to-white dark:from-gold-900/10 dark:to-background">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-muted-foreground">Quick Action</p>
-                <Plus className="w-5 h-5 text-gold-600" />
-              </div>
-              <p className="text-lg font-bold">New Enrollment</p>
-              <p className="text-sm text-muted-foreground mt-1">Start new scheme</p>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
-
-      <Card className="jewel-card">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-bold">Recent Activity</h3>
-              <p className="text-sm text-muted-foreground">Latest transactions</p>
-            </div>
-            <Link href="/dashboard/transactions">
-              <Button variant="ghost" size="sm">
-                View all
-                <ArrowUpRight className="w-4 h-4 ml-2" />
-              </Button>
-            </Link>
+      {filtered.length === 0 && (
+        <Card className="p-12">
+          <div className="text-center text-muted-foreground">
+            <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p className="text-lg">No enrollments found</p>
+            <p className="text-sm mt-2">Start by enrolling your first customer</p>
           </div>
-
-          <div className="space-y-3">
-            {recentActivity.map((activity) => (
-              <div
-                key={activity.id}
-                className="flex items-center justify-between p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-full bg-gold-100 dark:bg-gold-900/30 flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-gold-600" />
-                  </div>
-                  <div>
-                    <p className="font-medium">{activity.customer_name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {new Date(activity.created_at).toLocaleString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold">₹{activity.amount.toLocaleString()}</p>
-                  <p className="text-sm text-gold-600 font-medium">{activity.grams_allocated.toFixed(3)}g</p>
-                </div>
-              </div>
-            ))}
-
-            {recentActivity.length === 0 && (
-              <div className="text-center py-12 text-muted-foreground">
-                <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No transactions today</p>
-                <p className="text-sm">Start recording payments to see activity</p>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }

@@ -18,9 +18,8 @@ type GoldRate = {
   rate_per_gram: number;
   valid_from: string;
   notes: string | null;
-  user_profiles: {
-    full_name: string;
-  } | null;
+  created_by: string | null;
+  created_by_name?: string | null; // hydrated client-side (optional)
 };
 
 export default function GoldEnginePage() {
@@ -34,28 +33,58 @@ export default function GoldEnginePage() {
   });
 
   useEffect(() => {
-    loadGoldRates();
-  }, [profile]);
+    void loadGoldRates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.retailer_id]);
 
   async function loadGoldRates() {
     if (!profile?.retailer_id) return;
 
+    setLoading(true);
     try {
-      const { data } = await supabase
+      // FK reality you shared:
+      // gold_rates.created_by -> auth.users(id)
+      // No guaranteed FK to user_profiles, so do NOT do relational select here.
+      const { data: ratesData, error: ratesErr } = await supabase
         .from('gold_rates')
-        .select(`
-          *,
-          user_profiles (
-            full_name
-          )
-        `)
+        .select('id, karat, rate_per_gram, valid_from, notes, created_by')
         .eq('retailer_id', profile.retailer_id)
         .order('valid_from', { ascending: false })
         .limit(20);
 
-      setRates(data || []);
+      if (ratesErr) throw ratesErr;
+
+      const baseRates = (ratesData || []) as GoldRate[];
+
+      // Optional: hydrate "Updated by" name from user_profiles if it exists
+      // (Assumes user_profiles.id matches auth.users.id; if not, we safely fall back)
+      const creatorIds = Array.from(
+        new Set(baseRates.map(r => r.created_by).filter(Boolean) as string[])
+      );
+
+      let nameById = new Map<string, string>();
+      if (creatorIds.length > 0) {
+        const { data: profilesData, error: profilesErr } = await supabase
+          .from('user_profiles')
+          .select('id, full_name')
+          .in('id', creatorIds);
+
+        if (!profilesErr && profilesData) {
+          for (const p of profilesData as any[]) {
+            if (p?.id && p?.full_name) nameById.set(p.id, p.full_name);
+          }
+        }
+      }
+
+      const hydrated = baseRates.map((r) => ({
+        ...r,
+        created_by_name: r.created_by ? (nameById.get(r.created_by) ?? null) : null,
+      }));
+
+      setRates(hydrated);
     } catch (error) {
       console.error('Error loading gold rates:', error);
+      setRates([]);
     } finally {
       setLoading(false);
     }
@@ -64,21 +93,26 @@ export default function GoldEnginePage() {
   async function updateGoldRate() {
     if (!profile?.retailer_id || !newRate.rate_per_gram) return;
 
+    const rateValue = parseFloat(newRate.rate_per_gram);
+    if (!Number.isFinite(rateValue) || rateValue <= 0) return;
+
     try {
+      // IMPORTANT FIX:
+      // Your schema shows FK on gold_rates.created_by (NOT updated_by).
       const { error } = await supabase
         .from('gold_rates')
         .insert({
           retailer_id: profile.retailer_id,
           karat: newRate.karat,
-          rate_per_gram: parseFloat(newRate.rate_per_gram),
+          rate_per_gram: rateValue,
           notes: newRate.notes || null,
-          updated_by: profile.id,
+          created_by: profile.id,
         });
 
       if (error) throw error;
 
       setNewRate({ karat: '22K', rate_per_gram: '', notes: '' });
-      loadGoldRates();
+      await loadGoldRates();
     } catch (error) {
       console.error('Error updating gold rate:', error);
     }
@@ -105,6 +139,7 @@ export default function GoldEnginePage() {
           <h1 className="text-3xl font-bold tracking-tight">Gold Engine</h1>
           <p className="text-muted-foreground">Trust through transparency and precision</p>
         </div>
+
         <Dialog>
           <DialogTrigger asChild>
             <Button className="gold-gradient text-white hover:opacity-90">
@@ -119,10 +154,14 @@ export default function GoldEnginePage() {
                 Set a new gold rate. This rate will be locked for all future transactions.
               </DialogDescription>
             </DialogHeader>
+
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Karat</Label>
-                <Select value={newRate.karat} onValueChange={(value) => setNewRate({ ...newRate, karat: value })}>
+                <Select
+                  value={newRate.karat}
+                  onValueChange={(value) => setNewRate({ ...newRate, karat: value })}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -133,6 +172,7 @@ export default function GoldEnginePage() {
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
                 <Label>Rate per Gram (₹)</Label>
                 <Input
@@ -142,6 +182,7 @@ export default function GoldEnginePage() {
                   onChange={(e) => setNewRate({ ...newRate, rate_per_gram: e.target.value })}
                 />
               </div>
+
               <div className="space-y-2">
                 <Label>Notes (Optional)</Label>
                 <Input
@@ -150,6 +191,7 @@ export default function GoldEnginePage() {
                   onChange={(e) => setNewRate({ ...newRate, notes: e.target.value })}
                 />
               </div>
+
               <Button className="w-full gold-gradient text-white" onClick={updateGoldRate}>
                 Update Rate
               </Button>
@@ -228,7 +270,9 @@ export default function GoldEnginePage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  {rates[0] ? new Date(rates[0].valid_from).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                  {rates[0]
+                    ? new Date(rates[0].valid_from).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                    : '--:--'}
                 </p>
                 <p className="text-sm text-muted-foreground">Last Updated</p>
               </div>
@@ -271,15 +315,20 @@ export default function GoldEnginePage() {
                     <h3 className="text-xl font-bold gold-text">₹{rate.rate_per_gram.toLocaleString()}</h3>
                     {idx === 0 && <Badge className="status-active">Current</Badge>}
                   </div>
+
                   <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       <span>{new Date(rate.valid_from).toLocaleString('en-IN')}</span>
                     </div>
-                    {rate.user_profiles && (
-                      <span>Updated by {rate.user_profiles.full_name}</span>
-                    )}
+
+                    {rate.created_by_name ? (
+                      <span>Updated by {rate.created_by_name}</span>
+                    ) : rate.created_by ? (
+                      <span>Updated by {rate.created_by.slice(0, 8)}</span>
+                    ) : null}
                   </div>
+
                   {rate.notes && (
                     <p className="text-sm text-muted-foreground mt-1">{rate.notes}</p>
                   )}

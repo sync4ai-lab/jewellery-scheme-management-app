@@ -13,18 +13,26 @@ import Link from 'next/link';
 
 type Transaction = {
   id: string;
-  amount: number;
-  rate_per_gram: number;
-  grams_allocated: number;
+  amount_paid: number | null;
+  rate_per_gram_snapshot: number | null;
+  grams_allocated_snapshot: number | null;
+
   paid_at: string | null;
-  transaction_date: string | null;
-  payment_method: string | null;
   receipt_number: string | null;
-  transaction_type?: string | null;
+  payment_ref: string | null;
+
   txn_type: string | null;
   billing_month: string | null;
   source: string | null;
+  notes: string | null;
 };
+
+type Plan = {
+  id: string;
+  plan_name: string;
+  tenure_months: number;
+  monthly_amount: number;
+} | null;
 
 type Enrollment = {
   id: string;
@@ -33,12 +41,7 @@ type Enrollment = {
   total_paid: number | null;
   total_grams_allocated: number | null;
   created_at?: string | null;
-  plans: {
-    id: string;
-    name: string;
-    duration_months: number;
-    installment_amount: number;
-  } | null;
+  plans: Plan;
 };
 
 type BillingMonth = {
@@ -50,7 +53,7 @@ type BillingMonth = {
 };
 
 export default function PassbookPage({ params }: { params: { schemeId: string } }) {
-  // NOTE: params.schemeId is actually enrollmentId now
+  // NOTE: route param is named schemeId, but it represents enrollment_id.
   const enrollmentId = params.schemeId;
 
   const { customer } = useCustomerAuth();
@@ -93,14 +96,43 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
       const [enrollmentResult, transactionsResult, billingMonthResult] = await Promise.all([
         supabase
           .from('enrollments')
-          .select('id, status, commitment_amount, total_paid, total_grams_allocated, created_at, plans(id, name, duration_months, installment_amount)')
+          .select(
+            `
+            id,
+            status,
+            commitment_amount,
+            total_paid,
+            total_grams_allocated,
+            created_at,
+            plans (
+              id,
+              plan_name,
+              tenure_months,
+              monthly_amount
+            )
+          `
+          )
           .eq('id', enrollmentId)
           .eq('customer_id', customer.id)
           .maybeSingle(),
 
         supabase
           .from('transactions')
-          .select('*')
+          .select(
+            `
+            id,
+            amount_paid,
+            rate_per_gram_snapshot,
+            grams_allocated_snapshot,
+            paid_at,
+            receipt_number,
+            payment_ref,
+            txn_type,
+            billing_month,
+            source,
+            notes
+          `
+          )
           .eq('enrollment_id', enrollmentId)
           .eq('customer_id', customer.id)
           .order('paid_at', { ascending: false }),
@@ -129,7 +161,7 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
         }
 
         setCurrentBillingMonth({
-          ...billingMonthResult.data,
+          ...(billingMonthResult.data as any),
           days_overdue: daysOverdue,
         } as BillingMonth);
       }
@@ -140,7 +172,8 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
 
         const monthsSet = new Set<string>();
         txns.forEach((txn) => {
-          const d = new Date(txn.paid_at || txn.transaction_date || new Date().toISOString());
+          const dateStr = txn.paid_at || new Date().toISOString();
+          const d = new Date(dateStr);
           const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
           monthsSet.add(monthKey);
         });
@@ -160,7 +193,8 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
     }
 
     const filtered = transactions.filter((txn) => {
-      const d = new Date(txn.paid_at || txn.transaction_date || new Date().toISOString());
+      const dateStr = txn.paid_at || new Date().toISOString();
+      const d = new Date(dateStr);
       const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       return monthKey === selectedMonth;
     });
@@ -170,7 +204,7 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
 
   function getMonthDisplay(monthKey: string) {
     const [year, month] = monthKey.split('-');
-    const d = new Date(parseInt(year), parseInt(month) - 1);
+    const d = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
     return d.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
   }
 
@@ -200,11 +234,11 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
     );
   }
 
-  const planName = enrollment.plans?.name || 'Gold Plan';
+  const planName = enrollment.plans?.plan_name || 'Gold Plan';
   const monthlyAmount =
     (typeof enrollment.commitment_amount === 'number' && enrollment.commitment_amount > 0
       ? enrollment.commitment_amount
-      : enrollment.plans?.installment_amount) || 0;
+      : enrollment.plans?.monthly_amount) || 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-gold-50/10 to-background">
@@ -268,7 +302,11 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
                       <span className="text-muted-foreground">Due Date:</span>
                       <span className="font-medium">
                         {currentBillingMonth.due_date
-                          ? new Date(currentBillingMonth.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+                          ? new Date(currentBillingMonth.due_date).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric',
+                            })
                           : '—'}
                       </span>
                     </div>
@@ -330,71 +368,80 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
 
           <CardContent>
             <div className="space-y-3">
-              {filteredTransactions.map((txn) => (
-                <div key={txn.id} className="p-4 rounded-lg glass-card border border-border hover:shadow-md transition-all">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {txn.txn_type === 'PRIMARY_INSTALLMENT' && (
-                          <Badge className="bg-primary text-primary-foreground text-xs">Monthly Installment</Badge>
-                        )}
-                        {txn.txn_type === 'TOP_UP' && (
-                          <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 text-xs">Top-Up</Badge>
-                        )}
-                        {!txn.txn_type && (
-                          <Badge variant="outline" className="text-xs">
-                            {txn.transaction_type || 'Payment'}
-                          </Badge>
-                        )}
-                        {txn.source === 'CUSTOMER_ONLINE' && (
-                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-xs">Online</Badge>
-                        )}
+              {filteredTransactions.map((txn) => {
+                const txnDate = new Date(txn.paid_at || new Date().toISOString());
+                return (
+                  <div key={txn.id} className="p-4 rounded-lg glass-card border border-border hover:shadow-md transition-all">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {txn.txn_type === 'PRIMARY_INSTALLMENT' && (
+                            <Badge className="bg-primary text-primary-foreground text-xs">Monthly Installment</Badge>
+                          )}
+                          {txn.txn_type === 'TOP_UP' && (
+                            <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 text-xs">Top-Up</Badge>
+                          )}
+                          {!txn.txn_type && (
+                            <Badge variant="outline" className="text-xs">
+                              Payment
+                            </Badge>
+                          )}
+                          {txn.source === 'CUSTOMER_ONLINE' && (
+                            <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-xs">Online</Badge>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                          <Calendar className="w-3 h-3" />
+                          <span>
+                            {txnDate.toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                        <Calendar className="w-3 h-3" />
-                        <span>
-                          {new Date(txn.paid_at || txn.transaction_date || new Date().toISOString()).toLocaleDateString('en-IN', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
+                      <div className="text-right">
+                        <p className="text-sm text-muted-foreground">Receipt</p>
+                        <p className="font-mono text-xs">{txn.receipt_number || `#${txn.id.slice(0, 8)}`}</p>
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Receipt</p>
-                      <p className="font-mono text-xs">{txn.receipt_number || `#${txn.id.slice(0, 8)}`}</p>
+                    <div className="grid grid-cols-3 gap-4 p-3 rounded bg-muted/50">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Amount Paid</p>
+                        <p className="font-bold">₹{Number(txn.amount_paid || 0).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Rate Locked</p>
+                        <p className="font-bold text-sm">₹{Number(txn.rate_per_gram_snapshot || 0)}/g</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Gold Added</p>
+                        <p className="font-bold gold-text">{Number(txn.grams_allocated_snapshot || 0).toFixed(4)}g</p>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-3 gap-4 p-3 rounded bg-muted/50">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Amount Paid</p>
-                      <p className="font-bold">₹{Number(txn.amount || 0).toLocaleString()}</p>
+                    <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
+                      <span>{txn.payment_ref || '—'}</span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-green-500" />
+                        Locked Forever
+                      </span>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Rate Locked</p>
-                      <p className="font-bold text-sm">₹{Number(txn.rate_per_gram || 0)}/g</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Gold Added</p>
-                      <p className="font-bold gold-text">{Number(txn.grams_allocated || 0).toFixed(4)}g</p>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
-                    <span>{txn.payment_method || '—'}</span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                      Locked Forever
-                    </span>
+                    {txn.notes && (
+                      <div className="mt-3 text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">Notes:</span> {txn.notes}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {filteredTransactions.length === 0 && (
                 <div className="text-center text-muted-foreground py-12">
@@ -410,7 +457,7 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
             <div className="space-y-2">
               <h3 className="font-semibold flex items-center gap-2">🔒 Rate Locking Guarantee</h3>
               <p className="text-sm text-muted-foreground">
-                Every payment you make is permanently locked at that day's gold rate. Even if rates change later, your locked rates never change. This ensures complete transparency and protects your investment.
+                Every payment you make is permanently locked at that day&apos;s gold rate. Even if rates change later, your locked rates never change. This ensures complete transparency and protects your investment.
               </p>
             </div>
           </CardContent>

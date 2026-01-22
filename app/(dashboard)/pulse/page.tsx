@@ -6,11 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   TrendingUp,
-  TrendingDown,
   Users,
   Coins,
   AlertCircle,
-  CheckCircle,
   Clock,
   Edit,
   Trophy,
@@ -22,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/contexts/auth-context';
 
 type DashboardMetrics = {
   todayCollections: number;
@@ -38,13 +37,21 @@ type DashboardMetrics = {
 };
 
 type StaffMember = {
-  id: string;
+  staff_id: string;
+  retailer_id: string;
   full_name: string;
   enrollments_count: number;
-  collections_amount: number;
+  transactions_count: number;
+  total_collected: number;
 };
 
+function safeNumber(v: any): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default function PulseDashboard() {
+  const { profile } = useAuth();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [staffLeaderboard, setStaffLeaderboard] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,25 +60,50 @@ export default function PulseDashboard() {
   const router = useRouter();
 
   useEffect(() => {
-    loadDashboard();
-  }, []);
+    if (!profile?.retailer_id) return;
+    void loadDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.retailer_id]);
+
+  async function safeCountCustomers(retailerId: string): Promise<number> {
+    // Some DBs have customers.status, some don’t. Try with status, fallback without.
+    const withStatus = await supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('retailer_id', retailerId)
+      .eq('status', 'active');
+
+    if (!withStatus.error) return withStatus.count || 0;
+
+    const withoutStatus = await supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('retailer_id', retailerId);
+
+    if (withoutStatus.error) throw withoutStatus.error;
+    return withoutStatus.count || 0;
+  }
 
   async function loadDashboard() {
+    if (!profile?.retailer_id) return;
+
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Date();
+      const todayISO = today.toISOString().split('T')[0];
 
       const [
         rateResult,
-        transactionsResult,
+        txnsResult,
         duesResult,
         overdueResult,
         enrollmentsResult,
-        customersResult,
+        customersCount,
         staffResult,
       ] = await Promise.all([
         supabase
           .from('gold_rates')
           .select('rate_per_gram, karat, valid_from')
+          .eq('retailer_id', profile.retailer_id)
           .eq('karat', '22K')
           .order('valid_from', { ascending: false })
           .limit(1)
@@ -79,48 +111,48 @@ export default function PulseDashboard() {
 
         supabase
           .from('transactions')
-          .select('amount, grams_allocated')
-          .gte('paid_at', today)
-          .eq('payment_status', 'SUCCESS'),
+          .select('amount_paid, grams_allocated_snapshot, paid_at')
+          .eq('retailer_id', profile.retailer_id)
+          .gte('paid_at', todayISO),
 
         supabase
           .from('enrollment_billing_months')
-          .select('id', { count: 'exact', head: true })
-          .eq('due_date', today)
-          .eq('status', 'DUE'),
-
-        supabase
-          .from('enrollment_billing_months')
-          .select('id', { count: 'exact', head: true })
+          .select('enrollment_id', { count: 'exact', head: true })
           .eq('status', 'DUE')
-          .lt('due_date', today),
+          .eq('due_date', todayISO),
 
         supabase
-          .from('schemes')
+          .from('enrollment_billing_months')
+          .select('enrollment_id', { count: 'exact', head: true })
+          .eq('status', 'DUE')
+          .lt('due_date', todayISO),
+
+        supabase
+          .from('enrollments')
           .select('id', { count: 'exact', head: true })
-          .gte('created_at', today)
+          .eq('retailer_id', profile.retailer_id)
+          .gte('created_at', todayISO)
           .eq('status', 'ACTIVE'),
 
-        supabase
-          .from('customers')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'active'),
+        safeCountCustomers(profile.retailer_id),
 
+        // keep your RPC call; adjust field mapping to your output
         supabase.rpc('get_staff_leaderboard', { period_days: 30 }),
       ]);
 
       const currentRate = rateResult.data
         ? {
-            rate: rateResult.data.rate_per_gram,
+            rate: safeNumber(rateResult.data.rate_per_gram),
             karat: rateResult.data.karat,
             validFrom: rateResult.data.valid_from,
           }
         : null;
 
       const todayCollections =
-        transactionsResult.data?.reduce((sum, t) => sum + parseFloat(t.amount.toString()), 0) || 0;
+        txnsResult.data?.reduce((sum, t: any) => sum + safeNumber(t.amount_paid), 0) || 0;
+
       const goldAllocatedToday =
-        transactionsResult.data?.reduce((sum, t) => sum + parseFloat(t.grams_allocated.toString()), 0) || 0;
+        txnsResult.data?.reduce((sum, t: any) => sum + safeNumber(t.grams_allocated_snapshot), 0) || 0;
 
       setMetrics({
         todayCollections,
@@ -128,12 +160,15 @@ export default function PulseDashboard() {
         dueToday: duesResult.count || 0,
         overdueCount: overdueResult.count || 0,
         newEnrollmentsToday: enrollmentsResult.count || 0,
-        activeCustomers: customersResult.count || 0,
+        activeCustomers: customersCount || 0,
         currentRate,
       });
 
-      if (staffResult.data) {
-        setStaffLeaderboard(staffResult.data.slice(0, 5));
+      if (staffResult.error) {
+        console.error('Staff leaderboard RPC error:', staffResult.error);
+        setStaffLeaderboard([]);
+      } else if (staffResult.data) {
+        setStaffLeaderboard((staffResult.data as StaffMember[]).slice(0, 5));
       }
     } catch (error) {
       console.error('Error loading dashboard:', error);
@@ -144,17 +179,25 @@ export default function PulseDashboard() {
   }
 
   async function handleUpdateRate() {
+    if (!profile?.retailer_id) {
+      toast.error('Retailer profile not loaded. Please re-login.');
+      return;
+    }
+
     const rate = parseFloat(newRate);
-    if (isNaN(rate) || rate <= 0) {
+    if (Number.isNaN(rate) || rate <= 0) {
       toast.error('Please enter a valid rate');
       return;
     }
 
     try {
       const { error } = await supabase.from('gold_rates').insert({
+        retailer_id: profile.retailer_id,
         karat: '22K',
         rate_per_gram: rate,
         valid_from: new Date().toISOString(),
+        created_by: profile.id, // required per your FK list
+        notes: null,
       });
 
       if (error) throw error;
@@ -162,7 +205,7 @@ export default function PulseDashboard() {
       toast.success('Gold rate updated successfully');
       setUpdateRateDialog(false);
       setNewRate('');
-      loadDashboard();
+      await loadDashboard();
     } catch (error: any) {
       console.error('Error updating rate:', error);
       toast.error(error.message || 'Failed to update rate');
@@ -190,7 +233,12 @@ export default function PulseDashboard() {
           <p className="text-muted-foreground">Today's business snapshot</p>
         </div>
         <Badge className="text-sm px-4 py-2">
-          {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          {new Date().toLocaleDateString('en-IN', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+          })}
         </Badge>
       </div>
 
@@ -206,7 +254,8 @@ export default function PulseDashboard() {
                 <span className="text-xl text-muted-foreground">/gram</span>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Last updated: {metrics?.currentRate ? new Date(metrics.currentRate.validFrom).toLocaleTimeString() : 'Never'}
+                Last updated:{' '}
+                {metrics?.currentRate ? new Date(metrics.currentRate.validFrom).toLocaleTimeString('en-IN') : 'Never'}
               </p>
             </div>
             <Button
@@ -233,7 +282,7 @@ export default function PulseDashboard() {
             <p className="text-xs text-muted-foreground mt-1">Today</p>
             <div className="flex items-center gap-1 mt-2">
               <TrendingUp className="w-3 h-3 text-green-600" />
-              <span className="text-xs text-green-600">+12.5% vs yesterday</span>
+              <span className="text-xs text-green-600">Live</span>
             </div>
           </CardContent>
         </Card>
@@ -246,9 +295,7 @@ export default function PulseDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold gold-text">
-              {metrics?.goldAllocatedToday.toFixed(2) || '0'} g
-            </div>
+            <div className="text-3xl font-bold gold-text">{metrics?.goldAllocatedToday.toFixed(4) || '0'} g</div>
             <p className="text-xs text-muted-foreground mt-1">Today</p>
           </CardContent>
         </Card>
@@ -275,7 +322,7 @@ export default function PulseDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-red-600">{metrics?.overdueCount || 0}</div>
-            <p className="text-xs text-muted-foreground mt-1">Customers</p>
+            <p className="text-xs text-muted-foreground mt-1">Billing months</p>
           </CardContent>
         </Card>
       </div>
@@ -293,13 +340,12 @@ export default function PulseDashboard() {
               </div>
               <div>
                 <div className="text-4xl font-bold">{metrics?.newEnrollmentsToday || 0}</div>
-                <p className="text-sm text-muted-foreground">New schemes started</p>
+                <p className="text-sm text-muted-foreground">
+                  New enrollments • Active customers: {metrics?.activeCustomers || 0}
+                </p>
               </div>
             </div>
-            <Button
-              onClick={() => router.push('/enroll')}
-              className="w-full mt-4 jewel-gradient text-white hover:opacity-90"
-            >
+            <Button onClick={() => router.push('/enroll')} className="w-full mt-4 jewel-gradient text-white hover:opacity-90">
               Enroll New Customer
               <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
@@ -311,7 +357,7 @@ export default function PulseDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Staff Leaderboard</CardTitle>
-                <CardDescription>Top performers this month</CardDescription>
+                <CardDescription>Top performers (last 30 days)</CardDescription>
               </div>
               <Trophy className="w-6 h-6 text-gold-600" />
             </div>
@@ -320,19 +366,28 @@ export default function PulseDashboard() {
             <div className="space-y-3">
               {staffLeaderboard.length > 0 ? (
                 staffLeaderboard.map((staff, index) => (
-                  <div key={staff.id} className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
-                      index === 0 ? 'bg-gold-400 text-white' :
-                      index === 1 ? 'bg-gray-300 text-gray-700' :
-                      index === 2 ? 'bg-amber-600 text-white' :
-                      'bg-muted text-muted-foreground'
-                    }`}>
+                  <div
+                    key={staff.staff_id}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                        index === 0
+                          ? 'bg-gold-400 text-white'
+                          : index === 1
+                          ? 'bg-gray-300 text-gray-700'
+                          : index === 2
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
                       {index + 1}
                     </div>
                     <div className="flex-1">
                       <p className="font-medium">{staff.full_name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {staff.enrollments_count} enrollments • ₹{staff.collections_amount.toLocaleString()}
+                        {safeNumber(staff.enrollments_count)} enrollments • {safeNumber(staff.transactions_count)} txns • ₹
+                        {safeNumber(staff.total_collected).toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -341,11 +396,7 @@ export default function PulseDashboard() {
                 <p className="text-sm text-muted-foreground text-center py-4">No data available</p>
               )}
             </div>
-            <Button
-              variant="outline"
-              className="w-full mt-4"
-              onClick={() => router.push('/incentives')}
-            >
+            <Button variant="outline" className="w-full mt-4" onClick={() => router.push('/incentives')}>
               View Full Leaderboard
             </Button>
           </CardContent>
@@ -356,9 +407,7 @@ export default function PulseDashboard() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Update Gold Rate</DialogTitle>
-            <DialogDescription>
-              Set the current gold rate (22K per gram)
-            </DialogDescription>
+            <DialogDescription>Set the current gold rate (22K per gram)</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -373,23 +422,14 @@ export default function PulseDashboard() {
                 step="0.01"
               />
               {metrics?.currentRate && (
-                <p className="text-xs text-muted-foreground">
-                  Current rate: ₹{metrics.currentRate.rate.toLocaleString()}
-                </p>
+                <p className="text-xs text-muted-foreground">Current rate: ₹{metrics.currentRate.rate.toLocaleString()}</p>
               )}
             </div>
             <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setUpdateRateDialog(false)}
-              >
+              <Button variant="outline" className="flex-1" onClick={() => setUpdateRateDialog(false)}>
                 Cancel
               </Button>
-              <Button
-                className="flex-1 jewel-gradient text-white"
-                onClick={handleUpdateRate}
-              >
+              <Button className="flex-1 jewel-gradient text-white" onClick={handleUpdateRate}>
                 Update Rate
               </Button>
             </div>

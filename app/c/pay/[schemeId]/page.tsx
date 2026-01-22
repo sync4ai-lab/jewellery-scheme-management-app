@@ -14,18 +14,22 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
+type Plan = {
+  id: string;
+  plan_name: string;
+  monthly_amount: number;
+  tenure_months: number;
+  karat: string | null;
+} | null;
+
 type Enrollment = {
   id: string;
   retailer_id: string;
+  store_id: string | null;
   customer_id: string;
   status: string | null;
   commitment_amount: number | null;
-  plans: {
-    id: string;
-    name: string;
-    installment_amount: number;
-    duration_months: number;
-  } | null;
+  plans: Plan;
 };
 
 type GoldRate = {
@@ -37,6 +41,7 @@ type GoldRate = {
 type PaymentType = 'PRIMARY_INSTALLMENT' | 'TOP_UP';
 
 export default function PaymentPage({ params }: { params: { schemeId: string } }) {
+  // NOTE: route param is named schemeId, but it represents enrollment_id.
   const enrollmentId = params.schemeId;
 
   const { customer } = useCustomerAuth();
@@ -78,7 +83,23 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
     try {
       const enrollmentResult = await supabase
         .from('enrollments')
-        .select('id, retailer_id, customer_id, status, commitment_amount, plans(id, name, installment_amount, duration_months)')
+        .select(
+          `
+          id,
+          retailer_id,
+          store_id,
+          customer_id,
+          status,
+          commitment_amount,
+          plans (
+            id,
+            plan_name,
+            monthly_amount,
+            tenure_months,
+            karat
+          )
+        `
+        )
         .eq('id', enrollmentId)
         .eq('customer_id', customer.id)
         .maybeSingle();
@@ -128,14 +149,13 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
 
       setGoldRate(rate);
 
-      // monthly installment already paid?
+      // monthly installment already paid? (DB schema does NOT confirm payment_status column, so do not filter by it.)
       const { data: existingInstallment } = await supabase
         .from('transactions')
         .select('id')
         .eq('enrollment_id', enrollmentId)
         .eq('billing_month', currentMonthStr)
         .eq('txn_type', 'PRIMARY_INSTALLMENT')
-        .eq('payment_status', 'SUCCESS')
         .maybeSingle();
 
       setMonthlyInstallmentPaid(!!existingInstallment);
@@ -149,7 +169,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
   const monthlyMinimum =
     (typeof enrollment?.commitment_amount === 'number' && enrollment.commitment_amount > 0
       ? enrollment.commitment_amount
-      : enrollment?.plans?.installment_amount) || 0;
+      : enrollment?.plans?.monthly_amount) || 0;
 
   function selectPaymentType(type: PaymentType) {
     setPaymentType(type);
@@ -190,28 +210,27 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
       const gramsAllocated = paymentAmount / goldRate.rate_per_gram;
       const currentTimestamp = new Date().toISOString();
 
-      // IMPORTANT: transactions has enrollment_id (not scheme_id).
-      // Keep payload fields you already use; your triggers/functions rely on them.
+      // IMPORTANT: Insert only columns confirmed in your DB schema dump.
       const { error: insertError } = await supabase.from('transactions').insert({
         retailer_id: enrollment.retailer_id,
+        store_id: enrollment.store_id,
         enrollment_id: enrollment.id,
         customer_id: customer.id,
 
         txn_type: paymentType,
-        amount: paymentAmount,
-        payment_method: paymentMethod,
+        amount_paid: paymentAmount,
         gold_rate_id: goldRate.id,
-        rate_per_gram: goldRate.rate_per_gram,
-        grams_allocated: gramsAllocated,
+        rate_per_gram_snapshot: goldRate.rate_per_gram,
+        grams_allocated_snapshot: gramsAllocated,
 
         paid_at: currentTimestamp,
-        recorded_at: currentTimestamp,
-        transaction_date: currentTimestamp.split('T')[0],
         billing_month: currentMonthStr,
-
-        payment_status: 'SUCCESS',
         source: 'CUSTOMER_ONLINE',
-        // receipt_number should be generated server-side ideally (you have next_receipt trigger/rpc); keep fallback:
+
+        // Text field exists per schema: use it to store the method/ref selected by customer
+        payment_ref: paymentMethod,
+
+        // Text field exists per schema
         receipt_number: `RCP${Date.now()}${Math.floor(Math.random() * 1000)}`,
       });
 
@@ -254,7 +273,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
     );
   }
 
-  const planName = enrollment.plans?.name || 'Gold Plan';
+  const planName = enrollment.plans?.plan_name || 'Gold Plan';
   const currentMonthName = new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 
   if (success) {
@@ -362,7 +381,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
                     <h3 className="font-bold">Monthly Installment Paid</h3>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    You've already paid your monthly commitment for {currentMonthName}. Great job!
+                    You&apos;ve already paid your monthly commitment for {currentMonthName}. Great job!
                   </p>
                 </div>
               )}
@@ -373,144 +392,4 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
               >
                 <div className="flex items-start gap-3 mb-3">
                   <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                    <TrendingUp className="w-6 h-6 text-muted-foreground group-hover:text-primary transition-colors" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-lg">Add Top-Up</h3>
-                    <p className="text-sm text-muted-foreground">Boost your gold savings</p>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">Pay any amount beyond your commitment. Unlimited top-ups anytime.</p>
-              </button>
-            </CardContent>
-          </Card>
-        )}
-
-        {paymentType && (
-          <Card className="glass-card">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>{paymentType === 'PRIMARY_INSTALLMENT' ? 'Monthly Installment' : 'Top-Up Payment'}</CardTitle>
-                  <CardDescription>
-                    {paymentType === 'PRIMARY_INSTALLMENT'
-                      ? `Minimum: ₹${Number(monthlyMinimum).toLocaleString()} • Can pay more`
-                      : 'Any amount to boost your savings'}
-                  </CardDescription>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => setPaymentType(null)}>
-                  Change
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handlePayment} className="space-y-4">
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="amount">Payment Amount (₹)</Label>
-                  <Input
-                    id="amount"
-                    type="number"
-                    min={paymentType === 'PRIMARY_INSTALLMENT' ? Number(monthlyMinimum) : 1}
-                    step="0.01"
-                    placeholder={paymentType === 'PRIMARY_INSTALLMENT' ? String(monthlyMinimum) : 'Enter amount'}
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    required
-                  />
-                  {paymentType === 'PRIMARY_INSTALLMENT' && (
-                    <p className="text-xs text-muted-foreground">This payment satisfies your monthly commitment for {currentMonthName}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Payment Method</Label>
-                  <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="UPI">UPI</SelectItem>
-                      <SelectItem value="CARD">Debit/Credit Card</SelectItem>
-                      <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {amount && (
-                  <div className="p-4 rounded-lg bg-muted space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Payment Type</span>
-                      <Badge variant="outline">{paymentType === 'PRIMARY_INSTALLMENT' ? 'Monthly Installment' : 'Top-Up'}</Badge>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Amount to Pay</span>
-                      <span className="font-bold">₹{parseFloat(amount).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Rate (locked)</span>
-                      <span className="font-bold">₹{goldRate.rate_per_gram}/g</span>
-                    </div>
-                    <div className="border-t border-border pt-2 mt-2">
-                      <div className="flex justify-between">
-                        <span className="font-medium">Gold You'll Get</span>
-                        <span className="text-xl font-bold gold-text">{calculatedGrams.toFixed(4)}g</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <Button
-                  type="submit"
-                  className="w-full gold-gradient text-white hover:opacity-90"
-                  disabled={processing || !amount || (paymentType === 'PRIMARY_INSTALLMENT' && parseFloat(amount) < Number(monthlyMinimum))}
-                  size="lg"
-                >
-                  {processing ? 'Processing...' : `Pay ₹${amount || '0'}`}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="pt-6">
-            <div className="space-y-3">
-              <h3 className="font-semibold flex items-center gap-2">💡 Payment Types Explained</h3>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <div className="flex gap-2">
-                  <Calendar className="w-4 h-4 mt-0.5 flex-shrink-0 text-primary" />
-                  <div>
-                    <strong className="text-foreground">Monthly Installment:</strong> Your committed amount that must be paid once every month. Only one installment per month.
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <TrendingUp className="w-4 h-4 mt-0.5 flex-shrink-0 text-primary" />
-                  <div>
-                    <strong className="text-foreground">Top-Up:</strong> Additional payments to accelerate your gold savings. Unlimited top-ups anytime.
-                  </div>
-                </div>
-                <div className="mt-3 p-3 rounded bg-muted/50">
-                  <p className="text-xs">🔒 Both payment types lock the gold rate permanently at the moment of payment.</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Alert>
-          <Sparkles className="h-4 w-4" />
-          <AlertDescription>
-            <strong>Demo Mode:</strong> Payment gateway integration pending. In production, integrate Razorpay/Paytm for secure online payments.
-          </AlertDescription>
-        </Alert>
-      </div>
-    </div>
-  );
-}
+                    <TrendingUp className="w-6
