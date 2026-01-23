@@ -22,7 +22,6 @@ type Customer = {
   id: string;
   full_name: string;
   phone: string;
-  customer_code: string;
 };
 
 type Plan = {
@@ -181,7 +180,6 @@ export default function SchemesPage() {
 
       return (
         (c.full_name || '').toLowerCase().includes(q) ||
-        (c.customer_code || '').toLowerCase().includes(q) ||
         (c.phone || '').includes(search.trim())
       );
     });

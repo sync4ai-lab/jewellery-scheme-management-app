@@ -9,7 +9,7 @@ export default function SettingsPage() {
   return (
     <div className="max-w-2xl space-y-8">
       <div className="space-y-2">
-        <h1 className="text-4xl font-bold gold-text">Settings</h1>
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Settings</h1>
         <p className="text-muted-foreground">Manage your account and preferences</p>
       </div>
 
