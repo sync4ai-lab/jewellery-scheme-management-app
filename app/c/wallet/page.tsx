@@ -80,7 +80,7 @@ export default function CustomerWalletPage() {
 
       if (enrollmentsError) throw enrollmentsError;
 
-      const enrollments = (enrollmentsData || []) as EnrollmentRow[];
+      const enrollments = (enrollmentsData || []) as any[];
 
       // Gold rate (best effort)
       let currentRate: number | null = null;

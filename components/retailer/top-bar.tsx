@@ -116,11 +116,3 @@ export function TopBar() {
     </div>
   );
 }
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-    </div>
-  );
-}
