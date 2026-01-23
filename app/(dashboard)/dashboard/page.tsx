@@ -20,8 +20,8 @@ import {
 
 type Customer = {
   id: string;
-  full_name: string;
-  phone: string;
+  full_name: string | null;
+  phone: string | null;
 };
 
 type Plan = {
@@ -29,18 +29,19 @@ type Plan = {
   plan_name: string;
   monthly_amount: number;
   tenure_months: number;
-  karat: string;
+  karat: string | null;
 };
 
 type Enrollment = {
   id: string;
+  retailer_id: string;
   customer_id: string;
-  plan_id: string;
-  status: string;
-  start_date: string;
-  billing_day_of_month: number;
+  store_id: string | null;
+  status: string | null;
   commitment_amount: number | null;
-  created_at: string;
+  total_paid: number | null;
+  total_grams_allocated: number | null;
+  created_at: string | null;
 
   customers: Customer | null;
   plans: Plan | null;
@@ -48,26 +49,28 @@ type Enrollment = {
 
 type Txn = {
   id: string;
-  amount_paid: number;
-  rate_per_gram_snapshot: number;
-  grams_allocated_snapshot: number;
-  mode: string;
-  txn_type: string;
+  amount_paid: number | null;
+  rate_per_gram_snapshot: number | null;
+  grams_allocated_snapshot: number | null;
+  txn_type: string | null;
   billing_month: string | null;
 
-  payment_received_at: string | null;
   paid_at: string | null;
-  created_at: string;
+  created_at: string | null;
   receipt_number: string | null;
+
+  // schema-aligned replacement for old "mode" / "payment_received_at"
+  payment_ref: string | null;
+  source: string | null;
 };
 
-function safeNumber(v: any): number {
+function safeNumber(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 
 function pickTxnTime(t: Txn): string {
-  return t.paid_at || t.payment_received_at || t.created_at || new Date().toISOString();
+  return t.paid_at || t.created_at || new Date().toISOString();
 }
 
 export default function SchemesPage() {
@@ -86,24 +89,25 @@ export default function SchemesPage() {
   async function loadEnrollments() {
     if (!profile?.retailer_id) {
       console.log('No retailer_id found:', { profile });
+      setEnrollments([]);
       setLoading(false);
       return;
     }
 
     setLoading(true);
     try {
-      console.log('Loading enrollments for retailer:', profile.retailer_id);
       const { data, error } = await supabase
         .from('enrollments')
-        .select(`
+        .select(
+          `
           id,
           retailer_id,
           customer_id,
-          plan_id,
-          start_date,
+          store_id,
           status,
-          billing_day_of_month,
           commitment_amount,
+          total_paid,
+          total_grams_allocated,
           created_at,
           customers (
             id,
@@ -117,16 +121,13 @@ export default function SchemesPage() {
             tenure_months,
             karat
           )
-        `)
+        `
+        )
         .eq('retailer_id', profile.retailer_id)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
+      if (error) throw error;
 
-      console.log('Enrollments loaded:', data);
       setEnrollments((data || []) as Enrollment[]);
     } catch (err) {
       console.error('Error loading enrollments:', err);
@@ -142,22 +143,23 @@ export default function SchemesPage() {
     try {
       const { data, error } = await supabase
         .from('transactions')
-        .select(`
+        .select(
+          `
           id,
           amount_paid,
           rate_per_gram_snapshot,
           grams_allocated_snapshot,
-          mode,
           txn_type,
           billing_month,
-          payment_received_at,
           paid_at,
           created_at,
-          receipt_number
-        `)
+          receipt_number,
+          payment_ref,
+          source
+        `
+        )
         .eq('retailer_id', profile.retailer_id)
         .eq('enrollment_id', enrollmentId)
-        // prefer actual payment time; nulls will go last
         .order('paid_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false });
 
@@ -185,7 +187,9 @@ export default function SchemesPage() {
     });
   }, [enrollments, search]);
 
-  function getStatusBadge(status: string): JSX.Element {
+  function getStatusBadge(status: string | null): JSX.Element {
+    const s = (status || 'ACTIVE').toUpperCase();
+
     const variants: Record<string, string> = {
       ACTIVE: 'status-active',
       PAUSED: 'status-due',
@@ -193,11 +197,7 @@ export default function SchemesPage() {
       CANCELLED: 'status-missed',
     };
 
-    return (
-      <Badge className={cn('text-xs', variants[status] || 'bg-gray-100')}>
-        {status}
-      </Badge>
-    );
+    return <Badge className={cn('text-xs', variants[s] || 'bg-gray-100')}>{s}</Badge>;
   }
 
   function getMonthlyAmount(e: Enrollment): number {
@@ -232,10 +232,160 @@ export default function SchemesPage() {
         <h1 className="text-4xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
           Dashboard
         </h1>
-        <p className="text-lg text-gold-600/70 font-medium">
-          Manage your gold schemes with elegance and precision
-        </p>
+        <p className="text-lg text-gold-600/70 font-medium">Manage your gold schemes with elegance and precision</p>
       </div>
+
+      {/* Minimal scaffolding preserved; data + helpers are ready for your next UI section */}
+      <Card className="glass-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Enrollments ({filtered.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name / phone"
+                className="pl-9"
+              />
+            </div>
+
+            <Button variant="outline" onClick={() => void loadEnrollments()}>
+              Refresh
+            </Button>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-8 text-center">No enrollments found.</div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.slice(0, 10).map((e) => {
+                const c = e.customers;
+                const plan = e.plans;
+                const monthly = getMonthlyAmount(e);
+                const tenure = getTenure(e);
+
+                return (
+                  <button
+                    key={e.id}
+                    className="w-full text-left p-4 rounded-lg border border-border hover:bg-muted/30 transition"
+                    onClick={async () => {
+                      setSelectedEnrollment(e);
+                      await loadTransactions(e.id);
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold truncate">{c?.full_name || 'Unnamed Customer'}</span>
+                          {getStatusBadge(e.status)}
+                        </div>
+
+                        <div className="mt-1 text-xs text-muted-foreground flex items-center gap-4 flex-wrap">
+                          <span className="inline-flex items-center gap-1">
+                            <Phone className="w-3 h-3" />
+                            {c?.phone || '—'}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {e.created_at ? new Date(e.created_at).toLocaleDateString('en-IN') : '—'}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 text-sm">
+                          <span className="text-muted-foreground">Plan:</span>{' '}
+                          <span className="font-medium">{plan?.plan_name || '—'}</span>
+                          <span className="mx-2 text-muted-foreground">•</span>
+                          <span className="text-muted-foreground">Monthly:</span>{' '}
+                          <span className="font-medium">₹{Number(monthly).toLocaleString()}</span>
+                          <span className="mx-2 text-muted-foreground">•</span>
+                          <span className="text-muted-foreground">Tenure:</span>{' '}
+                          <span className="font-medium">{tenure || 0} mo</span>
+                        </div>
+                      </div>
+
+                      <div className="text-right text-sm">
+                        <div className="text-muted-foreground">Gold</div>
+                        <div className="font-semibold">
+                          {Number(e.total_grams_allocated || 0).toFixed(4)}g
+                        </div>
+                        <div className="text-muted-foreground mt-1">Paid</div>
+                        <div className="font-semibold">₹{Number(e.total_paid || 0).toLocaleString()}</div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Transactions dialog (ready for next phase UI) */}
+      <Dialog open={!!selectedEnrollment} onOpenChange={(open) => !open && setSelectedEnrollment(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Transactions</DialogTitle>
+            <DialogDescription>
+              {selectedEnrollment?.customers?.full_name || 'Customer'} • {selectedEnrollment?.plans?.plan_name || 'Plan'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {transactions.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-6 text-center">No transactions found.</div>
+            ) : (
+              transactions.slice(0, 20).map((t) => (
+                <div key={t.id} className="p-4 rounded-lg border border-border">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className="text-xs">
+                          {t.txn_type || 'PAYMENT'}
+                        </Badge>
+                        {t.source ? (
+                          <Badge className="text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                            {t.source}
+                          </Badge>
+                        ) : null}
+                        {t.billing_month ? (
+                          <Badge variant="outline" className="text-xs font-mono">
+                            {new Date(t.billing_month).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                          </Badge>
+                        ) : null}
+                      </div>
+
+                      <div className="text-xs text-muted-foreground mt-2">
+                        {new Date(pickTxnTime(t)).toLocaleString('en-IN')}
+                      </div>
+
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Receipt: <span className="font-mono">{t.receipt_number || `#${t.id.slice(0, 8)}`}</span>
+                        {t.payment_ref ? <span className="ml-2">• Method: {t.payment_ref}</span> : null}
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <div className="font-semibold">₹{Number(t.amount_paid || 0).toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Rate: ₹{Number(t.rate_per_gram_snapshot || 0).toLocaleString()}/g
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Gold: {Number(t.grams_allocated_snapshot || 0).toFixed(4)}g
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
