@@ -16,15 +16,18 @@ import { toast } from 'sonner';
 
 type Plan = {
   id: string;
-  name: string;
-  description: string | null;
-  duration_months: number;
-  installment_amount: number;
-  bonus_percentage?: number | null;
-  retailer_id: string;
+  retailer_id?: string | null;
+
+  // NEW schema fields (confirmed from your Payment component)
+  plan_name: string;
+  monthly_amount: number;
+  tenure_months: number;
+  karat: string | null;
+
+  // If these exist in your DB, they will come through and can be used later safely.
   is_active?: boolean | null;
   allow_self_enroll?: boolean | null;
-};
+} | null;
 
 type EnrollmentRow = {
   id: string;
@@ -35,12 +38,12 @@ type EnrollmentRow = {
   total_paid: number | null;
   total_grams_allocated: number | null;
   created_at?: string | null;
-  plans: Plan | null;
+  plans: Plan;
 };
 
 type Notification = {
   id: string;
-  notification_type: string;
+  notification_type?: string | null;
   message: string;
   created_at: string;
 };
@@ -56,11 +59,14 @@ type BillingRow = {
 type EnrollmentCard = {
   id: string;
   status: string;
+
   planName: string;
-  durationMonths: number;
+  durationMonths: number; // tenure_months
   monthlyAmount: number;
+
   totalPaid: number;
   totalGrams: number;
+
   installmentsPaid: number;
   startDateLabel: string | null;
 
@@ -71,13 +77,14 @@ type EnrollmentCard = {
 
 export default function CustomerSchemesPage() {
   const { customer, signOut } = useCustomerAuth();
+
   const [enrollments, setEnrollments] = useState<EnrollmentCard[]>([]);
-  const [availablePlans, setAvailablePlans] = useState<Plan[]>([]);
+  const [availablePlans, setAvailablePlans] = useState<NonNullable<Plan>[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [enrollDialogOpen, setEnrollDialogOpen] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<NonNullable<Plan> | null>(null);
   const [commitmentAmount, setCommitmentAmount] = useState('');
   const [enrolling, setEnrolling] = useState(false);
 
@@ -120,46 +127,43 @@ export default function CustomerSchemesPage() {
             created_at,
             plans (
               id,
-              name,
-              description,
-              duration_months,
-              installment_amount,
-              bonus_percentage,
-              retailer_id,
-              is_active,
-              allow_self_enroll
+              plan_name,
+              monthly_amount,
+              tenure_months,
+              karat
             )
           `
           )
           .eq('customer_id', customer.id)
           .order('created_at', { ascending: false }),
 
+        // IMPORTANT: select only columns we rely on (avoids errors if old columns don’t exist)
         supabase
           .from('plans')
-          .select('*')
+          .select('id, retailer_id, plan_name, monthly_amount, tenure_months, karat, is_active, allow_self_enroll')
           .eq('retailer_id', customer.retailer_id)
           .eq('is_active', true)
           .eq('allow_self_enroll', true)
-          .order('installment_amount', { ascending: true }),
+          .order('monthly_amount', { ascending: true }),
 
         supabase
           .from('notification_queue')
-          .select('*')
+          .select('id, notification_type, message, created_at')
           .eq('customer_id', customer.id)
           .eq('status', 'PENDING')
           .order('created_at', { ascending: false })
           .limit(5),
       ]);
 
-      if (plansResult.data) setAvailablePlans(plansResult.data as Plan[]);
+      if (plansResult.data) setAvailablePlans((plansResult.data as NonNullable<Plan>[]).filter(Boolean));
       if (notificationsResult.data) setNotifications(notificationsResult.data as Notification[]);
 
-      const enrollmentRows = (enrollmentsResult.data || []) as EnrollmentRow[];
+      const enrollmentRows = (enrollmentsResult.data || []) as any[];
       const enrollmentIds = enrollmentRows.map((e) => e.id);
 
-      // Batch fetch this-month billing rows + all billing rows (for installments_paid)
+      // Billing fetch: this month + all (for installments paid count)
       let billingThisMonth: BillingRow[] = [];
-      let billingAll: BillingRow[] = [];
+      let billingAll: { enrollment_id: string; primary_paid: boolean | null }[] = [];
 
       if (enrollmentIds.length > 0) {
         const [thisMonthRes, allRes] = await Promise.all([
@@ -171,7 +175,7 @@ export default function CustomerSchemesPage() {
 
           supabase
             .from('enrollment_billing_months')
-            .select('enrollment_id, billing_month, primary_paid')
+            .select('enrollment_id, primary_paid')
             .in('enrollment_id', enrollmentIds),
         ]);
 
@@ -179,6 +183,7 @@ export default function CustomerSchemesPage() {
         if (allRes.data) billingAll = allRes.data as any[];
       }
 
+      // Count “paid months” = primary_paid true
       const installmentsPaidMap = new Map<string, number>();
       for (const row of billingAll) {
         if (row?.enrollment_id && row?.primary_paid) {
@@ -191,11 +196,12 @@ export default function CustomerSchemesPage() {
 
       const cards: EnrollmentCard[] = enrollmentRows.map((e) => {
         const plan = e.plans;
+
         const monthly = Number(
-          (typeof e.commitment_amount === 'number' && e.commitment_amount > 0 ? e.commitment_amount : plan?.installment_amount) || 0
+          (typeof e.commitment_amount === 'number' && e.commitment_amount > 0 ? e.commitment_amount : plan?.monthly_amount) || 0
         );
 
-        const duration = Number(plan?.duration_months || 0);
+        const duration = Number(plan?.tenure_months || 0);
         const totalPaid = Number(e.total_paid || 0);
         const totalGrams = Number(e.total_grams_allocated || 0);
 
@@ -214,19 +220,20 @@ export default function CustomerSchemesPage() {
           }
         }
 
-        const startDateLabel = e.created_at ? new Date(e.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
+        const startDateLabel = e.created_at
+          ? new Date(e.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+          : null;
 
         return {
           id: e.id,
           status: (e.status || 'ACTIVE').toString(),
-          planName: plan?.name || 'Gold Plan',
+          planName: plan?.plan_name || 'Gold Plan',
           durationMonths: duration,
           monthlyAmount: monthly,
           totalPaid,
           totalGrams,
           installmentsPaid: installmentsPaidMap.get(e.id) || 0,
           startDateLabel,
-
           monthlyInstallmentPaid: paidThisMonth,
           dueDate,
           daysOverdue,
@@ -241,9 +248,9 @@ export default function CustomerSchemesPage() {
     }
   }
 
-  function openEnrollDialog(plan: Plan) {
+  function openEnrollDialog(plan: NonNullable<Plan>) {
     setSelectedPlan(plan);
-    setCommitmentAmount(String(plan.installment_amount));
+    setCommitmentAmount(String(plan.monthly_amount));
     setEnrollDialogOpen(true);
   }
 
@@ -251,8 +258,8 @@ export default function CustomerSchemesPage() {
     if (!selectedPlan || !commitmentAmount || !customer) return;
 
     const amount = parseFloat(commitmentAmount);
-    if (Number.isNaN(amount) || amount < selectedPlan.installment_amount) {
-      toast.error(`Commitment amount must be at least ₹${selectedPlan.installment_amount.toLocaleString()}`);
+    if (Number.isNaN(amount) || amount < Number(selectedPlan.monthly_amount)) {
+      toast.error(`Commitment amount must be at least ₹${Number(selectedPlan.monthly_amount).toLocaleString()}`);
       return;
     }
 
@@ -267,7 +274,6 @@ export default function CustomerSchemesPage() {
 
       if (error) throw error;
 
-      // Support either return shape (older code often used scheme_id)
       const result = data as any;
       const enrollmentId = result?.enrollment_id || result?.scheme_id || result?.id;
 
@@ -291,55 +297,67 @@ export default function CustomerSchemesPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background via-gold-50/10 to-background sparkle-bg">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gold-25 via-background to-gold-50/30 sparkle-bg">
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full jewel-gradient animate-pulse mx-auto flex items-center justify-center">
+          <div className="w-16 h-16 rounded-full luxury-gold-gradient animate-pulse mx-auto flex items-center justify-center">
             <Sparkles className="w-8 h-8 text-white" />
           </div>
-          <p className="text-muted-foreground">Loading your schemes...</p>
+          <p className="text-lg text-gold-600 font-semibold">Loading your gold journey...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-gold-50/10 to-background sparkle-bg">
-      <div className="max-w-6xl mx-auto p-4 space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl jewel-gradient flex items-center justify-center">
-              <Gem className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">My Gold Journey</h1>
-              <p className="text-muted-foreground">Welcome, {customer?.full_name}</p>
+    <div className="min-h-screen bg-gradient-to-br from-gold-25 via-background to-gold-50/30 sparkle-bg pb-20">
+      {/* Decorative elements */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-gold-200/5 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-rose-200/5 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="relative z-10 max-w-6xl mx-auto p-4 md:p-8 space-y-8">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="space-y-3">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl luxury-gold-gradient flex items-center justify-center shadow-lg">
+                <Gem className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
+                  My Gold Journey
+                </h1>
+                <p className="text-lg text-gold-600/70 font-medium">Welcome, {customer?.full_name}</p>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Link href="/c/notifications">
-              <Button variant="outline" size="icon" className="relative">
-                <Bell className="w-4 h-4" />
+              <Button variant="outline" size="icon" className="rounded-2xl border-gold-300/50 hover:bg-gold-50 dark:hover:bg-gold-900/30 relative">
+                <Bell className="w-5 h-5 text-gold-600" />
                 {notifications.length > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                  <span className="absolute -top-2 -right-2 w-6 h-6 bg-rose-500 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-lg">
                     {notifications.length}
                   </span>
                 )}
               </Button>
             </Link>
-            <Button variant="outline" size="icon" onClick={() => signOut()}>
-              <LogOut className="w-4 h-4" />
+            <Button variant="outline" size="icon" className="rounded-2xl border-gold-300/50 hover:bg-gold-50 dark:hover:bg-gold-900/30" onClick={() => signOut()}>
+              <LogOut className="w-5 h-5 text-gold-600" />
             </Button>
           </div>
         </div>
 
+        {/* Notifications Alert */}
         {notifications.length > 0 && (
-          <Card className="border-orange-200 bg-orange-50 dark:bg-orange-900/10">
+          <Card className="border-orange-200/60 bg-gradient-to-r from-orange-50/80 to-orange-50/40 dark:from-orange-900/20 dark:to-orange-900/10 dark:border-orange-700/30">
             <CardContent className="pt-6">
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {notifications.map((notif) => (
-                  <div key={notif.id} className="flex items-start gap-2">
-                    <Bell className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-orange-800 dark:text-orange-400">{notif.message}</p>
+                  <div key={notif.id} className="flex items-start gap-3">
+                    <Bell className="w-5 h-5 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-orange-800 dark:text-orange-300 font-medium">{notif.message}</p>
                   </div>
                 ))}
               </div>
@@ -347,43 +365,48 @@ export default function CustomerSchemesPage() {
           </Card>
         )}
 
+        {/* Available Plans Section */}
         {availablePlans.length > 0 && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-xl font-bold">Available Plans</h2>
-              <p className="text-sm text-muted-foreground">Choose a plan and start your gold savings journey</p>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-bold bg-gradient-to-r from-gold-600 to-rose-600 bg-clip-text text-transparent">
+                Available Plans
+              </h2>
+              <p className="text-lg text-gold-600/70">Choose a plan and start your gold savings journey</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {availablePlans.map((plan) => (
-                <Card key={plan.id} className="jewel-card hover:scale-[1.02] transition-transform">
-                  <CardHeader>
-                    <div className="w-12 h-12 rounded-xl bg-gold-100 dark:bg-gold-900/30 flex items-center justify-center mb-3">
-                      <Sparkles className="w-6 h-6 text-gold-600" />
+                <Card key={plan.id} className="jewelry-showcase-card">
+                  <div className="h-28 bg-gradient-to-br from-rose-400 via-gold-400 to-amber-600 relative overflow-hidden">
+                    <div className="absolute inset-0 opacity-0 hover:opacity-20 transition-opacity duration-300 bg-white"></div>
+                    <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
+                  </div>
+
+                  <CardHeader className="pt-6">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-gold-100 to-gold-50 dark:from-gold-900/30 dark:to-gold-900/10 flex items-center justify-center mb-3 shadow-md">
+                      <Sparkles className="w-6 h-6 text-gold-600 dark:text-gold-400" />
                     </div>
-                    <CardTitle className="text-xl">{plan.name}</CardTitle>
-                    {plan.description && <CardDescription className="line-clamp-2">{plan.description}</CardDescription>}
+                    <CardTitle className="text-2xl">{plan.plan_name}</CardTitle>
+                    <CardDescription className="text-base font-medium text-gold-600 dark:text-gold-400">
+                      {plan.karat ? `${plan.karat} • ` : ''}
+                      {plan.tenure_months} months
+                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                        <span className="text-sm text-muted-foreground">Duration</span>
-                        <span className="font-bold">{plan.duration_months} months</span>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-br from-gold-50/50 to-gold-100/30 dark:from-gold-900/20 dark:to-gold-900/10 border border-gold-200/50 dark:border-gold-700/30">
+                        <span className="text-sm font-semibold text-gold-600 dark:text-gold-400 uppercase tracking-wide">Duration</span>
+                        <span className="font-bold text-lg text-gold-700 dark:text-gold-300">{plan.tenure_months} mo</span>
                       </div>
-                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                        <span className="text-sm text-muted-foreground">Minimum Monthly</span>
-                        <span className="font-bold">₹{plan.installment_amount.toLocaleString()}</span>
+                      <div className="flex items-center justify-between p-4 rounded-xl bg-gradient-to-br from-emerald-50/50 to-emerald-100/30 dark:from-emerald-900/20 dark:to-emerald-900/10 border border-emerald-200/50 dark:border-emerald-700/30">
+                        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Min Monthly</span>
+                        <span className="font-bold text-lg text-emerald-700 dark:text-emerald-300">₹{Number(plan.monthly_amount).toLocaleString()}</span>
                       </div>
-                      {!!plan.bonus_percentage && plan.bonus_percentage > 0 && (
-                        <div className="flex items-center justify-between p-3 rounded-lg bg-green-50 dark:bg-green-900/20">
-                          <span className="text-sm text-green-700 dark:text-green-400">Bonus</span>
-                          <span className="font-bold text-green-700 dark:text-green-400">+{plan.bonus_percentage}%</span>
-                        </div>
-                      )}
                     </div>
 
-                    <Button className="w-full jewel-gradient text-white hover:opacity-90" onClick={() => openEnrollDialog(plan)}>
-                      <Plus className="w-4 h-4 mr-2" />
+                    <Button className="w-full luxury-gold-gradient text-white hover:opacity-95 rounded-2xl font-semibold py-2 shadow-lg hover:shadow-xl transition-all" onClick={() => openEnrollDialog(plan)}>
+                      <Plus className="w-5 h-5 mr-2" />
                       Enroll Now
                     </Button>
                   </CardContent>
@@ -393,72 +416,86 @@ export default function CustomerSchemesPage() {
           </div>
         )}
 
+        {/* My Plans Section */}
         {enrollments.length > 0 && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-xl font-bold">My Active Plans</h2>
-              <p className="text-sm text-muted-foreground">Track your enrolled plans and make payments</p>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-bold bg-gradient-to-r from-gold-600 to-rose-600 bg-clip-text text-transparent">
+                My Active Plans
+              </h2>
+              <p className="text-lg text-gold-600/70">Track your enrolled plans and make payments</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {enrollments.map((enrollment) => {
                 const duration = Math.max(1, enrollment.durationMonths || 1);
                 const progress = Math.min(100, (enrollment.installmentsPaid / duration) * 100);
                 const isActive = enrollment.status === 'ACTIVE';
 
                 return (
-                  <Card key={enrollment.id} className="jewel-card hover:shadow-lg transition-all">
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <CardTitle className="text-lg">{enrollment.planName}</CardTitle>
-                          <CardDescription className="mt-1">
+                  <Card key={enrollment.id} className="jewelry-showcase-card overflow-hidden group cursor-pointer" onClick={() => router.push(`/c/passbook/${enrollment.id}`)}>
+                    <div className={`h-32 bg-gradient-to-br ${
+                      isActive
+                        ? 'from-gold-400 via-gold-500 to-rose-500'
+                        : enrollment.monthlyInstallmentPaid
+                        ? 'from-emerald-400 via-emerald-500 to-teal-500'
+                        : 'from-orange-400 via-orange-500 to-red-500'
+                    } relative overflow-hidden group-hover:shadow-lg transition-shadow`}>
+                      <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-white"></div>
+                      <div className="absolute -right-8 -top-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+                    </div>
+
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <CardTitle className="text-2xl">{enrollment.planName}</CardTitle>
+                          <CardDescription className="mt-2 text-base font-medium text-gold-600 dark:text-gold-400">
                             {enrollment.durationMonths} months{enrollment.startDateLabel ? ` • Started ${enrollment.startDateLabel}` : ''}
                           </CardDescription>
                         </div>
-                        <Badge className={isActive ? 'status-active' : 'status-due'}>{enrollment.status}</Badge>
+                        <Badge className={`rounded-full font-semibold ${isActive ? 'status-active' : 'status-due'}`}>{enrollment.status}</Badge>
                       </div>
                     </CardHeader>
 
                     <CardContent className="space-y-4">
-                      <div className="p-4 rounded-xl bg-gradient-to-br from-gold-100 to-gold-50 dark:from-gold-900/30 dark:to-gold-800/20">
-                        <p className="text-sm text-muted-foreground mb-1">Gold Accumulated</p>
-                        <p className="text-3xl font-bold gold-text">
+                      <div className="p-5 rounded-2xl bg-gradient-to-br from-gold-50/60 to-gold-100/40 dark:from-gold-900/20 dark:to-gold-900/10 border border-gold-200/60 dark:border-gold-700/30 shadow-md">
+                        <p className="text-xs font-semibold text-gold-600 dark:text-gold-400 uppercase tracking-widest mb-2">Gold Accumulated</p>
+                        <p className="text-4xl font-bold gold-text">
                           {Number(enrollment.totalGrams).toFixed(4)}
-                          <span className="text-lg ml-1">g</span>
+                          <span className="text-xl ml-2 text-gold-600 dark:text-gold-400">grams</span>
                         </p>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3 rounded-lg bg-muted/50">
-                          <p className="text-xs text-muted-foreground mb-1">Total Paid</p>
-                          <p className="font-bold">₹{Number(enrollment.totalPaid).toLocaleString()}</p>
+                        <div className="p-4 rounded-xl bg-gradient-to-br from-amber-50/50 to-amber-100/30 dark:from-amber-900/20 dark:to-amber-900/10 border border-amber-200/50 dark:border-amber-700/30">
+                          <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wide mb-1">Total Paid</p>
+                          <p className="text-lg font-bold text-amber-700 dark:text-amber-300">₹{Number(enrollment.totalPaid).toLocaleString()}</p>
                         </div>
-                        <div className="p-3 rounded-lg bg-muted/50">
-                          <p className="text-xs text-muted-foreground mb-1">Monthly</p>
-                          <p className="font-bold">₹{Number(enrollment.monthlyAmount).toLocaleString()}</p>
+                        <div className="p-4 rounded-xl bg-gradient-to-br from-blue-50/50 to-blue-100/30 dark:from-blue-900/20 dark:to-blue-900/10 border border-blue-200/50 dark:border-blue-700/30">
+                          <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-1">Monthly</p>
+                          <p className="text-lg font-bold text-blue-700 dark:text-blue-300">₹{Number(enrollment.monthlyAmount).toLocaleString()}</p>
                         </div>
                       </div>
 
-                      <div>
-                        <div className="flex items-center justify-between text-sm mb-2">
-                          <span className="text-muted-foreground">Progress</span>
-                          <span className="font-medium">
-                            {enrollment.installmentsPaid}/{duration} paid
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-semibold text-foreground">Progress</span>
+                          <span className="font-bold text-gold-600 dark:text-gold-400">
+                            {enrollment.installmentsPaid}/{duration} paid ({Math.round(progress)}%)
                           </span>
                         </div>
-                        <div className="w-full bg-muted rounded-full h-2">
-                          <div className="gold-gradient h-2 rounded-full transition-all" style={{ width: `${progress}%` }} />
+                        <div className="w-full bg-gold-100/30 dark:bg-gold-900/20 rounded-full h-3 overflow-hidden border border-gold-200/50 dark:border-gold-700/30">
+                          <div className="luxury-gold-gradient h-3 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
                         </div>
                       </div>
 
-                      <div className="p-3 rounded-lg bg-muted/50 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">This Month:</span>
+                      <div className="p-4 rounded-xl bg-gradient-to-br from-muted/50 to-muted/30 border border-gold-200/30 dark:border-gold-700/20 space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground font-medium">This Month:</span>
                           {enrollment.monthlyInstallmentPaid ? (
-                            <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-xs">✓ Paid</Badge>
+                            <Badge className="status-paid text-xs font-bold rounded-full">✓ Paid</Badge>
                           ) : enrollment.daysOverdue && enrollment.daysOverdue > 0 ? (
-                            <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 text-xs">
+                            <Badge className="status-missed text-xs font-bold rounded-full">
                               Overdue ({enrollment.daysOverdue}d)
                             </Badge>
                           ) : (
@@ -514,7 +551,7 @@ export default function CustomerSchemesPage() {
       <Dialog open={enrollDialogOpen} onOpenChange={setEnrollDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Enroll in {selectedPlan?.name}</DialogTitle>
+            <DialogTitle>Enroll in {selectedPlan?.plan_name}</DialogTitle>
             <DialogDescription>Choose your monthly commitment amount to start saving gold</DialogDescription>
           </DialogHeader>
 
@@ -523,16 +560,16 @@ export default function CustomerSchemesPage() {
               <div className="p-4 rounded-lg bg-muted/50 space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Duration</span>
-                  <span className="font-medium">{selectedPlan.duration_months} months</span>
+                  <span className="font-medium">{selectedPlan.tenure_months} months</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Minimum Monthly</span>
-                  <span className="font-medium">₹{selectedPlan.installment_amount.toLocaleString()}</span>
+                  <span className="font-medium">₹{Number(selectedPlan.monthly_amount).toLocaleString()}</span>
                 </div>
-                {!!selectedPlan.bonus_percentage && selectedPlan.bonus_percentage > 0 && (
+                {selectedPlan.karat && (
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-green-600 dark:text-green-400">Bonus</span>
-                    <span className="font-medium text-green-600 dark:text-green-400">+{selectedPlan.bonus_percentage}%</span>
+                    <span className="text-muted-foreground">Karat</span>
+                    <span className="font-medium">{selectedPlan.karat}</span>
                   </div>
                 )}
               </div>
@@ -545,11 +582,11 @@ export default function CustomerSchemesPage() {
                   placeholder="Enter amount"
                   value={commitmentAmount}
                   onChange={(e) => setCommitmentAmount(e.target.value)}
-                  min={selectedPlan.installment_amount}
+                  min={Number(selectedPlan.monthly_amount)}
                   step="100"
                   className="text-lg"
                 />
-                <p className="text-xs text-muted-foreground">Minimum: ₹{selectedPlan.installment_amount.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">Minimum: ₹{Number(selectedPlan.monthly_amount).toLocaleString()}</p>
               </div>
 
               <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20">

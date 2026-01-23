@@ -90,10 +90,31 @@ const config: Config = {
             height: '0',
           },
         },
+        'premium-shimmer': {
+          '0%': { backgroundPosition: '200% 0' },
+          '50%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
+        'sparkle-float': {
+          '0%, 100%': { transform: 'translateY(0px) rotate(0deg)', opacity: '0.8' },
+          '50%': { transform: 'translateY(-8px) rotate(180deg)', opacity: '1' },
+        },
+        'glow-pulse': {
+          '0%, 100%': { boxShadow: '0 0 20px rgba(39, 89, 49, 0.3)' },
+          '50%': { boxShadow: '0 0 40px rgba(39, 89, 49, 0.6)' },
+        },
+        'float': {
+          '0%, 100%': { transform: 'translateY(0px)' },
+          '50%': { transform: 'translateY(-10px)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        'premium-shimmer': 'premium-shimmer 4s ease-in-out infinite',
+        'sparkle-float': 'sparkle-float 3s ease-in-out infinite',
+        'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
+        'float': 'float 3s ease-in-out infinite',
       },
     },
   },

@@ -212,37 +212,56 @@ export default function SchemesPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-pulse text-xl gold-text">Loading schemes...</div>
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gold-25 via-background to-gold-50/30">
+        <div className="space-y-4 text-center">
+          <div className="w-16 h-16 rounded-2xl luxury-gold-gradient animate-pulse mx-auto flex items-center justify-center">
+            <span className="text-2xl font-bold text-white">G</span>
+          </div>
+          <p className="text-lg gold-text font-semibold">Loading your dashboard...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-4 md:p-8 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Schemes</h1>
-          <p className="text-muted-foreground">Manage customer gold savings journey</p>
+    <div className="min-h-screen bg-gradient-to-br from-gold-25 via-background to-gold-50/30 sparkle-bg pb-32">
+      {/* Decorative elements */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-gold-200/5 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-rose-200/5 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="relative z-10 space-y-8 p-4 md:p-8">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="space-y-2">
+            <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
+              Dashboard
+            </h1>
+            <p className="text-lg text-gold-600/70 font-medium">
+              Manage your gold schemes with elegance and precision
+            </p>
+          </div>
+
+          <Button className="luxury-gold-gradient text-white hover:opacity-95 rounded-2xl font-semibold px-6 py-2 shadow-lg hover:shadow-xl transition-all w-full md:w-auto">
+            <Plus className="w-5 h-5 mr-2" />
+            New Enrollment
+          </Button>
         </div>
 
-        <Button className="gold-gradient text-white hover:opacity-90">
-          <Plus className="w-4 h-4 mr-2" />
-          New Enrollment
-        </Button>
-      </div>
+        {/* Search */}
+        <div className="relative max-w-2xl">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gold-400" />
+          <Input
+            placeholder="Search by name, phone, or customer code..."
+            className="pl-12 rounded-2xl border-gold-300/50 bg-gold-50/50 dark:bg-gold-900/20 focus:border-gold-500 focus:ring-gold-400/20 text-sm font-medium"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by name, phone, or customer code..."
-          className="pl-10"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Enrollment Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filtered.map((enrollment) => {
           const c = enrollment.customers;
           const p = enrollment.plans;
@@ -266,48 +285,54 @@ export default function SchemesPage() {
               }}
             >
               <DialogTrigger asChild>
-                <Card className="cursor-pointer hover:shadow-lg transition-all glass-card">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <User className="w-5 h-5 text-primary" />
-                        </div>
-                        <div>
-                          <CardTitle className="text-base">{c?.full_name || 'Unknown Customer'}</CardTitle>
-                          <p className="text-xs text-muted-foreground">{c?.customer_code || '—'}</p>
-                        </div>
+                <Card className="cursor-pointer hover:shadow-luxury-lg transition-all duration-300 group overflow-hidden border-gold-200/60 dark:border-gold-500/20">
+                  <div className={`h-24 bg-gradient-to-br ${
+                    enrollment.status === 'ON_TRACK'
+                      ? 'from-gold-400 via-gold-500 to-rose-500'
+                      : enrollment.status === 'DUE'
+                      ? 'from-orange-400 via-orange-500 to-red-500'
+                      : 'from-slate-400 via-slate-500 to-slate-600'
+                  } relative overflow-hidden group-hover:shadow-lg transition-shadow`}>
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-white"></div>
+                    <div className="absolute -right-8 -top-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+                  </div>
+
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <CardTitle className="text-xl">{c?.full_name || 'Unknown Customer'}</CardTitle>
+                        <p className="text-xs font-medium text-gold-600 dark:text-gold-400 mt-1">{c?.customer_code || '—'}</p>
                       </div>
                       {getStatusBadge(enrollment.status)}
                     </div>
                   </CardHeader>
 
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Phone className="w-4 h-4" />
-                      <span>{c?.phone || '—'}</span>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <Phone className="w-4 h-4 text-gold-600" />
+                      <span className="text-foreground">{c?.phone || '—'}</span>
                     </div>
 
-                    <div className="p-3 rounded-lg bg-muted/50">
-                      <p className="text-xs text-muted-foreground mb-1">Plan</p>
-                      <p className="font-medium">
+                    <div className="p-4 rounded-xl bg-gradient-to-br from-gold-50/50 to-gold-100/30 dark:from-gold-900/20 dark:to-gold-900/10 border border-gold-200/50 dark:border-gold-700/30">
+                      <p className="text-xs font-semibold text-gold-600 dark:text-gold-400 uppercase tracking-wide mb-1">Plan</p>
+                      <p className="text-base font-bold text-foreground">
                         {planName} {karat ? `• ${karat}` : ''}
                       </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Monthly</p>
-                        <p className="text-lg font-bold">₹{monthly.toLocaleString()}</p>
+                      <div className="p-3 rounded-lg bg-gold-50/50 dark:bg-gold-900/20 border border-gold-200/50 dark:border-gold-700/30">
+                        <p className="text-xs font-semibold text-gold-600 dark:text-gold-400 uppercase tracking-wide mb-1">Monthly</p>
+                        <p className="text-lg font-bold text-gold-700 dark:text-gold-300">₹{monthly.toLocaleString()}</p>
                       </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Tenure</p>
-                        <p className="text-lg font-bold">{tenure || '—'} mo</p>
+                      <div className="p-3 rounded-lg bg-emerald-50/50 dark:bg-emerald-900/20 border border-emerald-200/50 dark:border-emerald-700/30">
+                        <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide mb-1">Tenure</p>
+                        <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{tenure || '—'} mo</p>
                       </div>
                     </div>
 
-                    <div className="text-sm text-muted-foreground">
-                      Billing Day: <span className="font-medium">{enrollment.billing_day_of_month}</span>
+                    <div className="text-xs text-muted-foreground font-medium bg-muted/30 px-3 py-2 rounded-lg">
+                      Billing Day: <span className="text-foreground font-semibold">{enrollment.billing_day_of_month}</span>
                     </div>
                   </CardContent>
                 </Card>
@@ -337,8 +362,8 @@ export default function SchemesPage() {
                   return (
                     <div className="space-y-6 py-4">
                       <div className="grid grid-cols-2 gap-4">
-                        <Card>
-                          <CardContent className="pt-6">
+                        <Card className="luxury-card p-4">
+                          <CardContent className="p-0">
                             <p className="text-sm text-muted-foreground">Total Gold</p>
                             <p className="text-2xl font-bold gold-text">{totals.totalGrams.toFixed(4)}g</p>
                           </CardContent>
