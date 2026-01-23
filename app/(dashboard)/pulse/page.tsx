@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -45,7 +45,7 @@ type StaffMember = {
   total_collected: number;
 };
 
-function safeNumber(v: any): number {
+function safeNumber(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
@@ -55,9 +55,23 @@ export default function PulseDashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [staffLeaderboard, setStaffLeaderboard] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
+
   const [updateRateDialog, setUpdateRateDialog] = useState(false);
   const [newRate, setNewRate] = useState('');
+
   const router = useRouter();
+
+  const todayRange = useMemo(() => {
+    // Use UTC day boundaries to avoid "today" drifting due to server timezone comparisons
+    const now = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+    return {
+      startISO: start.toISOString(),
+      endISO: end.toISOString(),
+      todayDateISO: start.toISOString().split('T')[0], // YYYY-MM-DD (UTC)
+    };
+  }, []);
 
   useEffect(() => {
     if (!profile?.retailer_id) return;
@@ -66,7 +80,6 @@ export default function PulseDashboard() {
   }, [profile?.retailer_id]);
 
   async function safeCountCustomers(retailerId: string): Promise<number> {
-    // Just count all customers - we'll assume the status field may or may not exist
     const { count, error } = await supabase
       .from('customers')
       .select('id', { count: 'exact', head: true })
@@ -82,77 +95,90 @@ export default function PulseDashboard() {
   async function loadDashboard() {
     if (!profile?.retailer_id) return;
 
+    setLoading(true);
+
     try {
-      const today = new Date();
-      const todayISO = today.toISOString().split('T')[0];
+      const retailerId = profile.retailer_id;
+      const { startISO, endISO, todayDateISO } = todayRange;
 
       const [
         rateResult,
         txnsResult,
-        duesResult,
+        dueTodayResult,
         overdueResult,
         enrollmentsResult,
         customersCount,
         staffResult,
       ] = await Promise.all([
+        // Latest gold rate (22K)
         supabase
           .from('gold_rates')
           .select('rate_per_gram, karat, valid_from')
-          .eq('retailer_id', profile.retailer_id)
+          .eq('retailer_id', retailerId)
           .eq('karat', '22K')
           .order('valid_from', { ascending: false })
           .limit(1)
           .maybeSingle(),
 
+        // Today's paid transactions (UTC range)
         supabase
           .from('transactions')
           .select('amount_paid, grams_allocated_snapshot, paid_at')
-          .eq('retailer_id', profile.retailer_id)
-          .gte('paid_at', todayISO),
+          .eq('retailer_id', retailerId)
+          .eq('payment_status', 'SUCCESS')
+          .gte('paid_at', startISO)
+          .lt('paid_at', endISO),
 
+        // Due today: billing rows where due_date is today AND not paid
+        // IMPORTANT: Use primary_paid as the reliable indicator (status may be inconsistent/optional)
         supabase
           .from('enrollment_billing_months')
           .select('enrollment_id', { count: 'exact', head: true })
-          .eq('status', 'DUE')
-          .eq('due_date', todayISO),
+          .eq('retailer_id', retailerId)
+          .eq('due_date', todayDateISO)
+          .eq('primary_paid', false),
 
+        // Overdue: due_date before today AND not paid
         supabase
           .from('enrollment_billing_months')
           .select('enrollment_id', { count: 'exact', head: true })
-          .eq('status', 'DUE')
-          .lt('due_date', todayISO),
+          .eq('retailer_id', retailerId)
+          .lt('due_date', todayDateISO)
+          .eq('primary_paid', false),
 
+        // New ACTIVE enrollments created today (UTC range)
         supabase
           .from('enrollments')
           .select('id', { count: 'exact', head: true })
-          .eq('retailer_id', profile.retailer_id)
-          .gte('created_at', todayISO)
-          .eq('status', 'ACTIVE'),
+          .eq('retailer_id', retailerId)
+          .eq('status', 'ACTIVE')
+          .gte('created_at', startISO)
+          .lt('created_at', endISO),
 
-        safeCountCustomers(profile.retailer_id),
+        safeCountCustomers(retailerId),
 
-        // keep your RPC call; adjust field mapping to your output
+        // RPC leaderboard (keep; your DB function defines output)
         supabase.rpc('get_staff_leaderboard', { period_days: 30 }),
       ]);
 
       const currentRate = rateResult.data
         ? {
             rate: safeNumber(rateResult.data.rate_per_gram),
-            karat: rateResult.data.karat,
-            validFrom: rateResult.data.valid_from,
+            karat: (rateResult.data as any).karat ?? '22K',
+            validFrom: (rateResult.data as any).valid_from ?? new Date().toISOString(),
           }
         : null;
 
       const todayCollections =
-        txnsResult.data?.reduce((sum, t: any) => sum + safeNumber(t.amount_paid), 0) || 0;
+        txnsResult.data?.reduce((sum: number, t: any) => sum + safeNumber(t.amount_paid), 0) || 0;
 
       const goldAllocatedToday =
-        txnsResult.data?.reduce((sum, t: any) => sum + safeNumber(t.grams_allocated_snapshot), 0) || 0;
+        txnsResult.data?.reduce((sum: number, t: any) => sum + safeNumber(t.grams_allocated_snapshot), 0) || 0;
 
       setMetrics({
         todayCollections,
         goldAllocatedToday,
-        dueToday: duesResult.count || 0,
+        dueToday: dueTodayResult.count || 0,
         overdueCount: overdueResult.count || 0,
         newEnrollmentsToday: enrollmentsResult.count || 0,
         activeCustomers: customersCount || 0,
@@ -186,12 +212,13 @@ export default function PulseDashboard() {
     }
 
     try {
+      // created_by is frequently a required FK in your setup; keep it as-is
       const { error } = await supabase.from('gold_rates').insert({
         retailer_id: profile.retailer_id,
         karat: '22K',
         rate_per_gram: rate,
         valid_from: new Date().toISOString(),
-        created_by: profile.id, // required per your FK list
+        created_by: profile.id,
         notes: null,
       });
 
@@ -203,7 +230,7 @@ export default function PulseDashboard() {
       await loadDashboard();
     } catch (error: any) {
       console.error('Error updating rate:', error);
-      toast.error(error.message || 'Failed to update rate');
+      toast.error(error?.message || 'Failed to update rate');
     }
   }
 
@@ -224,8 +251,10 @@ export default function PulseDashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Pulse</h1>
-          <p className="text-muted-foreground">Today's business snapshot</p>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
+            Pulse
+          </h1>
+          <p className="text-muted-foreground">Today&apos;s business snapshot</p>
         </div>
         <Badge className="text-sm px-4 py-2">
           {new Date().toLocaleDateString('en-IN', {
@@ -241,11 +270,9 @@ export default function PulseDashboard() {
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground mb-2">Today's Gold Rate (22K)</p>
+              <p className="text-sm text-muted-foreground mb-2">Today&apos;s Gold Rate (22K)</p>
               <div className="flex items-baseline gap-2">
-                <span className="text-5xl font-bold gold-text">
-                  ₹{metrics?.currentRate?.rate.toLocaleString() || '0'}
-                </span>
+                <span className="text-5xl font-bold gold-text">₹{(metrics?.currentRate?.rate ?? 0).toLocaleString()}</span>
                 <span className="text-xl text-muted-foreground">/gram</span>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
@@ -253,10 +280,7 @@ export default function PulseDashboard() {
                 {metrics?.currentRate ? new Date(metrics.currentRate.validFrom).toLocaleTimeString('en-IN') : 'Never'}
               </p>
             </div>
-            <Button
-              onClick={() => setUpdateRateDialog(true)}
-              className="jewel-gradient text-white hover:opacity-90 rounded-xl"
-            >
+            <Button onClick={() => setUpdateRateDialog(true)} className="jewel-gradient text-white hover:opacity-90 rounded-xl">
               <Edit className="w-4 h-4 mr-2" />
               Update Rate
             </Button>
@@ -273,7 +297,7 @@ export default function PulseDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">₹{metrics?.todayCollections.toLocaleString() || '0'}</div>
+            <div className="text-3xl font-bold">₹{(metrics?.todayCollections ?? 0).toLocaleString()}</div>
             <p className="text-xs text-muted-foreground mt-1">Today</p>
             <div className="flex items-center gap-1 mt-2">
               <TrendingUp className="w-3 h-3 text-green-600" />
@@ -290,12 +314,12 @@ export default function PulseDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold gold-text">{metrics?.goldAllocatedToday.toFixed(4) || '0'} g</div>
+            <div className="text-3xl font-bold gold-text">{(metrics?.goldAllocatedToday ?? 0).toFixed(4)} g</div>
             <p className="text-xs text-muted-foreground mt-1">Today</p>
           </CardContent>
         </Card>
 
-        <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={() => router.push('/dues')}>
+        <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={() => router.push('/dashboard/due')}>
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium">Due Today</CardTitle>
@@ -308,7 +332,7 @@ export default function PulseDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={() => router.push('/dues')}>
+        <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={() => router.push('/dashboard/due')}>
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium">Overdue</CardTitle>
@@ -326,7 +350,7 @@ export default function PulseDashboard() {
         <Card className="jewel-card">
           <CardHeader>
             <CardTitle>New Enrollments</CardTitle>
-            <CardDescription>Today's customer acquisitions</CardDescription>
+            <CardDescription>Today&apos;s customer acquisitions</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-4">
@@ -391,7 +415,7 @@ export default function PulseDashboard() {
                 <p className="text-sm text-muted-foreground text-center py-4">No data available</p>
               )}
             </div>
-            <Button variant="outline" className="w-full mt-4" onClick={() => router.push('/incentives')}>
+            <Button variant="outline" className="w-full mt-4" onClick={() => router.push('/dashboard/growth')}>
               View Full Leaderboard
             </Button>
           </CardContent>
