@@ -179,7 +179,7 @@ export default function SchemesPage() {
     });
   }, [enrollments, search]);
 
-  function getStatusBadge(status: string) {
+  function getStatusBadge(status: string): JSX.Element {
     const variants: Record<string, string> = {
       ACTIVE: 'status-active',
       PAUSED: 'status-due',
