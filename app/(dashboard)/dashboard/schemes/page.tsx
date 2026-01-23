@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Search, Plus, User, Phone, Calendar, Users } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -77,6 +78,7 @@ function pickTxnTime(t: Txn): string {
 
 export default function SchemesPage() {
   const { profile } = useAuth();
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
@@ -229,7 +231,10 @@ export default function SchemesPage() {
         </div>
 
         {/* Keep button UI; you can wire it later */}
-        <Button className="gold-gradient text-white hover:opacity-90">
+        <Button 
+          className="gold-gradient text-white hover:opacity-90"
+          onClick={() => router.push('/enroll')}
+        >
           <Plus className="w-4 h-4 mr-2" />
           New Enrollment
         </Button>
