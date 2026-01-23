@@ -6,7 +6,7 @@ import { Activity, Users, Gem, Wallet, AlertCircle, TrendingUp, Settings } from 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const navItems = [
-  { href: '/dashboard', icon: Activity, label: 'Pulse', color: 'from-amber-400 to-amber-600' },
+  { href: '/pulse', icon: Activity, label: 'Pulse', color: 'from-amber-400 to-amber-600' },
   { href: '/dashboard/schemes', icon: Users, label: 'Customers', color: 'from-rose-400 to-rose-600' },
   { href: '/dashboard/gold-engine', icon: Gem, label: 'Plans', color: 'from-emerald-400 to-emerald-600' },
   { href: '/collections', icon: Wallet, label: 'Collections', color: 'from-blue-400 to-blue-600' },

@@ -18,9 +18,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background via-gold-50/5 to-background sparkle-bg">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-gold-50/10">
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl jewel-gradient animate-pulse mx-auto flex items-center justify-center">
+          <div className="w-16 h-16 rounded-2xl jewel-gradient mx-auto flex items-center justify-center">
             <span className="text-2xl font-bold text-white">G</span>
           </div>
           <p className="text-muted-foreground">Loading...</p>

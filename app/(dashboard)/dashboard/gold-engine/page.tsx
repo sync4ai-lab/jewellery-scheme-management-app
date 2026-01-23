@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Sparkles, TrendingUp, Clock, Shield } from 'lucide-react';
+import { Sparkles, TrendingUp, Clock, Shield, Plus, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,8 @@ import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { toast } from 'sonner';
+import { Textarea } from '@/components/ui/textarea';
 
 type GoldRate = {
   id: string;
@@ -19,21 +21,43 @@ type GoldRate = {
   valid_from: string;
   notes: string | null;
   created_by: string | null;
-  created_by_name?: string | null; // hydrated client-side (optional)
+  created_by_name?: string | null;
+};
+
+type SchemeTemplate = {
+  id: string;
+  name: string;
+  installment_amount: number;
+  duration_months: number;
+  bonus_percentage: number;
+  description?: string | null;
+  is_active: boolean;
+  allow_self_enroll?: boolean;
 };
 
 export default function GoldEnginePage() {
   const { profile } = useAuth();
   const [rates, setRates] = useState<GoldRate[]>([]);
+  const [schemes, setSchemes] = useState<SchemeTemplate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [schemeDialogOpen, setSchemeDialogOpen] = useState(false);
   const [newRate, setNewRate] = useState({
     karat: '22K',
     rate_per_gram: '',
     notes: '',
   });
+  const [newScheme, setNewScheme] = useState({
+    name: '',
+    installment_amount: '',
+    duration_months: '',
+    bonus_percentage: '',
+    description: '',
+  });
 
   useEffect(() => {
     void loadGoldRates();
+    void loadSchemes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.retailer_id]);
 
@@ -91,15 +115,21 @@ export default function GoldEnginePage() {
   }
 
   async function updateGoldRate() {
-    if (!profile?.retailer_id || !newRate.rate_per_gram) return;
+    if (!profile?.retailer_id || !newRate.rate_per_gram) {
+      toast.error('Please enter a valid rate');
+      return;
+    }
 
     const rateValue = parseFloat(newRate.rate_per_gram);
-    if (!Number.isFinite(rateValue) || rateValue <= 0) return;
+    if (!Number.isFinite(rateValue) || rateValue <= 0) {
+      toast.error('Please enter a valid positive rate');
+      return;
+    }
 
     try {
       // IMPORTANT FIX:
       // Your schema shows FK on gold_rates.created_by (NOT updated_by).
-      const { error } = await supabase
+      const { error, data } = await supabase
         .from('gold_rates')
         .insert({
           retailer_id: profile.retailer_id,
@@ -107,14 +137,79 @@ export default function GoldEnginePage() {
           rate_per_gram: rateValue,
           notes: newRate.notes || null,
           created_by: profile.id,
+          valid_from: new Date().toISOString(),
+        });
+
+      if (error) {
+        console.error('Rate insert error:', error);
+        throw error;
+      }
+
+      toast.success(`Gold rate updated: ₹${rateValue.toLocaleString()}/g for ${newRate.karat}`);
+      setNewRate({ karat: '22K', rate_per_gram: '', notes: '' });
+      setDialogOpen(false);
+      await loadGoldRates();
+    } catch (error: any) {
+      console.error('Error updating gold rate:', error);
+      toast.error(error?.message || 'Failed to update gold rate');
+    }
+  }
+
+  async function loadSchemes() {
+    if (!profile?.retailer_id) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('scheme_templates')
+        .select('id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll')
+        .eq('retailer_id', profile.retailer_id)
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      setSchemes((data || []) as SchemeTemplate[]);
+    } catch (error) {
+      console.error('Error loading schemes:', error);
+      setSchemes([]);
+    }
+  }
+
+  async function createScheme() {
+    if (!profile?.retailer_id || !newScheme.name || !newScheme.installment_amount || !newScheme.duration_months) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    const installmentAmount = parseFloat(newScheme.installment_amount);
+    const durationMonths = parseInt(newScheme.duration_months);
+    const bonusPercentage = newScheme.bonus_percentage ? parseFloat(newScheme.bonus_percentage) : 0;
+
+    if (!Number.isFinite(installmentAmount) || installmentAmount <= 0 || !Number.isFinite(durationMonths) || durationMonths <= 0) {
+      toast.error('Please enter valid positive numbers');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('scheme_templates')
+        .insert({
+          retailer_id: profile.retailer_id,
+          name: newScheme.name,
+          installment_amount: installmentAmount,
+          duration_months: durationMonths,
+          bonus_percentage: bonusPercentage,
+          description: newScheme.description || null,
+          is_active: true,
         });
 
       if (error) throw error;
 
-      setNewRate({ karat: '22K', rate_per_gram: '', notes: '' });
-      await loadGoldRates();
-    } catch (error) {
-      console.error('Error updating gold rate:', error);
+      toast.success(`Plan created: ${newScheme.name}`);
+      setNewScheme({ name: '', installment_amount: '', duration_months: '', bonus_percentage: '', description: '' });
+      setSchemeDialogOpen(false);
+      await loadSchemes();
+    } catch (error: any) {
+      console.error('Error creating scheme:', error);
+      toast.error(error?.message || 'Failed to create plan');
     }
   }
 
@@ -140,14 +235,88 @@ export default function GoldEnginePage() {
           <p className="text-muted-foreground">Trust through transparency and precision</p>
         </div>
 
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button className="gold-gradient text-white hover:opacity-90">
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Update Rate
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
+        <div className="flex gap-2">
+          <Dialog open={schemeDialogOpen} onOpenChange={setSchemeDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="border-gold-300">
+                <Plus className="w-4 h-4 mr-2" />
+                New Plan
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Create New Plan</DialogTitle>
+                <DialogDescription>
+                  Define a new gold savings scheme for your customers
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Scheme Name</Label>
+                  <Input
+                    placeholder="e.g., 11-Month Classic"
+                    value={newScheme.name}
+                    onChange={(e) => setNewScheme({ ...newScheme, name: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Installment Amount (₹)</Label>
+                  <Input
+                    type="number"
+                    placeholder="e.g., 5000"
+                    value={newScheme.installment_amount}
+                    onChange={(e) => setNewScheme({ ...newScheme, installment_amount: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Duration (Months)</Label>
+                  <Input
+                    type="number"
+                    placeholder="e.g., 11"
+                    value={newScheme.duration_months}
+                    onChange={(e) => setNewScheme({ ...newScheme, duration_months: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Bonus Percentage (%) (Optional)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g., 5"
+                    value={newScheme.bonus_percentage}
+                    onChange={(e) => setNewScheme({ ...newScheme, bonus_percentage: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Description (Optional)</Label>
+                  <Textarea
+                    placeholder="Add scheme details"
+                    value={newScheme.description}
+                    onChange={(e) => setNewScheme({ ...newScheme, description: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+
+                <Button className="w-full gold-gradient text-white" onClick={createScheme}>
+                  Create Plan
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gold-gradient text-white hover:opacity-90">
+                <TrendingUp className="w-4 h-4 mr-2" />
+                Update Rate
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
             <DialogHeader>
               <DialogTitle>Update Gold Rate</DialogTitle>
               <DialogDescription>
@@ -386,6 +555,58 @@ export default function GoldEnginePage() {
               <p className="font-medium">Immutable Record</p>
               <p className="text-muted-foreground">The transaction and locked rate can never be changed - ensuring trust</p>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Active Plans</CardTitle>
+          <CardDescription>
+            Gold savings schemes available for customer enrollment
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {schemes.length > 0 ? (
+              schemes.map((scheme) => (
+                <div
+                  key={scheme.id}
+                  className="flex items-center justify-between gap-4 p-4 rounded-lg glass-card border border-border"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-lg font-bold">{scheme.name}</h3>
+                      {scheme.is_active && <Badge className="status-active">Active</Badge>}
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Installment</p>
+                        <p className="font-semibold">₹{(scheme.installment_amount || 0).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Duration</p>
+                        <p className="font-semibold">{scheme.duration_months} months</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Bonus</p>
+                        <p className="font-semibold">{(scheme.bonus_percentage || 0).toFixed(2)}%</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="icon">
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon">
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-muted-foreground py-8">No plans created yet. Click "New Plan" to add one.</p>
+            )}
           </div>
         </CardContent>
       </Card>

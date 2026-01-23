@@ -128,7 +128,12 @@ export default function SchemesPage() {
 
       if (error) throw error;
 
-      setEnrollments((data || []) as Enrollment[]);
+      const transformed = (data || []).map((e: any) => ({
+        ...e,
+        customers: Array.isArray(e.customers) ? e.customers[0] : e.customers,
+        plans: Array.isArray(e.plans) ? e.plans[0] : e.plans,
+      }));
+      setEnrollments(transformed as Enrollment[]);
     } catch (err) {
       console.error('Error loading enrollments:', err);
       setEnrollments([]);

@@ -266,7 +266,7 @@ export default function PulseDashboard() {
         </Badge>
       </div>
 
-      <Card className="jewel-card glitter-overlay">
+      <Card className="jewel-card">
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <div>

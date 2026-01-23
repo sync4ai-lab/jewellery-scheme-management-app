@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Calendar, Download, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -160,7 +162,13 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
       ]);
 
       if (enrollmentResult.data) {
-        setEnrollment(enrollmentResult.data as Enrollment);
+        const transformed = {
+          ...enrollmentResult.data,
+          plans: Array.isArray((enrollmentResult.data as any).plans) 
+            ? (enrollmentResult.data as any).plans[0] 
+            : (enrollmentResult.data as any).plans,
+        };
+        setEnrollment(transformed as Enrollment);
       } else {
         setEnrollment(null);
       }

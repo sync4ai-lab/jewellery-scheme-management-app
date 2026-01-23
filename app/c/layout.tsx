@@ -100,7 +100,10 @@ export default function CustomerWalletPage() {
 
       if (enrollmentsError) throw enrollmentsError;
 
-      const enrollments = (enrollmentsData || []) as EnrollmentRow[];
+      const enrollments = (enrollmentsData || []).map((e: any) => ({
+        ...e,
+        plans: Array.isArray(e.plans) ? e.plans[0] : e.plans,
+      })) as EnrollmentRow[];
 
       // Gold rate (best effort)
       let currentRate: number | null = null;
