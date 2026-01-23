@@ -53,6 +53,7 @@ export default function PlansPage() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [newScheme, setNewScheme] = useState({
     name: '',
     installment_amount: '',
@@ -78,10 +79,11 @@ export default function PlansPage() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setSchemes((data || []) as SchemeTemplate[]);
+      const normalized = (data || []) as SchemeTemplate[];
+      setSchemes(normalized);
 
       // Load enrollment statistics for each scheme
-      await loadSchemeStatistics();
+      await loadSchemeStatistics(normalized);
     } catch (error) {
       console.error('Error loading schemes:', error);
       toast.error('Failed to load schemes');
@@ -90,8 +92,10 @@ export default function PlansPage() {
     }
   }
 
-  async function loadSchemeStatistics() {
+  async function loadSchemeStatistics(schemesForStats?: SchemeTemplate[]) {
     if (!profile?.retailer_id) return;
+
+    const sourceSchemes = schemesForStats || schemes;
 
     try {
       const { data, error } = await supabase
@@ -110,7 +114,7 @@ export default function PlansPage() {
       });
 
       // Get scheme names
-      const stats = schemes.map(scheme => ({
+      const stats = (sourceSchemes || []).map(scheme => ({
         id: scheme.id,
         name: scheme.name,
         total_enrollments: statsMap.get(scheme.id) || 0,
@@ -138,6 +142,7 @@ export default function PlansPage() {
       return;
     }
 
+    setSaving(true);
     try {
       const schemeData = {
         retailer_id: profile.retailer_id,
@@ -161,7 +166,9 @@ export default function PlansPage() {
       } else {
         const { error } = await supabase
           .from('scheme_templates')
-          .insert(schemeData);
+          .insert(schemeData)
+          .select('id')
+          .single();
 
         if (error) throw error;
         toast.success(`Plan created: ${newScheme.name}`);
@@ -174,6 +181,8 @@ export default function PlansPage() {
     } catch (error: any) {
       console.error('Error saving scheme:', error);
       toast.error(error?.message || 'Failed to save plan');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -292,7 +301,12 @@ export default function PlansPage() {
                 />
               </div>
 
-              <Button className="w-full gold-gradient text-white" onClick={createOrUpdateScheme}>
+              <Button
+                className="w-full gold-gradient text-white"
+                onClick={createOrUpdateScheme}
+                disabled={saving}
+                type="button"
+              >
                 {editingId ? 'Update Plan' : 'Create Plan'}
               </Button>
             </div>

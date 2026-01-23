@@ -37,6 +37,8 @@ type StaffMember = {
   id: string;
   full_name: string;
   email: string;
+  phone?: string | null;
+  employee_id?: string | null;
   role: string;
   created_at: string;
 };
@@ -58,7 +60,11 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [savingRetailer, setSavingRetailer] = useState(false);
   const [addStaffDialog, setAddStaffDialog] = useState(false);
+  const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
+  const [newStaffPhone, setNewStaffPhone] = useState('');
+  const [newStaffEmployeeId, setNewStaffEmployeeId] = useState('');
+  const [addingStaff, setAddingStaff] = useState(false);
 
   // Only ADMIN can access Settings
   useEffect(() => {
@@ -90,7 +96,7 @@ export default function SettingsPage() {
       // Load staff members
       const { data: staffData, error: staffError } = await supabase
         .from('user_profiles')
-        .select('id, full_name, email, role, created_at')
+        .select('id, full_name, email, phone, employee_id, role, created_at')
         .eq('retailer_id', profile.retailer_id)
         .order('created_at', { ascending: false });
 
@@ -126,16 +132,24 @@ export default function SettingsPage() {
 
     setSavingRetailer(true);
     try {
+      const payload: Record<string, any> = {};
+      const nameValue = retailerSettings.name || (retailerSettings as any).business_name;
+      if (nameValue !== undefined) {
+        payload.name = nameValue;
+        payload.business_name = nameValue;
+      }
+      if ('email' in retailerSettings || 'contact_email' in (retailerSettings as any)) {
+        payload.email = retailerSettings.email;
+        payload.contact_email = (retailerSettings as any).email ?? (retailerSettings as any).contact_email;
+      }
+      if ('phone' in retailerSettings) payload.phone = retailerSettings.phone;
+      if ('address' in retailerSettings) payload.address = retailerSettings.address;
+      if ('city' in retailerSettings) payload.city = retailerSettings.city;
+      if ('state' in retailerSettings) payload.state = retailerSettings.state;
+
       const { error } = await supabase
         .from('retailers')
-        .update({
-          name: retailerSettings.name,
-          email: retailerSettings.email,
-          phone: retailerSettings.phone,
-          address: retailerSettings.address,
-          city: retailerSettings.city,
-          state: retailerSettings.state,
-        })
+        .update(payload)
         .eq('id', profile.retailer_id);
 
       if (error) throw error;
@@ -145,6 +159,43 @@ export default function SettingsPage() {
       toast.error(error?.message || 'Failed to update settings');
     } finally {
       setSavingRetailer(false);
+    }
+  }
+
+  async function addStaffMember() {
+    if (!profile?.retailer_id) {
+      toast.error('Missing retailer context');
+      return;
+    }
+    if (!newStaffName || !newStaffEmail) {
+      toast.error('Name and email are required');
+      return;
+    }
+
+    setAddingStaff(true);
+    try {
+      const { error } = await supabase.from('user_profiles').insert({
+        retailer_id: profile.retailer_id,
+        full_name: newStaffName,
+        email: newStaffEmail,
+        phone: newStaffPhone || null,
+        employee_id: newStaffEmployeeId || null,
+        role: 'STAFF',
+      });
+
+      if (error) throw error;
+      toast.success('Staff member added');
+      setNewStaffName('');
+      setNewStaffEmail('');
+      setNewStaffPhone('');
+      setNewStaffEmployeeId('');
+      setAddStaffDialog(false);
+      await loadSettings();
+    } catch (error: any) {
+      console.error('Error adding staff:', error);
+      toast.error(error?.message || 'Failed to add staff');
+    } finally {
+      setAddingStaff(false);
     }
   }
 
@@ -336,10 +387,34 @@ export default function SettingsPage() {
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Add Staff Member</DialogTitle>
-                    <DialogDescription>
-                      Coming soon: Staff management will be available soon
-                    </DialogDescription>
+                    <DialogDescription>Capture basic staff details</DialogDescription>
                   </DialogHeader>
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>Full Name *</Label>
+                      <Input value={newStaffName} onChange={(e) => setNewStaffName(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Email *</Label>
+                      <Input type="email" value={newStaffEmail} onChange={(e) => setNewStaffEmail(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Phone</Label>
+                      <Input value={newStaffPhone} onChange={(e) => setNewStaffPhone(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Employee ID</Label>
+                      <Input value={newStaffEmployeeId} onChange={(e) => setNewStaffEmployeeId(e.target.value)} />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button variant="ghost" onClick={() => setAddStaffDialog(false)}>
+                        Cancel
+                      </Button>
+                      <Button className="gold-gradient text-white" onClick={addStaffMember} disabled={addingStaff}>
+                        {addingStaff ? 'Saving...' : 'Add Staff'}
+                      </Button>
+                    </div>
+                  </div>
                 </DialogContent>
               </Dialog>
             </CardHeader>
@@ -354,6 +429,13 @@ export default function SettingsPage() {
                       <div className="flex-1">
                         <h3 className="font-medium">{staff.full_name}</h3>
                         <p className="text-sm text-muted-foreground">{staff.email}</p>
+                        {(staff.phone || staff.employee_id) && (
+                          <p className="text-xs text-muted-foreground">
+                            {staff.phone ? `${staff.phone}` : ''}
+                            {staff.phone && staff.employee_id ? ' • ' : ''}
+                            {staff.employee_id ? `ID: ${staff.employee_id}` : ''}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         <Badge variant="outline">{staff.role}</Badge>

@@ -62,13 +62,13 @@ export function TopBar() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem onClick={() => router.push('/dashboard/enroll')}>
+              <DropdownMenuItem onClick={() => router.push('/enroll')}>
                 Enroll Customer
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/dashboard/collections')}>
+              <DropdownMenuItem onClick={() => router.push('/collections')}>
                 Record Payment
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/dashboard/gold-engine')}>
+              <DropdownMenuItem onClick={() => router.push('/plans')}>
                 Manage Plans
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -103,7 +103,7 @@ export function TopBar() {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/dashboard/settings')}>
+              <DropdownMenuItem onClick={() => router.push('/settings')}>
                 Settings
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleSignOut}>
