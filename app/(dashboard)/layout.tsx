@@ -36,13 +36,10 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-gold-50/10">
       <TopBar />
+      <IconDock />
 
       <div className="flex flex-col items-center py-6">
-        <div className="mb-6">
-          <IconDock />
-        </div>
-
-        <main className="w-full max-w-7xl px-6 page-transition">
+        <main className="w-full max-w-7xl px-6 page-transition pb-32">
           {children}
         </main>
       </div>
