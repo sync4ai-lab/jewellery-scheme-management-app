@@ -229,7 +229,7 @@ export default function PulseDashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Pulse</h1>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Pulse</h1>
           <p className="text-muted-foreground">Today's business snapshot</p>
         </div>
         <Badge className="text-sm px-4 py-2">

@@ -308,7 +308,7 @@ export default function EnrollmentWizard() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Enroll New Customer</h1>
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Enroll New Customer</h1>
         <p className="text-muted-foreground">2-step enrollment process</p>
       </div>
 

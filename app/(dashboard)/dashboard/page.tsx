@@ -109,8 +109,7 @@ export default function SchemesPage() {
           customers (
             id,
             full_name,
-            phone,
-            customer_code
+            phone
           ),
           plans (
             id,
@@ -230,8 +229,15 @@ export default function SchemesPage() {
   }
 
   return (
-    <div>
-      <h1>Dashboard</h1>
+    <div className="space-y-8">
+      <div className="space-y-2">
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
+          Dashboard
+        </h1>
+        <p className="text-lg text-gold-600/70 font-medium">
+          Manage your gold schemes with elegance and precision
+        </p>
+      </div>
     </div>
   );
 }

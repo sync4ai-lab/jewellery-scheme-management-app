@@ -22,7 +22,6 @@ type Customer = {
   id: string;
   full_name: string;
   phone: string;
-  customer_code: string;
 };
 
 type Plan = {
@@ -109,8 +108,7 @@ export default function SchemesPage() {
           customers (
             id,
             full_name,
-            phone,
-            customer_code
+            phone
           ),
           plans (
             id,
@@ -176,7 +174,6 @@ export default function SchemesPage() {
 
       return (
         (c.full_name || '').toLowerCase().includes(q) ||
-        (c.customer_code || '').toLowerCase().includes(q) ||
         (c.phone || '').includes(search.trim())
       );
     });
@@ -280,7 +277,7 @@ export default function SchemesPage() {
                         </div>
                         <div>
                           <CardTitle className="text-base">{c?.full_name || 'Unknown Customer'}</CardTitle>
-                          <p className="text-xs text-muted-foreground">{c?.customer_code || '—'}</p>
+
                         </div>
                       </div>
                       {getStatusBadge(enrollment.status)}
@@ -325,8 +322,7 @@ export default function SchemesPage() {
                     {selectedEnrollment && getStatusBadge(selectedEnrollment.status)}
                   </DialogTitle>
                   <DialogDescription>
-                    Customer Code: {selectedEnrollment?.customers?.customer_code || '—'} | Phone:{' '}
-                    {selectedEnrollment?.customers?.phone || '—'}
+                    Phone: {selectedEnrollment?.customers?.phone || '—'}
                   </DialogDescription>
                 </DialogHeader>
 

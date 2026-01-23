@@ -140,7 +140,7 @@ export default function DuePage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Due & Overdue Payments</h1>
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Due & Overdue Payments</h1>
         <p className="text-muted-foreground">Track and manage customer payment dues</p>
       </div>
 
