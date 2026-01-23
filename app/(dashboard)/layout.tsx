@@ -7,14 +7,18 @@ import { TopBar } from '@/components/retailer/top-bar';
 import { IconDock } from '@/components/retailer/icon-dock';
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
     }
-  }, [user, loading, router]);
+    // Only staff and admin can access dashboard
+    if (!loading && user && profile && !['STAFF', 'ADMIN'].includes(profile.role)) {
+      router.push('/c/schemes');
+    }
+  }, [user, profile, loading, router]);
 
   if (loading) {
     return (

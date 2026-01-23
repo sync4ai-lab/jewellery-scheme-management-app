@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/contexts/auth-context';
+import { useRouter } from 'next/navigation';
 
 type StaffPerformance = {
   staff_id: string;
@@ -18,6 +19,15 @@ type StaffPerformance = {
 
 export default function GrowthPage() {
   const { profile } = useAuth();
+  const router = useRouter();
+  
+  // Only ADMIN and STAFF can access Growth
+  useEffect(() => {
+    if (profile && !['ADMIN', 'STAFF'].includes(profile.role)) {
+      router.push('/c/schemes');
+    }
+  }, [profile, router]);
+
   const [rows, setRows] = useState<StaffPerformance[]>([]);
   const [loading, setLoading] = useState(true);
 

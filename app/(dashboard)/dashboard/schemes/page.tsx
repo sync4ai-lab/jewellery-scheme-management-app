@@ -2,14 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Plus, User, Phone, Calendar, Users } from 'lucide-react';
+import { Search, Plus, User, Phone, Calendar, Users, Save } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -84,6 +86,10 @@ export default function SchemesPage() {
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
   const [transactions, setTransactions] = useState<Txn[]>([]);
   const [loading, setLoading] = useState(true);
+  const [recordPaymentDialog, setRecordPaymentDialog] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMode, setPaymentMode] = useState('CASH');
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
 
   useEffect(() => {
     void loadEnrollments();
@@ -168,6 +174,66 @@ export default function SchemesPage() {
     } catch (err) {
       console.error('Error loading transactions:', err);
       setTransactions([]);
+    }
+  }
+
+  async function recordPayment() {
+    if (!profile?.retailer_id || !selectedEnrollment || !paymentAmount) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    const amount = parseFloat(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error('Please enter a valid payment amount');
+      return;
+    }
+
+    setPaymentSubmitting(true);
+
+    try {
+      // Get current gold rate for this karat
+      const { data: rateData, error: rateError } = await supabase
+        .from('gold_rates')
+        .select('id, rate_per_gram')
+        .eq('retailer_id', profile.retailer_id)
+        .order('valid_from', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (rateError) throw rateError;
+
+      const ratePerGram = rateData?.rate_per_gram || 0;
+      const gramsAllocated = amount / ratePerGram;
+
+      // Insert transaction
+      const { error: txnError } = await supabase
+        .from('transactions')
+        .insert({
+          retailer_id: profile.retailer_id,
+          enrollment_id: selectedEnrollment.id,
+          amount_paid: amount,
+          rate_per_gram_snapshot: ratePerGram,
+          gold_rate_id: rateData?.id || null,
+          grams_allocated_snapshot: gramsAllocated,
+          txn_type: 'PRIMARY_INSTALLMENT',
+          mode: paymentMode,
+          payment_status: 'SUCCESS',
+          paid_at: new Date().toISOString(),
+        });
+
+      if (txnError) throw txnError;
+
+      toast.success(`Payment of ₹${amount.toLocaleString()} recorded successfully`);
+      setPaymentAmount('');
+      setPaymentMode('CASH');
+      setRecordPaymentDialog(false);
+      await loadTransactions(selectedEnrollment.id);
+    } catch (error: any) {
+      console.error('Error recording payment:', error);
+      toast.error(error?.message || 'Failed to record payment');
+    } finally {
+      setPaymentSubmitting(false);
     }
   }
 
@@ -386,9 +452,68 @@ export default function SchemesPage() {
                       <div>
                         <div className="flex items-center justify-between mb-4">
                           <h3 className="text-lg font-semibold">Payment History</h3>
-                          <Button size="sm" className="gold-gradient text-white">
-                            Record Payment
-                          </Button>
+                          <Dialog open={recordPaymentDialog} onOpenChange={setRecordPaymentDialog}>
+                            <DialogTrigger asChild>
+                              <Button size="sm" className="gold-gradient text-white">
+                                <Save className="w-4 h-4 mr-2" />
+                                Record Payment
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-md">
+                              <DialogHeader>
+                                <DialogTitle>Record Payment</DialogTitle>
+                                <DialogDescription>
+                                  Record a new payment for {selectedEnrollment?.customers?.full_name}
+                                </DialogDescription>
+                              </DialogHeader>
+
+                              <div className="space-y-4 py-4">
+                                <div className="space-y-2">
+                                  <Label>Amount (₹) *</Label>
+                                  <Input
+                                    type="number"
+                                    placeholder="Enter payment amount"
+                                    value={paymentAmount}
+                                    onChange={(e) => setPaymentAmount(e.target.value)}
+                                    step="0.01"
+                                  />
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label>Payment Mode *</Label>
+                                  <select
+                                    value={paymentMode}
+                                    onChange={(e) => setPaymentMode(e.target.value)}
+                                    className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground"
+                                  >
+                                    <option value="CASH">Cash</option>
+                                    <option value="CHEQUE">Cheque</option>
+                                    <option value="DIGITAL">Digital Transfer</option>
+                                    <option value="CREDIT_CARD">Credit Card</option>
+                                    <option value="UPI">UPI</option>
+                                  </select>
+                                </div>
+
+                                <div className="flex gap-3 mt-6">
+                                  <Button
+                                    variant="outline"
+                                    className="flex-1"
+                                    disabled={paymentSubmitting}
+                                    onClick={() => setRecordPaymentDialog(false)}
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    className="flex-1 gold-gradient text-white"
+                                    disabled={paymentSubmitting}
+                                    onClick={recordPayment}
+                                  >
+                                    {paymentSubmitting ? 'Saving...' : 'Record Payment'}
+                                  </Button>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
                         </div>
 
                         <div className="space-y-3">

@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/auth-context';
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 type DashboardMetrics = {
   todayCollections: number;
@@ -52,14 +53,24 @@ function safeNumber(v: unknown): number {
 
 export default function PulseDashboard() {
   const { profile } = useAuth();
+  const router = useRouter();
+  
+  // Only ADMIN and STAFF can access Pulse
+  useEffect(() => {
+    if (profile && !['ADMIN', 'STAFF'].includes(profile.role)) {
+      router.push('/c/schemes');
+    }
+  }, [profile, router]);
+
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [staffLeaderboard, setStaffLeaderboard] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [collectionsTrend, setCollectionsTrend] = useState<Array<{ date: string; collections: number }>>([]);
+  const [overdueTrend, setOverdueTrend] = useState<Array<{ date: string; overdue: number }>>([]);
+  const [enrollmentTrend, setEnrollmentTrend] = useState<Array<{ date: string; enrollments: number }>>([]);
 
   const [updateRateDialog, setUpdateRateDialog] = useState(false);
   const [newRate, setNewRate] = useState('');
-
-  const router = useRouter();
 
   const todayRange = useMemo(() => {
     // Use UTC day boundaries to avoid "today" drifting due to server timezone comparisons
@@ -76,6 +87,7 @@ export default function PulseDashboard() {
   useEffect(() => {
     if (!profile?.retailer_id) return;
     void loadDashboard();
+    void loadChartTrends();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.retailer_id]);
 
@@ -196,6 +208,78 @@ export default function PulseDashboard() {
       toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadChartTrends() {
+    if (!profile?.retailer_id) return;
+
+    try {
+      // Load last 7 days of collections, overdue, and enrollment data
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      // Collections trend (last 7 days)
+      const { data: txnData } = await supabase
+        .from('transactions')
+        .select('paid_at, amount_paid')
+        .eq('retailer_id', profile.retailer_id)
+        .eq('payment_status', 'SUCCESS')
+        .gte('paid_at', sevenDaysAgo.toISOString());
+
+      const collectionsMap = new Map<string, number>();
+      (txnData || []).forEach((txn: any) => {
+        const date = new Date(txn.paid_at).toISOString().split('T')[0];
+        collectionsMap.set(date, (collectionsMap.get(date) || 0) + (txn.amount_paid || 0));
+      });
+
+      const collectionsTrendData = Array.from(collectionsMap).map(([date, amount]) => ({
+        date,
+        collections: Math.round(amount),
+      })).sort((a, b) => a.date.localeCompare(b.date));
+      setCollectionsTrend(collectionsTrendData);
+
+      // Overdue trend (last 7 days)
+      const { data: billingData } = await supabase
+        .from('enrollment_billing_months')
+        .select('due_date, primary_paid')
+        .eq('retailer_id', profile.retailer_id);
+
+      const overdueMap = new Map<string, number>();
+      (billingData || []).forEach((billing: any) => {
+        if (!billing.primary_paid && billing.due_date <= now.toISOString().split('T')[0]) {
+          const date = billing.due_date;
+          overdueMap.set(date, (overdueMap.get(date) || 0) + 1);
+        }
+      });
+
+      const overdueTrendData = Array.from(overdueMap).map(([date, count]) => ({
+        date,
+        overdue: count,
+      })).sort((a, b) => a.date.localeCompare(b.date));
+      setOverdueTrend(overdueTrendData);
+
+      // Enrollment trend (last 7 days)
+      const { data: enrollData } = await supabase
+        .from('enrollments')
+        .select('created_at, status')
+        .eq('retailer_id', profile.retailer_id)
+        .eq('status', 'ACTIVE')
+        .gte('created_at', sevenDaysAgo.toISOString());
+
+      const enrollmentMap = new Map<string, number>();
+      (enrollData || []).forEach((enroll: any) => {
+        const date = new Date(enroll.created_at).toISOString().split('T')[0];
+        enrollmentMap.set(date, (enrollmentMap.get(date) || 0) + 1);
+      });
+
+      const enrollmentTrendData = Array.from(enrollmentMap).map(([date, count]) => ({
+        date,
+        enrollments: count,
+      })).sort((a, b) => a.date.localeCompare(b.date));
+      setEnrollmentTrend(enrollmentTrendData);
+    } catch (error) {
+      console.error('Error loading chart trends:', error);
     }
   }
 
@@ -421,6 +505,87 @@ export default function PulseDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Analytics Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Collections Trend */}
+        <Card className="glass-card border-2 border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-green-600" />
+              Collections Trend
+            </CardTitle>
+            <CardDescription>Last 7 days of collections</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {collectionsTrend.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={collectionsTrend}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip formatter={(value) => `₹${value.toLocaleString()}`} />
+                  <Line type="monotone" dataKey="collections" stroke="#10B981" strokeWidth={2} dot={{ fill: '#10B981' }} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-80 flex items-center justify-center text-muted-foreground">No data available</div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Enrollment Trend */}
+        <Card className="glass-card border-2 border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-600" />
+              New Enrollments
+            </CardTitle>
+            <CardDescription>Last 7 days of new customers</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {enrollmentTrend.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={enrollmentTrend}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="enrollments" fill="#3B82F6" name="New Enrollments" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-80 flex items-center justify-center text-muted-foreground">No data available</div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Overdue Tracking */}
+      <Card className="glass-card border-2 border-red-200 dark:border-red-900">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-red-600" />
+            Overdue Tracking
+          </CardTitle>
+          <CardDescription>Due payments not received on time</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {overdueTrend.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={overdueTrend}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip />
+                <Line type="monotone" dataKey="overdue" stroke="#EF4444" strokeWidth={2} dot={{ fill: '#EF4444' }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-80 flex items-center justify-center text-muted-foreground">No overdue data - Great job!</div>
+          )}
+        </CardContent>
+      </Card>
 
       <Dialog open={updateRateDialog} onOpenChange={setUpdateRateDialog}>
         <DialogContent className="sm:max-w-md">
