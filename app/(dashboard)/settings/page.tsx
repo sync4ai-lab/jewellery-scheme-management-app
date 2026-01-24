@@ -261,16 +261,6 @@ export default function SettingsPage() {
       toast.error(`Failed to add staff: ${error?.message || 'Unknown error'}`);
     } finally {
       setAddingStaff(false);
-      setNewStaffPhone('');
-      setNewStaffEmployeeId('');
-      setNewStaffStoreId('');
-      setAddStaffDialog(false);
-      await loadSettings();
-    } catch (error: any) {
-      console.error('Error adding staff:', error);
-      toast.error(error?.message || 'Failed to add staff');
-    } finally {
-      setAddingStaff(false);
     }
   }
 
