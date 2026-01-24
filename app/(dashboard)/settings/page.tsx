@@ -26,12 +26,12 @@ export const dynamic = 'force-dynamic';
 
 type RetailerSettings = {
   id: string;
-  name: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  city?: string;
-  state?: string;
+  name?: string;
+  business_name: string;
+  legal_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
 };
 
 type StaffMember = {
@@ -712,9 +712,9 @@ export default function SettingsPage() {
                             {store.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </div>
-                        {(store.address || store.city || store.state) && (
+                        {store.address && (
                           <p className="text-sm text-muted-foreground mt-1">
-                            {[store.address, store.city, store.state].filter(Boolean).join(', ')}
+                            {store.address}
                           </p>
                         )}
                         {store.phone && (
@@ -733,10 +733,11 @@ export default function SettingsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                        onClick={() => toggleStoreStatus(store.id, store.is_active)}
-                      >
-                        {store.is_active ? 'Deactivate' : 'Activate'}
-                      </Button>
+                          onClick={() => toggleStoreStatus(store.id, store.is_active)}
+                        >
+                          {store.is_active ? 'Deactivate' : 'Activate'}
+                        </Button>
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -948,8 +949,8 @@ export default function SettingsPage() {
                           <Badge variant="outline">{rate.karat}</Badge>
                           <p className="text-2xl font-bold">₹{rate.rate_per_gram.toLocaleString()}/g</p>
                           {rate.change_percentage !== null && rate.change_percentage !== 0 && (
-                            <Badge variant={rate.change_percentage > 0 ? 'destructive' : 'default'}>
-                              {rate.change_percentage > 0 ? '+' : ''}{rate.change_percentage}%
+                            <Badge variant={(rate.change_percentage ?? 0) > 0 ? 'destructive' : 'default'}>
+                              {(rate.change_percentage ?? 0) > 0 ? '+' : ''}{rate.change_percentage?.toFixed(2)}%
                             </Badge>
                           )}
                         </div>
