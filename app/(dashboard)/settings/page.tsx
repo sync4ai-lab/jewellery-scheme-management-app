@@ -177,7 +177,8 @@ export default function SettingsPage() {
         .from('retailers')
         .update({
           business_name: retailerSettings.business_name,
-          contact_email: retailerSettings.contact_email,
+          legal_name: retailerSettings.legal_name,
+          email: retailerSettings.email,
           phone: retailerSettings.phone,
           address: retailerSettings.address,
         })
@@ -402,19 +403,29 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Email</Label>
+                  <Label>Legal Name</Label>
                   <Input
-                    value={retailerSettings?.contact_email || ''}
+                    value={retailerSettings?.legal_name || ''}
                     onChange={(e) =>
-                      setRetailerSettings({ ...retailerSettings!, contact_email: e.target.value })
+                      setRetailerSettings({ ...retailerSettings!, legal_name: e.target.value })
                     }
-                    type="email"
-                    placeholder="business@example.com"
+                    placeholder="Legal entity name (optional)"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input
+                    value={retailerSettings?.email || ''}
+                    onChange={(e) =>
+                      setRetailerSettings({ ...retailerSettings!, email: e.target.value })
+                    }
+                    type="email"
+                    placeholder="business@example.com"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label>Phone</Label>
                   <Input
@@ -425,16 +436,17 @@ export default function SettingsPage() {
                     placeholder="+91 98765 43210"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Address</Label>
-                  <Input
-                    value={retailerSettings?.address || ''}
-                    onChange={(e) =>
-                      setRetailerSettings({ ...retailerSettings!, address: e.target.value })
-                    }
-                    placeholder="Complete business address"
-                  />
-                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Address</Label>
+                <Input
+                  value={retailerSettings?.address || ''}
+                  onChange={(e) =>
+                    setRetailerSettings({ ...retailerSettings!, address: e.target.value })
+                  }
+                  placeholder="Complete business address"
+                />
               </div>
 
               <div className="text-sm text-muted-foreground">
