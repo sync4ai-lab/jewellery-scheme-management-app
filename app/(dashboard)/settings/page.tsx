@@ -165,25 +165,32 @@ export default function SettingsPage() {
   }
 
   async function updateRetailerSettings() {
-    if (!profile?.retailer_id || !retailerSettings) return;
+    if (!profile?.retailer_id || !retailerSettings) {
+      console.log('Cannot update: missing profile or settings', { profile, retailerSettings });
+      return;
+    }
 
+    console.log('Updating retailer settings:', retailerSettings);
     setSavingRetailer(true);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('retailers')
         .update({
-          name: retailerSettings.name,
-          business_name: retailerSettings.name,
-          email: retailerSettings.email,
-          contact_email: retailerSettings.email,
+          business_name: retailerSettings.business_name,
+          contact_email: retailerSettings.contact_email,
           phone: retailerSettings.phone,
           address: retailerSettings.address,
           city: retailerSettings.city,
           state: retailerSettings.state,
         })
-        .eq('id', profile.retailer_id);
+        .eq('id', profile.retailer_id)
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+      console.log('Update successful:', data);
       toast.success('✅ Retailer settings saved');
       await loadSettings();
     } catch (error: any) {
@@ -196,6 +203,7 @@ export default function SettingsPage() {
 
   async function addStaffMember() {
     if (!profile?.retailer_id) {
+      console.error('Missing retailer_id');
       toast.error('Missing retailer context');
       return;
     }
@@ -204,11 +212,12 @@ export default function SettingsPage() {
       return;
     }
 
+    console.log('Adding staff member:', { newStaffName, newStaffEmail, newStaffPhone, newStaffEmployeeId, newStaffStoreId });
     setAddingStaff(true);
     try {
       // Note: This creates a user_profile WITHOUT auth.users entry
       // In production, you'd create auth user first, then profile
-      const { error } = await supabase.from('user_profiles').insert({
+      const { data, error } = await supabase.from('user_profiles').insert({
         retailer_id: profile.retailer_id,
         full_name: newStaffName,
         email: newStaffEmail,
@@ -217,9 +226,13 @@ export default function SettingsPage() {
         store_id: newStaffStoreId || null,
         role: 'STAFF',
         status: 'ACTIVE',
-      });
+      }).select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+      console.log('Staff added successfully:', data);
       toast.success('✅ Staff member added');
       setNewStaffName('');
       setNewStaffEmail('');
@@ -257,6 +270,7 @@ export default function SettingsPage() {
 
   async function addStore() {
     if (!profile?.retailer_id) {
+      console.error('Missing retailer_id');
       toast.error('Missing retailer context');
       return;
     }
@@ -265,9 +279,10 @@ export default function SettingsPage() {
       return;
     }
 
+    console.log('Adding store:', { newStoreName, newStoreCode, newStoreAddress, newStoreCity, newStoreState, newStorePhone });
     setAddingStore(true);
     try {
-      const { error } = await supabase.from('stores').insert({
+      const { data, error } = await supabase.from('stores').insert({
         retailer_id: profile.retailer_id,
         name: newStoreName,
         code: newStoreCode || null,
@@ -276,9 +291,13 @@ export default function SettingsPage() {
         state: newStoreState || null,
         phone: newStorePhone || null,
         is_active: true,
-      });
+      }).select();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+      console.log('Store added successfully:', data);
       toast.success('✅ Store location added');
       setNewStoreName('');
       setNewStoreCode('');
@@ -377,9 +396,9 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label>Business Name *</Label>
                   <Input
-                    value={retailerSettings?.name || ''}
+                    value={retailerSettings?.business_name || ''}
                     onChange={(e) =>
-                      setRetailerSettings({ ...retailerSettings!, name: e.target.value })
+                      setRetailerSettings({ ...retailerSettings!, business_name: e.target.value })
                     }
                     placeholder="Your business name"
                   />
@@ -387,9 +406,9 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label>Email</Label>
                   <Input
-                    value={retailerSettings?.email || ''}
+                    value={retailerSettings?.contact_email || ''}
                     onChange={(e) =>
-                      setRetailerSettings({ ...retailerSettings!, email: e.target.value })
+                      setRetailerSettings({ ...retailerSettings!, contact_email: e.target.value })
                     }
                     type="email"
                     placeholder="business@example.com"
