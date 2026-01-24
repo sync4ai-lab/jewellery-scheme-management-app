@@ -336,17 +336,7 @@ export default function EnrollmentWizard() {
         }
 
         customerId = existingId;
-        finalCustomerName = customerName;     phone: customerPhone,
-              full_name: customerName,
-              customer_code: `CUST${Date.now()}`,
-              store_id: selectedStore,
-            })
-            .select()
-            .single();
-
-          if (customerError) throw customerError;
-          customerId = newCustomer.id;
-        }
+        finalCustomerName = customerName;
       }
 
       // 2) Create enrollment (NOT schemes)
