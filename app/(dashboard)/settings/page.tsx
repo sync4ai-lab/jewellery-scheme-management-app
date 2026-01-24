@@ -180,8 +180,6 @@ export default function SettingsPage() {
           contact_email: retailerSettings.contact_email,
           phone: retailerSettings.phone,
           address: retailerSettings.address,
-          city: retailerSettings.city,
-          state: retailerSettings.state,
         })
         .eq('id', profile.retailer_id)
         .select();
@@ -428,38 +426,19 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>City</Label>
-                  <Input
-                    value={retailerSettings?.city || ''}
-                    onChange={(e) =>
-                      setRetailerSettings({ ...retailerSettings!, city: e.target.value })
-                    }
-                    placeholder="Your city"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
                   <Label>Address</Label>
                   <Input
                     value={retailerSettings?.address || ''}
                     onChange={(e) =>
                       setRetailerSettings({ ...retailerSettings!, address: e.target.value })
                     }
-                    placeholder="Your address"
+                    placeholder="Complete business address"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>State</Label>
-                  <Input
-                    value={retailerSettings?.state || ''}
-                    onChange={(e) =>
-                      setRetailerSettings({ ...retailerSettings!, state: e.target.value })
-                    }
-                    placeholder="Your state"
-                  />
-                </div>
+              </div>
+
+              <div className="text-sm text-muted-foreground">
+                💡 City and state details are managed per store in the Stores tab
               </div>
 
               <Button
