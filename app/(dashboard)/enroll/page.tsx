@@ -369,8 +369,9 @@ export default function EnrollmentWizard() {
           created_by: profile.id,
         } as any)
         .select()
-        .single();finalCustomerName}!`);
-      router.push('/dashboard/schemes'
+        .single();
+
+      if (enrollErr) throw enrollErr;
 
       // 3) Create first billing month row (minimal, avoids relying on RPC)
       const billingMonth = computeFirstBillingMonth(startDate);
@@ -383,7 +384,23 @@ export default function EnrollmentWizard() {
         primary_paid: false,
         status: 'DUE',
       });
-// Get display name for step 2
+
+      if (billErr) throw billErr;
+
+      toast.success(`Successfully enrolled ${finalCustomerName}!`);
+      router.push('/dashboard/schemes');
+    } catch (error: any) {
+      console.error('Enrollment error:', error);
+      toast.error(error.message || 'Failed to enroll customer');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const selectedPlanData = plans.find((p) => p.id === selectedPlan);
+  const selectedMin = selectedPlanData ? getMinCommitment(selectedPlanData) : 0;
+
+  // Get display name for step 2
   const displayCustomerName = enrollmentType === 'EXISTING' 
     ? allCustomers.find(c => c.id === selectedCustomerId)?.full_name || ''
     : customerName;
@@ -410,37 +427,20 @@ export default function EnrollmentWizard() {
             >
               {step > 1 ? <CheckCircle className="w-5 h-5" /> : '1'}
             </div>
-  
-  return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Enroll New Customer</h1>
-        <p className="text-muted-foreground">2-step enrollment process</p>
-      </div>
-
-      <div className="flex items-center gap-4 mb-8">
-        <div className={`flex items-center gap-2 ${step >= 1 ? 'text-gold-600' : 'text-muted-foreground'}`}>
-          <div
-            className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-              step >= 1 ? 'jewel-gradient text-white' : 'bg-muted'
-            }`}
-          >
-            {step > 1 ? <CheckCircle className="w-5 h-5" /> : '1'}
+            <span className="font-medium">Customer Details</span>
           </div>
-          <span className="font-medium">Customer Details</span>
-        </div>
-        <div className="flex-1 h-0.5 bg-muted" />
-        <div className={`flex items-center gap-2 ${step >= 2 ? 'text-gold-600' : 'text-muted-foreground'}`}>
-          <div
-            className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-              step >= 2 ? 'jewel-gradient text-white' : 'bg-muted'
-            }`}
-          >
-            2
+          <div className="flex-1 h-0.5 bg-muted" />
+          <div className={`flex items-center gap-2 ${step >= 2 ? 'text-gold-600' : 'text-muted-foreground'}`}>
+            <div
+              className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
+                step >= 2 ? 'jewel-gradient text-white' : 'bg-muted'
+              }`}
+            >
+              2
+            </div>
+            <span className="font-medium">Plan Selection</span>
           </div>
-          <span className="font-medium">Plan Selection</span>
         </div>
-      </div>
       )}
 
       {/* Step 0: Choose Enrollment Type */}
