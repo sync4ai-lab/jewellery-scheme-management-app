@@ -248,19 +248,19 @@ export default function PulseDashboard() {
           .limit(1)
           .maybeSingle(),
 
-        // Period paid transactions with karat info from enrollments
+        // Period paid transactions - WITHOUT JOIN for now to avoid errors
         supabase
           .from('transactions')
-          .select('amount_paid, grams_allocated_snapshot, paid_at, enrollment_id, enrollments(karat)')
+          .select('amount_paid, grams_allocated_snapshot, paid_at, enrollment_id')
           .eq('retailer_id', retailerId)
           .eq('payment_status', 'SUCCESS')
           .gte('paid_at', startISO)
           .lt('paid_at', endISO),
 
-        // Dues outstanding in period: billing rows where due_date is in range AND not paid
+        // Dues outstanding - WITHOUT JOIN for now to avoid errors
         supabase
           .from('enrollment_billing_months')
-          .select('enrollment_id, monthly_amount, enrollments(karat)')
+          .select('enrollment_id, monthly_amount')
           .eq('retailer_id', retailerId)
           .gte('due_date', startISO.split('T')[0])
           .lt('due_date', endISO.split('T')[0])
@@ -329,14 +329,24 @@ export default function PulseDashboard() {
           : null,
       };
 
+      // Fetch all enrollments to get karat information
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('id, karat')
+        .eq('retailer_id', retailerId);
+
+      // Create a map of enrollment_id -> karat
+      const enrollmentKaratMap = new Map<string, string>();
+      (enrollmentsData || []).forEach((e: any) => {
+        enrollmentKaratMap.set(e.id, e.karat);
+      });
+
       // Calculate collections and grams allocated broken down by metal type
       let collections18K = 0, collections22K = 0, collections24K = 0, collectionsSilver = 0;
       let gold18KAllocated = 0, gold22KAllocated = 0, gold24KAllocated = 0, silverAllocated = 0;
       
       (txnsResult.data || []).forEach((t: any) => {
-        // Handle both array and object responses from Supabase join
-        const enrollment = Array.isArray(t.enrollments) ? t.enrollments[0] : t.enrollments;
-        const karat = enrollment?.karat;
+        const karat = enrollmentKaratMap.get(t.enrollment_id);
         const amt = safeNumber(t.amount_paid);
         const grams = safeNumber(t.grams_allocated_snapshot);
         
@@ -362,9 +372,7 @@ export default function PulseDashboard() {
       let dues18K = 0, dues22K = 0, dues24K = 0, duesSilver = 0;
       
       (duesResult.data || []).forEach((d: any) => {
-        // Handle both array and object responses from Supabase join
-        const enrollment = Array.isArray(d.enrollments) ? d.enrollments[0] : d.enrollments;
-        const karat = enrollment?.karat;
+        const karat = enrollmentKaratMap.get(d.enrollment_id);
         const amt = safeNumber(d.monthly_amount);
         
         if (karat === '18K') {
