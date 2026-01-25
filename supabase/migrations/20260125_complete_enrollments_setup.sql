@@ -19,6 +19,7 @@ CREATE TABLE enrollments (
   billing_day_of_month integer,
   timezone text DEFAULT 'Asia/Kolkata',
   commitment_amount numeric(10,2) NOT NULL,
+  karat text DEFAULT '22K',
   source text,
   store_id uuid REFERENCES stores(id) ON DELETE SET NULL,
   assigned_staff_id uuid REFERENCES user_profiles(id) ON DELETE SET NULL,

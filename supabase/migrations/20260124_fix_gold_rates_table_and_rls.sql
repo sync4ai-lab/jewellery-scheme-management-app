@@ -38,14 +38,14 @@ CREATE POLICY "Users can view gold rates in their retailer"
     retailer_id IN (SELECT retailer_id FROM user_profiles WHERE id = auth.uid())
   );
 
--- INSERT: Only ADMINs can add new rates
+-- INSERT: Only ADMINs and STAFF can add new rates
 CREATE POLICY "Admins can insert gold rates"
   ON gold_rates FOR INSERT
   TO authenticated
   WITH CHECK (
     retailer_id IN (
       SELECT retailer_id FROM user_profiles 
-      WHERE id = auth.uid() AND role = 'ADMIN'
+      WHERE id = auth.uid() AND role IN ('ADMIN', 'STAFF')
     )
   );
 

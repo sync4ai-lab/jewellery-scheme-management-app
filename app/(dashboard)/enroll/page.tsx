@@ -107,6 +107,7 @@ export default function EnrollmentWizard() {
   const [commitmentAmount, setCommitmentAmount] = useState('');
   const [assignedStaff, setAssignedStaff] = useState<string>('');
   const [selectedStore, setSelectedStore] = useState<string>('');
+  const [selectedKarat, setSelectedKarat] = useState<string>('22K');
 
   useEffect(() => {
     if (!profile?.retailer_id) return;
@@ -222,6 +223,7 @@ export default function EnrollmentWizard() {
     setCommitmentAmount('');
     setAssignedStaff('');
     setSelectedStore('');
+    setSelectedKarat('22K');
   }
 
   function handleEnrollmentTypeSelection(type: 'NEW' | 'EXISTING') {
@@ -395,6 +397,7 @@ export default function EnrollmentWizard() {
           billing_day_of_month: billingDay,
           timezone: 'Asia/Kolkata', // change if you store per-retailer; safe default for IN
           commitment_amount: amount,
+          karat: selectedKarat,
           source,
           maturity_date: toISODate(maturity),
           store_id: selectedStore,
@@ -736,6 +739,23 @@ export default function EnrollmentWizard() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="karat">Gold Karat *</Label>
+                    <Select value={selectedKarat} onValueChange={setSelectedKarat}>
+                      <SelectTrigger id="karat">
+                        <SelectValue placeholder="Select karat" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="18K">18K Gold</SelectItem>
+                        <SelectItem value="22K">22K Gold</SelectItem>
+                        <SelectItem value="24K">24K Gold</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      This will be used for all payments in this enrollment. <strong>Cannot be changed after enrollment is created.</strong>
+                    </p>
                   </div>
 
                   <div className="space-y-2">

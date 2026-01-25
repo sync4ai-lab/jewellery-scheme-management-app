@@ -33,11 +33,11 @@ type DashboardMetrics = {
   activeCustomers: number;
   planAmountTotal: number;
   totalActiveEnrollmentsAllTime: number;
-  currentRate: {
-    rate: number;
-    karat: string;
-    validFrom: string;
-  } | null;
+  currentRates: {
+    k18: { rate: number; validFrom: string } | null;
+    k22: { rate: number; validFrom: string } | null;
+    k24: { rate: number; validFrom: string } | null;
+  };
 };
 
 type StaffMember = {
@@ -74,6 +74,7 @@ export default function PulseDashboard() {
 
   const [updateRateDialog, setUpdateRateDialog] = useState(false);
   const [newRate, setNewRate] = useState('');
+  const [selectedKarat, setSelectedKarat] = useState<'18K' | '22K' | '24K'>('22K');
   const [timeFilter, setTimeFilter] = useState<'DAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'RANGE'>('DAY');
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
@@ -181,7 +182,9 @@ export default function PulseDashboard() {
       todayDateISO = startOfDayUTC.toISOString().split('T')[0];
 
       const [
-        rateResult,
+        rate18Result,
+        rate22Result,
+        rate24Result,
         txnsResult,
         dueTodayResult,
         overdueResult,
@@ -191,12 +194,32 @@ export default function PulseDashboard() {
         activeEnrollmentsAll,
         schemesAll,
       ] = await Promise.all([
+        // Latest gold rate (18K)
+        supabase
+          .from('gold_rates')
+          .select('rate_per_gram, karat, effective_from')
+          .eq('retailer_id', retailerId)
+          .eq('karat', '18K')
+          .order('effective_from', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+
         // Latest gold rate (22K)
         supabase
           .from('gold_rates')
           .select('rate_per_gram, karat, effective_from')
           .eq('retailer_id', retailerId)
-          .eq('karat', 'K22')
+          .eq('karat', '22K')
+          .order('effective_from', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+
+        // Latest gold rate (24K)
+        supabase
+          .from('gold_rates')
+          .select('rate_per_gram, karat, effective_from')
+          .eq('retailer_id', retailerId)
+          .eq('karat', '24K')
           .order('effective_from', { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -255,13 +278,26 @@ export default function PulseDashboard() {
           .eq('retailer_id', retailerId),
       ]);
 
-      const currentRate = rateResult.data
-        ? {
-            rate: safeNumber(rateResult.data.rate_per_gram),
-            karat: (rateResult.data as any).karat ?? 'K22',
-            validFrom: (rateResult.data as any).effective_from ?? new Date().toISOString(),
-          }
-        : null;
+      const currentRates = {
+        k18: rate18Result.data
+          ? {
+              rate: safeNumber(rate18Result.data.rate_per_gram),
+              validFrom: (rate18Result.data as any).effective_from ?? new Date().toISOString(),
+            }
+          : null,
+        k22: rate22Result.data
+          ? {
+              rate: safeNumber(rate22Result.data.rate_per_gram),
+              validFrom: (rate22Result.data as any).effective_from ?? new Date().toISOString(),
+            }
+          : null,
+        k24: rate24Result.data
+          ? {
+              rate: safeNumber(rate24Result.data.rate_per_gram),
+              validFrom: (rate24Result.data as any).effective_from ?? new Date().toISOString(),
+            }
+          : null,
+      };
 
       const todayCollections =
         txnsResult.data?.reduce((sum: number, t: any) => sum + safeNumber(t.amount_paid), 0) || 0;
@@ -292,7 +328,7 @@ export default function PulseDashboard() {
         activeCustomers: customersCount || 0,
         planAmountTotal,
         totalActiveEnrollmentsAllTime: (activeEnrollmentsAll.data || []).length,
-        currentRate,
+        currentRates,
       });
 
       if (staffResult.error) {
@@ -398,7 +434,7 @@ export default function PulseDashboard() {
         .from('gold_rates')
         .insert({
           retailer_id: profile.retailer_id,
-          karat: 'K22',
+          karat: selectedKarat,
           rate_per_gram: rate,
           effective_from: new Date().toISOString(),
         })
@@ -407,7 +443,7 @@ export default function PulseDashboard() {
 
       if (error) throw error;
 
-      toast.success('✅ Gold rate updated successfully');
+      toast.success(`✅ ${selectedKarat} gold rate updated successfully`);
       setUpdateRateDialog(false);
       setNewRate('');
       await loadDashboard();
@@ -475,22 +511,79 @@ export default function PulseDashboard() {
 
       <Card className="jewel-card">
         <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground mb-2">Gold Vault</p>
-              <div className="flex items-baseline gap-2">
-                <span className="text-5xl font-bold gold-text">₹{(metrics?.currentRate?.rate ?? 0).toLocaleString()}</span>
-                <span className="text-xl text-muted-foreground">/gram</span>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground mb-2">Gold Vault - Current Rates</p>
+                <p className="text-xs text-muted-foreground">Per gram pricing across all karat types</p>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Last updated:{' '}
-                {metrics?.currentRate ? new Date(metrics.currentRate.validFrom).toLocaleTimeString('en-IN') : 'Never'}
-              </p>
+              <Button onClick={() => setUpdateRateDialog(true)} className="jewel-gradient text-white hover:opacity-90 rounded-xl">
+                <Edit className="w-4 h-4 mr-2" />
+                Update Rates
+              </Button>
             </div>
-            <Button onClick={() => setUpdateRateDialog(true)} className="jewel-gradient text-white hover:opacity-90 rounded-xl">
-              <Edit className="w-4 h-4 mr-2" />
-              Update Rate
-            </Button>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* 18K Gold */}
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-900/20 dark:to-amber-800/10 border-2 border-amber-200/50 dark:border-amber-700/30">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge variant="outline" className="bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700">18K</Badge>
+                </div>
+                {metrics?.currentRates.k18 ? (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-bold text-amber-600 dark:text-amber-400">₹{metrics.currentRates.k18.rate.toLocaleString()}</span>
+                      <span className="text-sm text-muted-foreground">/gram</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Updated: {new Date(metrics.currentRates.k18.validFrom).toLocaleTimeString('en-IN')}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not set</p>
+                )}
+              </div>
+
+              {/* 22K Gold */}
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-gold-50 to-gold-100/50 dark:from-gold-900/20 dark:to-gold-800/10 border-2 border-gold-300/50 dark:border-gold-700/30 ring-2 ring-gold-400/30">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge className="bg-gold-200 dark:bg-gold-900/50 border-gold-400 dark:border-gold-600 text-gold-800 dark:text-gold-200">22K • Standard</Badge>
+                </div>
+                {metrics?.currentRates.k22 ? (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-bold gold-text">₹{metrics.currentRates.k22.rate.toLocaleString()}</span>
+                      <span className="text-sm text-muted-foreground">/gram</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Updated: {new Date(metrics.currentRates.k22.validFrom).toLocaleTimeString('en-IN')}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not set</p>
+                )}
+              </div>
+
+              {/* 24K Gold */}
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-yellow-50 to-yellow-100/50 dark:from-yellow-900/20 dark:to-yellow-800/10 border-2 border-yellow-200/50 dark:border-yellow-700/30">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge variant="outline" className="bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700">24K • Pure</Badge>
+                </div>
+                {metrics?.currentRates.k24 ? (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">₹{metrics.currentRates.k24.rate.toLocaleString()}</span>
+                      <span className="text-sm text-muted-foreground">/gram</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Updated: {new Date(metrics.currentRates.k24.validFrom).toLocaleTimeString('en-IN')}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not set</p>
+                )}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -738,9 +831,23 @@ export default function PulseDashboard() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Update Gold Rate</DialogTitle>
-            <DialogDescription>Set the current gold rate (22K per gram)</DialogDescription>
+            <DialogDescription>Set the current gold rate per gram for selected karat</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="karat">Select Karat</Label>
+              <Select value={selectedKarat} onValueChange={(v) => setSelectedKarat(v as '18K' | '22K' | '24K')}>
+                <SelectTrigger id="karat">
+                  <SelectValue placeholder="Select karat type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="18K">18K Gold (75% purity)</SelectItem>
+                  <SelectItem value="22K">22K Gold (91.6% purity) - Standard</SelectItem>
+                  <SelectItem value="24K">24K Gold (99.9% purity) - Pure</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="rate">Rate per Gram (₹)</Label>
               <Input
@@ -752,16 +859,39 @@ export default function PulseDashboard() {
                 className="text-lg"
                 step="0.01"
               />
-              {metrics?.currentRate && (
-                <p className="text-xs text-muted-foreground">Current rate: ₹{metrics.currentRate.rate.toLocaleString()}</p>
+              {metrics?.currentRates && (
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p>Current rates:</p>
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    <div className="p-2 rounded bg-amber-50 dark:bg-amber-900/20">
+                      <p className="font-semibold text-amber-700 dark:text-amber-400">18K</p>
+                      <p className="text-xs">{metrics.currentRates.k18 ? `₹${metrics.currentRates.k18.rate.toLocaleString()}` : 'Not set'}</p>
+                    </div>
+                    <div className="p-2 rounded bg-gold-50 dark:bg-gold-900/20">
+                      <p className="font-semibold gold-text">22K</p>
+                      <p className="text-xs">{metrics.currentRates.k22 ? `₹${metrics.currentRates.k22.rate.toLocaleString()}` : 'Not set'}</p>
+                    </div>
+                    <div className="p-2 rounded bg-yellow-50 dark:bg-yellow-900/20">
+                      <p className="font-semibold text-yellow-700 dark:text-yellow-400">24K</p>
+                      <p className="text-xs">{metrics.currentRates.k24 ? `₹${metrics.currentRates.k24.rate.toLocaleString()}` : 'Not set'}</p>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
+
+            <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20">
+              <p className="text-sm text-blue-800 dark:text-blue-300">
+                <strong>Note:</strong> Rate changes are tracked with timestamps. All transactions record the rate_id at payment time for audit purposes.
+              </p>
+            </div>
+
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setUpdateRateDialog(false)}>
                 Cancel
               </Button>
               <Button className="flex-1 jewel-gradient text-white" onClick={handleUpdateRate}>
-                Update Rate
+                Update {selectedKarat} Rate
               </Button>
             </div>
           </div>

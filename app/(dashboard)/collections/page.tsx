@@ -31,6 +31,7 @@ type Enrollment = {
   plan_id: string;
   commitment_amount: number;
   store_id: string | null;
+  karat: string;
   plan_name: string;
   duration_months: number;
   bonus_percentage: number;
@@ -123,6 +124,13 @@ export default function CollectionsPage() {
     }
   }, [selectedCustomerId, goldRate?.id]);
 
+  // When enrollment is selected, load the correct gold rate for its karat
+  useEffect(() => {
+    if (selectedEnrollmentKarat && profile?.retailer_id) {
+      void loadGoldRateForKarat(selectedEnrollmentKarat);
+    }
+  }, [selectedEnrollmentKarat, profile?.retailer_id]);
+
   useEffect(() => {
     if (selectedEnrollmentId) {
       void loadMonthlyPaymentInfo(selectedEnrollmentId);
@@ -136,6 +144,13 @@ export default function CollectionsPage() {
     if (!goldRate || !Number.isFinite(amountNum) || amountNum <= 0) return 0;
     return amountNum / goldRate.rate_per_gram;
   }, [amount, goldRate]);
+
+  // Get the karat for the selected enrollment
+  const selectedEnrollmentKarat = useMemo(() => {
+    if (!selectedEnrollmentId) return null;
+    const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
+    return enrollment?.karat || null;
+  }, [selectedEnrollmentId, enrollments]);
 
   async function loadCustomersAndRate() {
     if (!profile?.retailer_id) return;
@@ -169,6 +184,32 @@ export default function CollectionsPage() {
     }
   }
 
+  async function loadGoldRateForKarat(karat: string) {
+    if (!profile?.retailer_id) return;
+    try {
+      const { data, error } = await supabase
+        .from('gold_rates')
+        .select('id, karat, rate_per_gram, effective_from')
+        .eq('retailer_id', profile.retailer_id)
+        .eq('karat', karat)
+        .order('effective_from', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      
+      if (data) {
+        setGoldRate(data as GoldRate);
+      } else {
+        toast.error(`No gold rate found for ${karat}. Please update rates in Pulse dashboard.`);
+        setGoldRate(null);
+      }
+    } catch (error) {
+      console.error('Error loading gold rate for karat:', error);
+      toast.error('Failed to load gold rate');
+    }
+  }
+
   async function loadTransactions(customerId: string) {
     if (!profile?.retailer_id) return;
     try {
@@ -195,7 +236,7 @@ export default function CollectionsPage() {
       // First get enrollments
       const { data: enrollmentsData, error: enrollError } = await supabase
         .from('enrollments')
-        .select('id, plan_id, commitment_amount, store_id')
+        .select('id, plan_id, commitment_amount, store_id, karat')
         .eq('retailer_id', profile.retailer_id)
         .eq('customer_id', customerId)
         .eq('status', 'ACTIVE');
@@ -231,6 +272,7 @@ export default function CollectionsPage() {
           plan_id: e.plan_id,
           commitment_amount: e.commitment_amount,
           store_id: e.store_id,
+          karat: e.karat || '22K',
           plan_name: plan?.name || 'Unknown Plan',
           duration_months: plan?.duration_months || 0,
           bonus_percentage: plan?.bonus_percentage || 0,
@@ -443,7 +485,7 @@ export default function CollectionsPage() {
                   <SelectContent>
                     {enrollments.map((enrollment) => (
                       <SelectItem key={enrollment.id} value={enrollment.id}>
-                        {enrollment.plan_name} - ₹{enrollment.commitment_amount.toLocaleString()}/month ({enrollment.duration_months}m • {enrollment.bonus_percentage}% bonus)
+                        {enrollment.plan_name} - ₹{enrollment.commitment_amount.toLocaleString()}/month ({enrollment.duration_months}m • {enrollment.bonus_percentage}% bonus • {enrollment.karat})
                       </SelectItem>
                     ))}
                   </SelectContent>

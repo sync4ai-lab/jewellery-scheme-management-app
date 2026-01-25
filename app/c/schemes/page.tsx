@@ -117,25 +117,7 @@ export default function CustomerSchemesPage() {
       const [enrollmentsResult, plansResult, notificationsResult] = await Promise.all([
         supabase
           .from('enrollments')
-          .select(
-            `
-            id,
-            retailer_id,
-            customer_id,
-            status,
-            commitment_amount,
-            total_paid,
-            total_grams_allocated,
-            created_at,
-            plans (
-              id,
-              plan_name,
-              monthly_amount,
-              tenure_months,
-              karat
-            )
-          `
-          )
+          .select('id, retailer_id, customer_id, status, commitment_amount, plan_id, created_at, karat')
           .eq('customer_id', customer.id)
           .order('created_at', { ascending: false }),
 
@@ -161,14 +143,31 @@ export default function CustomerSchemesPage() {
       if (notificationsResult.data) setNotifications(notificationsResult.data as Notification[]);
 
       const enrollmentRows = (enrollmentsResult.data || []) as any[];
+      
+      // Fetch scheme templates (plan details) for all enrollments
+      let schemeTemplates: any[] = [];
+      if (enrollmentRows.length > 0) {
+        const planIds = [...new Set(enrollmentRows.map((e: any) => e.plan_id))];
+        const { data: templatesData } = await supabase
+          .from('scheme_templates')
+          .select('id, name, duration_months, installment_amount')
+          .in('id', planIds);
+        schemeTemplates = templatesData || [];
+      }
+
+      const schemeMap = new Map(schemeTemplates.map((t: any) => [t.id, t]));
+      
       const enrollmentIds = enrollmentRows.map((e) => e.id);
 
       // Billing fetch: this month + all (for installments paid count)
       let billingThisMonth: BillingRow[] = [];
       let billingAll: { enrollment_id: string; primary_paid: boolean | null }[] = [];
 
+      // Fetch transaction totals for each enrollment
+      let transactionTotals: Map<string, { totalPaid: number; totalGrams: number }> = new Map();
+
       if (enrollmentIds.length > 0) {
-        const [thisMonthRes, allRes] = await Promise.all([
+        const [thisMonthRes, allRes, transactionsRes] = await Promise.all([
           supabase
             .from('enrollment_billing_months')
             .select('enrollment_id, billing_month, due_date, primary_paid, status')
@@ -179,10 +178,27 @@ export default function CustomerSchemesPage() {
             .from('enrollment_billing_months')
             .select('enrollment_id, primary_paid')
             .in('enrollment_id', enrollmentIds),
+
+          supabase
+            .from('transactions')
+            .select('enrollment_id, amount_paid, grams_allocated_snapshot, payment_status')
+            .in('enrollment_id', enrollmentIds)
+            .eq('payment_status', 'SUCCESS'),
         ]);
 
         if (thisMonthRes.data) billingThisMonth = thisMonthRes.data as BillingRow[];
         if (allRes.data) billingAll = allRes.data as any[];
+
+        // Calculate totals from transactions
+        if (transactionsRes.data) {
+          for (const txn of transactionsRes.data) {
+            if (!txn.enrollment_id) continue;
+            const current = transactionTotals.get(txn.enrollment_id) || { totalPaid: 0, totalGrams: 0 };
+            current.totalPaid += Number(txn.amount_paid || 0);
+            current.totalGrams += Number(txn.grams_allocated_snapshot || 0);
+            transactionTotals.set(txn.enrollment_id, current);
+          }
+        }
       }
 
       // Count “paid months” = primary_paid true
@@ -197,13 +213,16 @@ export default function CustomerSchemesPage() {
       for (const row of billingThisMonth) thisMonthMap.set(row.enrollment_id, row);
 
       const cards: EnrollmentCard[] = enrollmentRows.map((e) => {
-        const plan = e.plans;
+        const plan = schemeMap.get(e.plan_id);
 
         const monthly = Number(
-          (typeof e.commitment_amount === 'number' && e.commitment_amount > 0 ? e.commitment_amount : plan?.monthly_amount) || 0
+          (typeof e.commitment_amount === 'number' && e.commitment_amount > 0 ? e.commitment_amount : plan?.installment_amount) || 0
         );
 
-        const duration = Number(plan?.tenure_months || 0);
+        const duration = Number(plan?.duration_months || 0);
+        const txnTotals = transactionTotals.get(e.id) || { totalPaid: 0, totalGrams: 0 };
+        const totalPaid = txnTotals.totalPaid;
+        const totalGrams = txnTotals.totalGrams;
         const totalPaid = Number(e.total_paid || 0);
         const totalGrams = Number(e.total_grams_allocated || 0);
 
@@ -229,11 +248,11 @@ export default function CustomerSchemesPage() {
         return {
           id: e.id,
           status: (e.status || 'ACTIVE').toString(),
-          planName: plan?.plan_name || 'Gold Plan',
-          durationMonths: duration,
+          planName:,
+          totalGramss: duration,
           monthlyAmount: monthly,
-          totalPaid,
-          totalGrams,
+          totalPaid: 0,
+          totalGrams: 0,
           installmentsPaid: installmentsPaidMap.get(e.id) || 0,
           startDateLabel,
           monthlyInstallmentPaid: paidThisMonth,
@@ -591,10 +610,15 @@ export default function CustomerSchemesPage() {
                 <p className="text-xs text-muted-foreground">Minimum: ₹{Number(selectedPlan.monthly_amount).toLocaleString()}</p>
               </div>
 
-              <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20">
+              <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 space-y-2">
                 <p className="text-sm text-blue-800 dark:text-blue-300">
                   <strong>Note:</strong> You can pay more than your commitment amount each month, but not less. Your first payment is due within the month.
                 </p>
+                {selectedPlan.karat && (
+                  <p className="text-xs text-blue-700 dark:text-blue-400 font-semibold">
+                    ⚠️ Karat type ({selectedPlan.karat}) cannot be changed after enrollment. You must complete or redeem this plan to enroll in a different karat.
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-3">
