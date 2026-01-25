@@ -49,9 +49,7 @@ export default function LoginPage() {
             GoldSaver
           </h1>
 
-          <p className="text-muted-foreground">
-            Premium Gold Savings Scheme Management
-          </p>
+          <p className="text-muted-foreground">Premium Gold Savings Scheme Management</p>
 
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Sparkles className="w-4 h-4 text-primary" />
@@ -63,9 +61,7 @@ export default function LoginPage() {
         <Card className="glass-card">
           <CardHeader>
             <CardTitle>Sign In</CardTitle>
-            <CardDescription>
-              Enter your credentials to access your dashboard
-            </CardDescription>
+            <CardDescription>Enter your credentials to access your dashboard</CardDescription>
           </CardHeader>
 
           <CardContent>
@@ -85,6 +81,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  autoComplete="email"
                 />
               </div>
 
@@ -93,3 +90,45 @@ export default function LoginPage() {
                 <Input
                   id="password"
                   type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                />
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full gold-gradient text-white hover:opacity-90"
+                disabled={loading}
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* Demo credentials */}
+        <Card className="bg-primary/5 border-primary/20">
+          <CardContent className="pt-6">
+            <div className="text-center space-y-2">
+              <h3 className="font-semibold">Demo Credentials</h3>
+              <p className="text-sm text-muted-foreground">
+                Email:{' '}
+                <code className="px-2 py-1 rounded bg-muted">demo@goldsaver.com</code>
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Password: <code className="px-2 py-1 rounded bg-muted">demo123</code>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="text-center text-sm text-muted-foreground">
+          <p>Built with security, transparency, and trust</p>
+        </div>
+      </div>
+    </div>
+  );
+}
