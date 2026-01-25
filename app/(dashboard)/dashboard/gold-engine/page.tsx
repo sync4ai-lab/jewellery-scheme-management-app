@@ -213,12 +213,6 @@ export default function GoldEnginePage() {
     }
   }
 
-  const currentRates = {
-    'K22': rates.find(r => r.karat === 'K22')?.rate_per_gram || 0,
-    'K24': rates.find(r => r.karat === 'K24')?.rate_per_gram || 0,
-    'K18': rates.find(r => r.karat === 'K18')?.rate_per_gram || 0,
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -226,6 +220,12 @@ export default function GoldEnginePage() {
       </div>
     );
   }
+
+  const currentRates = {
+    'K22': rates.find(r => r.karat === 'K22')?.rate_per_gram || 0,
+    'K24': rates.find(r => r.karat === 'K24')?.rate_per_gram || 0,
+    'K18': rates.find(r => r.karat === 'K18')?.rate_per_gram || 0,
+  };
 
   return (
     <div className="p-4 md:p-8 space-y-6">
