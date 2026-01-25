@@ -211,8 +211,28 @@ export default function EnrollmentWizard() {
     }
   }
 
+  function resetFormFields() {
+    // Reset all form fields to blank
+    setCustomerPhone('');
+    setCustomerName('');
+    setSource('WALK_IN');
+    setExistingCustomer(null);
+    setSelectedCustomerId('');
+    setSelectedPlan('');
+    setCommitmentAmount('');
+    setAssignedStaff('');
+    setSelectedStore('');
+  }
+
   function handleEnrollmentTypeSelection(type: 'NEW' | 'EXISTING') {
+    resetFormFields(); // Clear all fields when selecting enrollment type
     setEnrollmentType(type);
+    
+    // Auto-select store if only one exists
+    if (stores.length === 1) {
+      setSelectedStore(stores[0].id);
+    }
+    
     if (type === 'NEW') {
       setStep(1); // Go to customer details
     } else {
@@ -388,7 +408,16 @@ export default function EnrollmentWizard() {
       if (billErr) throw billErr;
 
       toast.success(`Successfully enrolled ${finalCustomerName}!`);
-      router.push('/dashboard/schemes');
+      
+      // Reset form and go back to type selection
+      resetFormFields();
+      setStep(0);
+      setEnrollmentType(null);
+      
+      // Optionally navigate to schemes page after a short delay
+      setTimeout(() => {
+        router.push('/dashboard/schemes');
+      }, 1500);
     } catch (error: any) {
       console.error('Enrollment error:', error);
       toast.error(error.message || 'Failed to enroll customer');
@@ -569,7 +598,7 @@ export default function EnrollmentWizard() {
               <CardDescription>
                 Choose a savings plan for{' '}
                 {enrollmentType === 'EXISTING' ? (
-                  <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                  <Select value={selectedCustomerId || undefined} onValueChange={setSelectedCustomerId}>
                     <SelectTrigger className="inline-flex w-auto min-w-[200px] h-auto py-0 px-2 border-0 border-b-2 border-gold-400 rounded-none bg-transparent font-semibold text-gold-600">
                       <SelectValue placeholder="Select Customer" />
                     </SelectTrigger>
@@ -652,7 +681,7 @@ export default function EnrollmentWizard() {
 
                   <div className="space-y-2">
                     <Label htmlFor="staff">Assign to Staff (Optional)</Label>
-                    <Select value={assignedStaff} onValueChange={setAssignedStaff}>
+                    <Select value={assignedStaff || undefined} onValueChange={setAssignedStaff}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select staff member" />
                       </SelectTrigger>
@@ -668,7 +697,7 @@ export default function EnrollmentWizard() {
 
                   <div className="space-y-2">
                     <Label htmlFor="store">Store Location *</Label>
-                    <Select value={selectedStore} onValueChange={setSelectedStore}>
+                    <Select value={selectedStore || undefined} onValueChange={setSelectedStore}>
                       <SelectTrigger id="store">
                         <SelectValue placeholder="Select store" />
                       </SelectTrigger>
