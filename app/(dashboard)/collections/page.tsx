@@ -398,7 +398,7 @@ export default function CollectionsPage() {
       if (txnError) throw txnError;
 
       toast.success(
-        `✅ Payment recorded: ₹${amountNum.toLocaleString()} = ${gramsAllocated.toFixed(4)}g gold`
+        `✅ Payment recorded: ₹${amountNum.toLocaleString()} = ${gramsAllocated.toFixed(4)}g ${metalName}`
       );
       setAmount('');
       setMode('CASH');
@@ -418,15 +418,21 @@ export default function CollectionsPage() {
         <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
           Collections
         </h1>
-        <p className="text-muted-foreground">Record customer gold savings with live rate tracking</p>
+        <p className="text-muted-foreground">Record customer precious metal savings with live rate tracking</p>
       </div>
 
-      {/* Gold Rate Card - Read Only */}
-      <Card className="glass-card border-2 border-gold-400/30 bg-gradient-to-r from-gold-50/50 to-amber-50/50 dark:from-gold-900/20 dark:to-amber-900/20">
+      {/* Metal Rate Card - Read Only */}
+      <Card className={`glass-card border-2 ${
+        selectedEnrollmentKarat === 'SILVER'
+          ? 'border-slate-400/30 bg-gradient-to-r from-slate-50/50 to-slate-100/50 dark:from-slate-900/20 dark:to-slate-800/20'
+          : 'border-gold-400/30 bg-gradient-to-r from-gold-50/50 to-amber-50/50 dark:from-gold-900/20 dark:to-amber-900/20'
+      }`}>
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-gold-600" />
-            <CardTitle>Current Gold Rate</CardTitle>
+            <TrendingUp className={`w-5 h-5 ${
+              selectedEnrollmentKarat === 'SILVER' ? 'text-slate-600' : 'text-gold-600'
+            }`} />
+            <CardTitle>Current {selectedEnrollmentKarat === 'SILVER' ? 'Silver' : 'Gold'} Rate</CardTitle>
           </div>
           <CardDescription>Update rates from Pulse dashboard</CardDescription>
         </CardHeader>
@@ -434,7 +440,9 @@ export default function CollectionsPage() {
           {goldRate ? (
             <div className="space-y-2">
               <div className="flex items-baseline gap-3">
-                <span className="text-4xl font-bold text-gold-600">
+                <span className={`text-4xl font-bold ${
+                  selectedEnrollmentKarat === 'SILVER' ? 'text-slate-600' : 'text-gold-600'
+                }`}>
                   ₹{goldRate.rate_per_gram.toLocaleString()}
                 </span>
                 <span className="text-lg text-muted-foreground">/gram ({goldRate.karat})</span>

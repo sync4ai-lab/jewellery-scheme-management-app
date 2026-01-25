@@ -96,7 +96,8 @@ export default function SchemesPage() {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // First, get enrollments with customer data
+      const { data: enrollmentsData, error: enrollError } = await supabase
         .from('enrollments')
         .select(
           `
@@ -106,33 +107,56 @@ export default function SchemesPage() {
           store_id,
           status,
           commitment_amount,
-          total_paid,
-          total_grams_allocated,
+          plan_id,
           created_at,
           customers (
             id,
             full_name,
             phone
-          ),
-          plans (
-            id,
-            plan_name,
-            monthly_amount,
-            tenure_months,
-            karat
           )
         `
         )
         .eq('retailer_id', profile.retailer_id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (enrollError) throw enrollError;
 
-      const transformed = (data || []).map((e: any) => ({
+      if (!enrollmentsData || enrollmentsData.length === 0) {
+        setEnrollments([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get unique plan IDs
+      const planIds = [...new Set(enrollmentsData.map((e: any) => e.plan_id))];
+      
+      // Fetch scheme templates (plan details)
+      const { data: plansData, error: plansError } = await supabase
+        .from('scheme_templates')
+        .select('id, name, installment_amount, duration_months')
+        .in('id', planIds);
+
+      if (plansError) throw plansError;
+
+      // Map plans by ID for quick lookup
+      const plansMap = new Map(
+        (plansData || []).map((p: any) => [p.id, {
+          id: p.id,
+          plan_name: p.name,
+          monthly_amount: p.installment_amount,
+          tenure_months: p.duration_months,
+          karat: null
+        }])
+      );
+
+      const transformed = enrollmentsData.map((e: any) => ({
         ...e,
         customers: Array.isArray(e.customers) ? e.customers[0] : e.customers,
-        plans: Array.isArray(e.plans) ? e.plans[0] : e.plans,
+        plans: plansMap.get(e.plan_id) || null,
+        total_paid: 0,
+        total_grams_allocated: 0,
       }));
+      
       setEnrollments(transformed as Enrollment[]);
     } catch (err) {
       console.error('Error loading enrollments:', err);

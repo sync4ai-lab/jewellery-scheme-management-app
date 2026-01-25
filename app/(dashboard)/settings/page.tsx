@@ -102,6 +102,12 @@ export default function SettingsPage() {
   const [editStaffDialog, setEditStaffDialog] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
 
+  // Rate audit filter states
+  const [selectedKarat, setSelectedKarat] = useState<string>('ALL');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [loadingRates, setLoadingRates] = useState(false);
+
   // Only ADMIN can access Settings
   useEffect(() => {
     if (profile && !['ADMIN'].includes(profile.role)) {
@@ -113,6 +119,13 @@ export default function SettingsPage() {
     void loadSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.retailer_id]);
+
+  useEffect(() => {
+    if (profile?.retailer_id) {
+      void loadRateHistory();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKarat, startDate, endDate]);
 
   async function loadSettings() {
     if (!profile?.retailer_id) return;
@@ -154,28 +167,80 @@ export default function SettingsPage() {
       console.log('Loaded stores for retailer:', profile.retailer_id, storesData);
       setStores(storesData || []);
 
-      // Load rate history (optional - function might not exist yet)
-      try {
-        const { data: rateData, error: rateError } = await supabase
-          .rpc('get_rate_history', {
-            p_retailer_id: profile.retailer_id,
-            p_karat: null, // Get all karats
-            p_limit: 50
-          });
-
-        if (!rateError && rateData) {
-          setRateHistory(rateData || []);
-        }
-      } catch (rpcError) {
-        // RPC function might not exist yet, that's okay
-        console.log('Rate history not available:', rpcError);
-        setRateHistory([]);
-      }
+      // Load rate history with proper query
+      await loadRateHistory();
     } catch (error) {
       console.error('Error loading settings:', error);
       // Don't show error toast, just log it
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadRateHistory() {
+    if (!profile?.retailer_id) return;
+
+    setLoadingRates(true);
+    try {
+      let query = supabase
+        .from('gold_rates')
+        .select(`
+          id,
+          karat,
+          rate_per_gram,
+          effective_from,
+          created_at,
+          created_by,
+          user_profiles!gold_rates_created_by_fkey(full_name)
+        `)
+        .eq('retailer_id', profile.retailer_id)
+        .order('effective_from', { ascending: false });
+
+      // Apply karat filter
+      if (selectedKarat && selectedKarat !== 'ALL') {
+        query = query.eq('karat', selectedKarat);
+      }
+
+      // Apply date range filters
+      if (startDate) {
+        query = query.gte('effective_from', new Date(startDate).toISOString());
+      }
+      if (endDate) {
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(23, 59, 59, 999);
+        query = query.lte('effective_from', endDateTime.toISOString());
+      }
+
+      const { data, error } = await query.limit(100);
+
+      if (error) throw error;
+
+      // Transform data to include staff name and calculate changes
+      const transformedData = (data || []).map((rate: any, index: number) => {
+        const nextRate = index < data.length - 1 ? data[index + 1] : null;
+        const previousRate = nextRate?.rate_per_gram || null;
+        const changePercentage = previousRate
+          ? ((rate.rate_per_gram - previousRate) / previousRate) * 100
+          : null;
+
+        return {
+          id: rate.id,
+          karat: rate.karat,
+          rate_per_gram: rate.rate_per_gram,
+          effective_from: rate.effective_from,
+          created_at: rate.created_at,
+          updated_by_name: rate.user_profiles?.full_name || 'Unknown',
+          previous_rate: previousRate,
+          change_percentage: changePercentage,
+        };
+      });
+
+      setRateHistory(transformedData);
+    } catch (error) {
+      console.error('Error loading rate history:', error);
+      setRateHistory([]);
+    } finally {
+      setLoadingRates(false);
     }
   }
 
@@ -933,48 +998,144 @@ export default function SettingsPage() {
         <TabsContent value="audit" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Gold Rate Change History</CardTitle>
+              <CardTitle>Precious Metal Rate Change History</CardTitle>
               <CardDescription>Track all rate updates with audit trail</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {rateHistory.length > 0 ? (
-                  rateHistory.map((rate) => (
-                    <div
-                      key={rate.id}
-                      className="flex items-start justify-between p-4 rounded-lg glass-card border border-border"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <Badge variant="outline">{rate.karat}</Badge>
-                          <p className="text-2xl font-bold">₹{rate.rate_per_gram.toLocaleString()}/g</p>
-                          {rate.change_percentage !== null && rate.change_percentage !== 0 && (
-                            <Badge variant={(rate.change_percentage ?? 0) > 0 ? 'destructive' : 'default'}>
-                              {(rate.change_percentage ?? 0) > 0 ? '+' : ''}{rate.change_percentage?.toFixed(2)}%
+            <CardContent className="space-y-4">
+              {/* Filters */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 rounded-lg bg-muted/30">
+                <div className="space-y-2">
+                  <Label htmlFor="karat-filter">Metal Type</Label>
+                  <Select value={selectedKarat} onValueChange={setSelectedKarat}>
+                    <SelectTrigger id="karat-filter">
+                      <SelectValue placeholder="All Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All Types</SelectItem>
+                      <SelectItem value="18K">18K Gold</SelectItem>
+                      <SelectItem value="22K">22K Gold</SelectItem>
+                      <SelectItem value="24K">24K Gold</SelectItem>
+                      <SelectItem value="SILVER">Silver</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="start-date">Start Date</Label>
+                  <Input
+                    id="start-date"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="end-date">End Date</Label>
+                  <Input
+                    id="end-date"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>&nbsp;</Label>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      setSelectedKarat('ALL');
+                      setStartDate('');
+                      setEndDate('');
+                    }}
+                  >
+                    Clear Filters
+                  </Button>
+                </div>
+              </div>
+
+              {/* Rate History Table */}
+              <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                {loadingRates ? (
+                  <div className="text-center py-8">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gold-600"></div>
+                    <p className="text-sm text-muted-foreground mt-2">Loading rate history...</p>
+                  </div>
+                ) : rateHistory.length > 0 ? (
+                  <div className="space-y-3">
+                    {rateHistory.map((rate) => (
+                      <div
+                        key={rate.id}
+                        className="flex items-start justify-between p-4 rounded-lg glass-card border border-border hover:border-gold-300 transition-colors"
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <Badge
+                              variant="outline"
+                              className={
+                                rate.karat === '18K'
+                                  ? 'bg-amber-100 dark:bg-amber-900/30 border-amber-300'
+                                  : rate.karat === '22K'
+                                  ? 'bg-gold-100 dark:bg-gold-900/30 border-gold-300'
+                                  : rate.karat === '24K'
+                                  ? 'bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300'
+                                  : 'bg-slate-100 dark:bg-slate-900/30 border-slate-300'
+                              }
+                            >
+                              {rate.karat}
                             </Badge>
+                            <p className="text-2xl font-bold gold-text">
+                              ₹{rate.rate_per_gram.toLocaleString()}/gram
+                            </p>
+                            {rate.change_percentage !== null && rate.change_percentage !== 0 && (
+                              <Badge
+                                variant={(rate.change_percentage ?? 0) > 0 ? 'default' : 'secondary'}
+                                className={
+                                  (rate.change_percentage ?? 0) > 0
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                    : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                                }
+                              >
+                                {(rate.change_percentage ?? 0) > 0 ? '+' : ''}
+                                {rate.change_percentage?.toFixed(2)}%
+                              </Badge>
+                            )}
+                          </div>
+                          {rate.previous_rate && (
+                            <p className="text-sm text-muted-foreground">
+                              Previous: ₹{rate.previous_rate.toLocaleString()} → Change: ₹
+                              {(rate.rate_per_gram - rate.previous_rate).toFixed(2)}
+                            </p>
                           )}
+                          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Users className="w-3 h-3" />
+                              {rate.updated_by_name || 'System'}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <TrendingUp className="w-3 h-3" />
+                              Effective from:{' '}
+                              {new Date(rate.effective_from).toLocaleString('en-IN', {
+                                dateStyle: 'medium',
+                                timeStyle: 'short',
+                              })}
+                            </span>
+                          </div>
                         </div>
-                        {rate.previous_rate && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Previous: ₹{rate.previous_rate.toLocaleString()} 
-                            {' '}→ Change: ₹{(rate.rate_per_gram - rate.previous_rate).toFixed(2)}
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground mt-2">
-                          {rate.updated_by_name ? `Updated by ${rate.updated_by_name}` : 'System update'}
-                          {' • '}
-                          {new Date(rate.effective_from).toLocaleString('en-IN', {
-                            dateStyle: 'medium',
-                            timeStyle: 'short'
-                          })}
-                        </p>
                       </div>
-                    </div>
-                  ))
+                    ))}
+                  </div>
                 ) : (
-                  <p className="text-center text-muted-foreground py-8">
-                    No rate history available yet
-                  </p>
+                  <div className="text-center py-12">
+                    <TrendingUp className="w-12 h-12 mx-auto mb-4 text-muted-foreground/30" />
+                    <p className="text-muted-foreground">
+                      {selectedKarat !== 'ALL' || startDate || endDate
+                        ? 'No rate history found for selected filters'
+                        : 'No rate history available yet. Update gold rates from the Pulse dashboard.'}
+                    </p>
+                  </div>
                 )}
               </div>
             </CardContent>

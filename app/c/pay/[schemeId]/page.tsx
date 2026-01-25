@@ -96,35 +96,38 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
       // 1) Enrollment + Plan
       const enrollmentResult = await supabase
         .from('enrollments')
-        .select(
-          `
-          id,
-          retailer_id,
-          store_id,
-          customer_id,
-          status,
-          commitment_amount,
-          plans (
-            id,
-            plan_name,
-            monthly_amount,
-            tenure_months,
-            karat
-          )
-        `
-        )
+        .select('id, retailer_id, store_id, customer_id, status, commitment_amount, plan_id, karat')
         .eq('id', enrollmentId)
         .eq('customer_id', customer.id)
         .maybeSingle();
 
-      const enr = (enrollmentResult.data as Enrollment | null) ?? null;
+      const enrData = enrollmentResult.data;
 
-      if (!enr) {
+      if (!enrData) {
         setEnrollment(null);
         setGoldRate(null);
         setMonthlyInstallmentPaid(false);
+        setLoading(false);
         return;
       }
+
+      // Fetch scheme template (plan details)
+      const { data: planData } = await supabase
+        .from('scheme_templates')
+        .select('id, name, installment_amount, duration_months')
+        .eq('id', enrData.plan_id)
+        .maybeSingle();
+
+      const enr = {
+        ...enrData,
+        plans: planData ? {
+          id: planData.id,
+          plan_name: planData.name,
+          monthly_amount: planData.installment_amount,
+          tenure_months: planData.duration_months,
+          karat: enrData.karat || null
+        } : null
+      } as Enrollment;
 
       setEnrollment(enr);
 

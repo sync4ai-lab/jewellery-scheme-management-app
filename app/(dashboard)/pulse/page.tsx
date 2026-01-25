@@ -37,6 +37,7 @@ type DashboardMetrics = {
     k18: { rate: number; validFrom: string } | null;
     k22: { rate: number; validFrom: string } | null;
     k24: { rate: number; validFrom: string } | null;
+    silver: { rate: number; validFrom: string } | null;
   };
 };
 
@@ -74,7 +75,7 @@ export default function PulseDashboard() {
 
   const [updateRateDialog, setUpdateRateDialog] = useState(false);
   const [newRate, setNewRate] = useState('');
-  const [selectedKarat, setSelectedKarat] = useState<'18K' | '22K' | '24K'>('22K');
+  const [selectedKarat, setSelectedKarat] = useState<'18K' | '22K' | '24K' | 'SILVER'>('22K');
   const [timeFilter, setTimeFilter] = useState<'DAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'RANGE'>('DAY');
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
@@ -185,6 +186,7 @@ export default function PulseDashboard() {
         rate18Result,
         rate22Result,
         rate24Result,
+        rateSilverResult,
         txnsResult,
         dueTodayResult,
         overdueResult,
@@ -220,6 +222,16 @@ export default function PulseDashboard() {
           .select('rate_per_gram, karat, effective_from')
           .eq('retailer_id', retailerId)
           .eq('karat', '24K')
+          .order('effective_from', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+
+        // Latest silver rate
+        supabase
+          .from('gold_rates')
+          .select('rate_per_gram, karat, effective_from')
+          .eq('retailer_id', retailerId)
+          .eq('karat', 'SILVER')
           .order('effective_from', { ascending: false })
           .limit(1)
           .maybeSingle(),
@@ -295,6 +307,12 @@ export default function PulseDashboard() {
           ? {
               rate: safeNumber(rate24Result.data.rate_per_gram),
               validFrom: (rate24Result.data as any).effective_from ?? new Date().toISOString(),
+            }
+          : null,
+        silver: rateSilverResult.data
+          ? {
+              rate: safeNumber(rateSilverResult.data.rate_per_gram),
+              validFrom: (rateSilverResult.data as any).effective_from ?? new Date().toISOString(),
             }
           : null,
       };
@@ -443,7 +461,7 @@ export default function PulseDashboard() {
 
       if (error) throw error;
 
-      toast.success(`✅ ${selectedKarat} gold rate updated successfully`);
+      toast.success(`✅ ${selectedKarat} rate updated successfully`);
       setUpdateRateDialog(false);
       setNewRate('');
       await loadDashboard();
@@ -514,8 +532,8 @@ export default function PulseDashboard() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-2">Gold Vault - Current Rates</p>
-                <p className="text-xs text-muted-foreground">Per gram pricing across all karat types</p>
+                <p className="text-sm text-muted-foreground mb-2">Precious Metals Vault - Current Rates</p>
+                <p className="text-xs text-muted-foreground">Per gram pricing across all metal types</p>
               </div>
               <Button onClick={() => setUpdateRateDialog(true)} className="jewel-gradient text-white hover:opacity-90 rounded-xl">
                 <Edit className="w-4 h-4 mr-2" />
@@ -523,7 +541,7 @@ export default function PulseDashboard() {
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* 18K Gold */}
               <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-900/20 dark:to-amber-800/10 border-2 border-amber-200/50 dark:border-amber-700/30">
                 <div className="flex items-center justify-between mb-2">
@@ -540,6 +558,70 @@ export default function PulseDashboard() {
                     </p>
                   </>
                 ) : (
+                  <p className="text-sm text-muted-foreground">Not set</p>
+                )}
+              </div>
+
+              {/* 22K Gold */}
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-gold-50 to-gold-100/50 dark:from-gold-900/20 dark:to-gold-800/10 border-2 border-gold-200/50 dark:border-gold-700/30">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge className="bg-gold-200 dark:bg-gold-900/50 border-gold-400 dark:border-gold-600 text-gold-800 dark:text-gold-200">22K • Standard</Badge>
+                </div>
+                {metrics?.currentRates.k22 ? (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-bold gold-text">₹{metrics.currentRates.k22.rate.toLocaleString()}</span>
+                      <span className="text-sm text-muted-foreground">/gram</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Updated: {new Date(metrics.currentRates.k22.validFrom).toLocaleTimeString('en-IN')}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not set</p>
+                )}
+              </div>
+
+              {/* 24K Gold */}
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-yellow-50 to-yellow-100/50 dark:from-yellow-900/20 dark:to-yellow-800/10 border-2 border-yellow-200/50 dark:border-yellow-700/30">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge variant="outline" className="bg-yellow-100 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700">24K • Pure</Badge>
+                </div>
+                {metrics?.currentRates.k24 ? (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">₹{metrics.currentRates.k24.rate.toLocaleString()}</span>
+                      <span className="text-sm text-muted-foreground">/gram</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Updated: {new Date(metrics.currentRates.k24.validFrom).toLocaleTimeString('en-IN')}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not set</p>
+                )}
+              </div>
+
+              {/* Silver */}
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100/50 dark:from-slate-900/20 dark:to-slate-800/10 border-2 border-slate-200/50 dark:border-slate-700/30">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge variant="outline" className="bg-slate-100 dark:bg-slate-900/30 border-slate-300 dark:border-slate-700">SILVER</Badge>
+                </div>
+                {metrics?.currentRates.silver ? (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-bold text-slate-600 dark:text-slate-400">₹{metrics.currentRates.silver.rate.toLocaleString()}</span>
+                      <span className="text-sm text-muted-foreground">/gram</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Updated: {new Date(metrics.currentRates.silver.validFrom).toLocaleTimeString('en-IN')}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not set</p>
+                )}
+              </div>
+            </div>
                   <p className="text-sm text-muted-foreground">Not set</p>
                 )}
               </div>
@@ -830,20 +912,21 @@ export default function PulseDashboard() {
       <Dialog open={updateRateDialog} onOpenChange={setUpdateRateDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Update Gold Rate</DialogTitle>
-            <DialogDescription>Set the current gold rate per gram for selected karat</DialogDescription>
+            <DialogTitle>Update Precious Metal Rate</DialogTitle>
+            <DialogDescription>Set the current rate per gram for selected metal type</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="karat">Select Karat</Label>
-              <Select value={selectedKarat} onValueChange={(v) => setSelectedKarat(v as '18K' | '22K' | '24K')}>
+              <Label htmlFor="karat">Select Metal Type</Label>
+              <Select value={selectedKarat} onValueChange={(v) => setSelectedKarat(v as '18K' | '22K' | '24K' | 'SILVER')}>
                 <SelectTrigger id="karat">
-                  <SelectValue placeholder="Select karat type" />
+                  <SelectValue placeholder="Select metal type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="18K">18K Gold (75% purity)</SelectItem>
                   <SelectItem value="22K">22K Gold (91.6% purity) - Standard</SelectItem>
                   <SelectItem value="24K">24K Gold (99.9% purity) - Pure</SelectItem>
+                  <SelectItem value="SILVER">Silver (Pure)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -862,7 +945,7 @@ export default function PulseDashboard() {
               {metrics?.currentRates && (
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p>Current rates:</p>
-                  <div className="grid grid-cols-3 gap-2 mt-2">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
                     <div className="p-2 rounded bg-amber-50 dark:bg-amber-900/20">
                       <p className="font-semibold text-amber-700 dark:text-amber-400">18K</p>
                       <p className="text-xs">{metrics.currentRates.k18 ? `₹${metrics.currentRates.k18.rate.toLocaleString()}` : 'Not set'}</p>
@@ -874,6 +957,10 @@ export default function PulseDashboard() {
                     <div className="p-2 rounded bg-yellow-50 dark:bg-yellow-900/20">
                       <p className="font-semibold text-yellow-700 dark:text-yellow-400">24K</p>
                       <p className="text-xs">{metrics.currentRates.k24 ? `₹${metrics.currentRates.k24.rate.toLocaleString()}` : 'Not set'}</p>
+                    </div>
+                    <div className="p-2 rounded bg-slate-50 dark:bg-slate-900/20">
+                      <p className="font-semibold text-slate-700 dark:text-slate-400">SILVER</p>
+                      <p className="text-xs">{metrics.currentRates.silver ? `₹${metrics.currentRates.silver.rate.toLocaleString()}` : 'Not set'}</p>
                     </div>
                   </div>
                 </div>

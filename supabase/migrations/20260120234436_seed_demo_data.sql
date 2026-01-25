@@ -49,38 +49,37 @@ BEGIN
   
   IF v_retailer_id IS NULL THEN
     -- Insert demo retailer
-    INSERT INTO retailers (business_name, contact_email, phone, address, gstin, status)
+    INSERT INTO retailers (business_name, legal_name, phone, email, address)
     VALUES (
       'Golden Jewellers',
-      'contact@goldenjewellers.in',
+      'Golden Jewellers Private Limited',
       '+91 98765 43210',
-      '123 Main Street, Mumbai, Maharashtra 400001',
-      '27AABCU9603R1ZV',
-      'active'
+      'contact@goldenjewellers.in',
+      '123 Main Street, Mumbai, Maharashtra 400001'
     )
     RETURNING id INTO v_retailer_id;
   END IF;
 
   -- Insert gold rates if they don't exist
-  INSERT INTO gold_rates (retailer_id, karat, rate_per_gram, valid_from, notes)
-  SELECT v_retailer_id, '22K', 6750.00, now() - interval '30 days', 'Initial rate setup'
-  WHERE NOT EXISTS (SELECT 1 FROM gold_rates WHERE retailer_id = v_retailer_id AND karat = '22K');
+  INSERT INTO gold_rates (retailer_id, karat, rate_per_gram, effective_from, created_by)
+  SELECT v_retailer_id, '22K'::karat_type, 6750.00, now() - interval '30 days', auth.uid()
+  WHERE NOT EXISTS (SELECT 1 FROM gold_rates WHERE retailer_id = v_retailer_id AND karat = '22K'::karat_type);
 
-  INSERT INTO gold_rates (retailer_id, karat, rate_per_gram, valid_from, notes)
-  SELECT v_retailer_id, '22K', 6825.00, now() - interval '15 days', 'Mid-month adjustment'
-  WHERE NOT EXISTS (SELECT 1 FROM gold_rates WHERE retailer_id = v_retailer_id AND karat = '22K' AND rate_per_gram = 6825.00);
+  INSERT INTO gold_rates (retailer_id, karat, rate_per_gram, effective_from, created_by)
+  SELECT v_retailer_id, '22K'::karat_type, 6825.00, now() - interval '15 days', auth.uid()
+  WHERE NOT EXISTS (SELECT 1 FROM gold_rates WHERE retailer_id = v_retailer_id AND karat = '22K'::karat_type AND rate_per_gram = 6825.00);
 
-  INSERT INTO gold_rates (retailer_id, karat, rate_per_gram, valid_from, notes)
-  SELECT v_retailer_id, '22K', 6750.00, now() - interval '5 days', 'Market correction'
-  WHERE NOT EXISTS (SELECT 1 FROM gold_rates WHERE retailer_id = v_retailer_id AND karat = '22K' AND rate_per_gram = 6750.00 AND valid_from > now() - interval '10 days');
+  INSERT INTO gold_rates (retailer_id, karat, rate_per_gram, effective_from, created_by)
+  SELECT v_retailer_id, '22K'::karat_type, 6750.00, now() - interval '5 days', auth.uid()
+  WHERE NOT EXISTS (SELECT 1 FROM gold_rates WHERE retailer_id = v_retailer_id AND karat = '22K'::karat_type AND rate_per_gram = 6750.00 AND effective_from > now() - interval '10 days');
 
-  INSERT INTO gold_rates (retailer_id, karat, rate_per_gram, valid_from, notes)
-  SELECT v_retailer_id, '24K', 7350.00, now() - interval '30 days', 'Initial rate setup'
-  WHERE NOT EXISTS (SELECT 1 FROM gold_rates WHERE retailer_id = v_retailer_id AND karat = '24K');
+  INSERT INTO gold_rates (retailer_id, karat, rate_per_gram, effective_from, created_by)
+  SELECT v_retailer_id, '24K'::karat_type, 7350.00, now() - interval '30 days', auth.uid()
+  WHERE NOT EXISTS (SELECT 1 FROM gold_rates WHERE retailer_id = v_retailer_id AND karat = '24K'::karat_type);
 
-  INSERT INTO gold_rates (retailer_id, karat, rate_per_gram, valid_from, notes)
-  SELECT v_retailer_id, '18K', 5100.00, now() - interval '30 days', 'Initial rate setup'
-  WHERE NOT EXISTS (SELECT 1 FROM gold_rates WHERE retailer_id = v_retailer_id AND karat = '18K');
+  INSERT INTO gold_rates (retailer_id, karat, rate_per_gram, effective_from, created_by)
+  SELECT v_retailer_id, '18K'::karat_type, 5100.00, now() - interval '30 days', auth.uid()
+  WHERE NOT EXISTS (SELECT 1 FROM gold_rates WHERE retailer_id = v_retailer_id AND karat = '18K'::karat_type);
 
   -- Insert scheme templates if they don't exist
   INSERT INTO scheme_templates (retailer_id, name, duration_months, installment_amount, bonus_percentage, description, is_active)

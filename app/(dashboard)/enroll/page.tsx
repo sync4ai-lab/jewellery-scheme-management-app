@@ -742,19 +742,20 @@ export default function EnrollmentWizard() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="karat">Gold Karat *</Label>
+                    <Label htmlFor="karat">Metal Type *</Label>
                     <Select value={selectedKarat} onValueChange={setSelectedKarat}>
                       <SelectTrigger id="karat">
-                        <SelectValue placeholder="Select karat" />
+                        <SelectValue placeholder="Select metal type" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="18K">18K Gold</SelectItem>
                         <SelectItem value="22K">22K Gold</SelectItem>
                         <SelectItem value="24K">24K Gold</SelectItem>
+                        <SelectItem value="SILVER">Silver</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground">
-                      This will be used for all payments in this enrollment. <strong>Cannot be changed after enrollment is created.</strong>
+                      This metal type will be used for all payments in this enrollment. <strong>Cannot be changed after enrollment is created.</strong>
                     </p>
                   </div>
 

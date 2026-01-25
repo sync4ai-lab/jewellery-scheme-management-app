@@ -77,32 +77,42 @@ export default function CustomerWalletPage() {
     try {
       const { data: enrollmentsData, error: enrollmentsError } = await supabase
         .from('enrollments')
-        .select(
-          `
-          id,
-          status,
-          customer_id,
-          retailer_id,
-          commitment_amount,
-          total_paid,
-          total_grams_allocated,
-          plans (
-            id,
-            plan_name,
-            monthly_amount,
-            tenure_months,
-            karat
-          )
-        `
-        )
+        .select('id, status, customer_id, retailer_id, commitment_amount, plan_id')
         .eq('customer_id', customer.id)
         .eq('status', 'ACTIVE');
 
       if (enrollmentsError) throw enrollmentsError;
 
-      const enrollments = (enrollmentsData || []).map((e: any) => ({
+      if (!enrollmentsData || enrollmentsData.length === 0) {
+        setEnrollments([]);
+        setTotalGold(0);
+        setTotalValue(0);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch scheme templates (plan details)
+      const planIds = [...new Set(enrollmentsData.map((e: any) => e.plan_id))];
+      const { data: plansData } = await supabase
+        .from('scheme_templates')
+        .select('id, name, installment_amount, duration_months')
+        .in('id', planIds);
+
+      const plansMap = new Map(
+        (plansData || []).map((p: any) => [p.id, {
+          id: p.id,
+          plan_name: p.name,
+          monthly_amount: p.installment_amount,
+          tenure_months: p.duration_months,
+          karat: null
+        }])
+      );
+
+      const enrollments = enrollmentsData.map((e: any) => ({
         ...e,
-        plans: Array.isArray(e.plans) ? e.plans[0] : e.plans,
+        total_paid: 0,
+        total_grams_allocated: 0,
+        plans: plansMap.get(e.plan_id) || null,
       })) as EnrollmentRow[];
 
       // Gold rate (best effort)
