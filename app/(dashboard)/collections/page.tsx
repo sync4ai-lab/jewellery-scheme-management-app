@@ -124,6 +124,19 @@ export default function CollectionsPage() {
     }
   }, [selectedCustomerId, goldRate?.id]);
 
+  // Get the karat for the selected enrollment
+  const selectedEnrollmentKarat = useMemo(() => {
+    if (!selectedEnrollmentId) return null;
+    const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
+    return enrollment?.karat || null;
+  }, [selectedEnrollmentId, enrollments]);
+
+  // Get the metal name for display (gold vs silver)
+  const metalName = useMemo(() => 
+    selectedEnrollmentKarat === 'SILVER' ? 'silver' : 'gold',
+    [selectedEnrollmentKarat]
+  );
+
   // When enrollment is selected, load the correct gold rate for its karat
   useEffect(() => {
     if (selectedEnrollmentKarat && profile?.retailer_id) {
@@ -144,13 +157,6 @@ export default function CollectionsPage() {
     if (!goldRate || !Number.isFinite(amountNum) || amountNum <= 0) return 0;
     return amountNum / goldRate.rate_per_gram;
   }, [amount, goldRate]);
-
-  // Get the karat for the selected enrollment
-  const selectedEnrollmentKarat = useMemo(() => {
-    if (!selectedEnrollmentId) return null;
-    const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
-    return enrollment?.karat || null;
-  }, [selectedEnrollmentId, enrollments]);
 
   async function loadCustomersAndRate() {
     if (!profile?.retailer_id) return;
@@ -249,7 +255,7 @@ export default function CollectionsPage() {
       }
 
       // Get unique plan IDs
-      const planIds = [...new Set(enrollmentsData.map((e: any) => e.plan_id))];
+      const planIds = Array.from(new Set(enrollmentsData.map((e: any) => e.plan_id)));
       
       // Fetch plan details
       const { data: plansData, error: plansError } = await supabase

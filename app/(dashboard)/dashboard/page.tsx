@@ -128,7 +128,7 @@ export default function SchemesPage() {
       }
 
       // Get unique plan IDs
-      const planIds = [...new Set(enrollmentsData.map((e: any) => e.plan_id))];
+      const planIds = Array.from(new Set(enrollmentsData.map((e: any) => e.plan_id)));
       
       // Fetch scheme templates (plan details)
       const { data: plansData, error: plansError } = await supabase

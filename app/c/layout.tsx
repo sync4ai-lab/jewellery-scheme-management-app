@@ -84,15 +84,13 @@ export default function CustomerWalletPage() {
       if (enrollmentsError) throw enrollmentsError;
 
       if (!enrollmentsData || enrollmentsData.length === 0) {
-        setEnrollments([]);
-        setTotalGold(0);
-        setTotalValue(0);
+        setWallet({ enrollments: [], totalGold: 0, totalValue: 0, dueThisMonth: false });
         setLoading(false);
         return;
       }
 
       // Fetch scheme templates (plan details)
-      const planIds = [...new Set(enrollmentsData.map((e: any) => e.plan_id))];
+      const planIds = Array.from(new Set(enrollmentsData.map((e: any) => e.plan_id)));
       const { data: plansData } = await supabase
         .from('scheme_templates')
         .select('id, name, installment_amount, duration_months')
