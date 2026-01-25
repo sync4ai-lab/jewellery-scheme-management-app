@@ -192,34 +192,50 @@ export default function CollectionsPage() {
   async function loadEnrollments(customerId: string) {
     if (!profile?.retailer_id) return;
     try {
-      const { data, error } = await supabase
+      // First get enrollments
+      const { data: enrollmentsData, error: enrollError } = await supabase
         .from('enrollments')
-        .select(`
-          id,
-          plan_id,
-          commitment_amount,
-          store_id,
-          plan:scheme_templates!plan_id (
-            name,
-            duration_months,
-            bonus_percentage
-          )
-        `)
+        .select('id, plan_id, commitment_amount, store_id')
         .eq('retailer_id', profile.retailer_id)
         .eq('customer_id', customerId)
         .eq('status', 'ACTIVE');
 
-      if (error) throw error;
+      if (enrollError) throw enrollError;
       
-      const enrollmentsList = (data || []).map((e: any) => ({
-        id: e.id,
-        plan_id: e.plan_id,
-        commitment_amount: e.commitment_amount,
-        store_id: e.store_id,
-        plan_name: e.plan?.name || 'Unknown Plan',
-        duration_months: e.plan?.duration_months || 0,
-        bonus_percentage: e.plan?.bonus_percentage || 0,
-      }));
+      if (!enrollmentsData || enrollmentsData.length === 0) {
+        setEnrollments([]);
+        return;
+      }
+
+      // Get unique plan IDs
+      const planIds = [...new Set(enrollmentsData.map((e: any) => e.plan_id))];
+      
+      // Fetch plan details
+      const { data: plansData, error: plansError } = await supabase
+        .from('scheme_templates')
+        .select('id, name, duration_months, bonus_percentage')
+        .in('id', planIds);
+
+      if (plansError) throw plansError;
+
+      // Map plans by ID for quick lookup
+      const plansMap = new Map(
+        (plansData || []).map((p: any) => [p.id, p])
+      );
+
+      // Combine enrollment data with plan details
+      const enrollmentsList = enrollmentsData.map((e: any) => {
+        const plan = plansMap.get(e.plan_id);
+        return {
+          id: e.id,
+          plan_id: e.plan_id,
+          commitment_amount: e.commitment_amount,
+          store_id: e.store_id,
+          plan_name: plan?.name || 'Unknown Plan',
+          duration_months: plan?.duration_months || 0,
+          bonus_percentage: plan?.bonus_percentage || 0,
+        };
+      });
 
       setEnrollments(enrollmentsList as Enrollment[]);
       

@@ -304,6 +304,8 @@ export default function EnrollmentWizard() {
 
     setLoading(true);
 
+    let createdCustomerId: string | null = null; // Track if we created a new customer
+
     try {
       // 1) Determine customer ID based on enrollment type
       let customerId: string;
@@ -313,20 +315,28 @@ export default function EnrollmentWizard() {
         // Use selected existing customer
         if (!selectedCustomerId) {
           toast.error('Please select a customer');
+          setLoading(false);
           return;
         }
         customerId = selectedCustomerId;
         const customer = allCustomers.find(c => c.id === selectedCustomerId);
         finalCustomerName = customer?.full_name || 'Customer';
       } else {
-        // NEW customer - check if exists or create
+        // NEW customer - validate all required fields first
+        if (!customerPhone || !customerName.trim()) {
+          toast.error('Customer phone and name are required');
+          setLoading(false);
+          return;
+        }
+
+        // Check if exists or create
         let existingId = existingCustomer?.id;
 
         if (!existingId) {
           // Double-check if customer exists before inserting
           const { data: existingCheck, error: checkError } = await supabase
             .from('customers')
-            .select('id')
+            .select('id, full_name, phone')
             .eq('retailer_id', profile.retailer_id)
             .eq('phone', customerPhone)
             .maybeSingle();
@@ -336,8 +346,9 @@ export default function EnrollmentWizard() {
           if (existingCheck) {
             // Customer already exists, use their ID
             existingId = existingCheck.id;
+            toast.info(`Using existing customer: ${existingCheck.full_name}`);
           } else {
-            // Create new customer
+            // Create new customer with all required fields
             const { data: newCustomer, error: customerError } = await supabase
               .from('customers')
               .insert({
@@ -346,8 +357,22 @@ export default function EnrollmentWizard() {
                 full_name: customerName,
                 customer_code: `CUST${Date.now()}`,
                 store_id: selectedStore,
+                email: null, // Explicitly set optional fields
+                address: null,
+                kyc_status: 'PENDING',
               })
               .select()
+              .single();
+
+            if (customerError) throw customerError;
+            existingId = newCustomer.id;
+            createdCustomerId = newCustomer.id; // Track that we created this customer
+          }
+        }
+
+        customerId = existingId;
+        finalCustomerName = customerName;
+      }
               .single();
 
             if (customerError) throw customerError;
@@ -391,7 +416,17 @@ export default function EnrollmentWizard() {
         .select()
         .single();
 
-      if (enrollErr) throw enrollErr;
+      if (enrollErr) {
+        // If enrollment fails and we just created a customer, roll it back
+        if (createdCustomerId) {
+          await supabase
+            .from('customers')
+            .delete()
+            .eq('id', createdCustomerId);
+          toast.error('Enrollment failed. Customer record rolled back.');
+        }
+        throw enrollErr;
+      }
 
       // 3) Create first billing month row (minimal, avoids relying on RPC)
       const billingMonth = computeFirstBillingMonth(startDate);
@@ -405,7 +440,14 @@ export default function EnrollmentWizard() {
         status: 'DUE',
       });
 
-      if (billErr) throw billErr;
+      if (billErr) {
+        // If billing month creation fails, rollback enrollment and customer
+        await supabase.from('enrollments').delete().eq('id', enrollment.id);
+        if (createdCustomerId) {
+          await supabase.from('customers').delete().eq('id', createdCustomerId);
+        }
+        throw billErr;
+      }
 
       toast.success(`Successfully enrolled ${finalCustomerName}!`);
       
@@ -420,7 +462,15 @@ export default function EnrollmentWizard() {
       }, 1500);
     } catch (error: any) {
       console.error('Enrollment error:', error);
-      toast.error(error.message || 'Failed to enroll customer');
+      
+      // Provide more specific error messages
+      if (error?.code === '23503') {
+        toast.error('Database constraint error. Please ensure all required data exists.');
+      } else if (error?.code === '42P01') {
+        toast.error('Database table not found. Please run the latest migrations.');
+      } else {
+        toast.error(error?.message || 'Failed to enroll customer');
+      }
     } finally {
       setLoading(false);
     }
