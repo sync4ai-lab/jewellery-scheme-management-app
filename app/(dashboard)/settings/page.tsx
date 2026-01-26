@@ -319,20 +319,20 @@ export default function SettingsPage() {
 
     setUploadingLogo(true);
     try {
-      // Create a unique file name
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${profile.retailer_id}-${Date.now()}.${fileExt}`;
+      // Create a unique file name with proper extension
+      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const fileName = `logo-${Date.now()}.${fileExt}`;
       const filePath = `${profile.retailer_id}/${fileName}`;
 
-      console.log('Uploading logo to:', filePath);
+      console.log('Uploading logo:', { filePath, type: file.type, size: file.size });
 
-      // Upload to Supabase Storage
+      // Upload to Supabase Storage with explicit content type
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('retailer-logos')
         .upload(filePath, file, {
           cacheControl: '3600',
-          upsert: false,
-          contentType: file.type,
+          upsert: true, // Allow overwrite
+          contentType: file.type || 'image/png',
         });
 
       if (uploadError) {
