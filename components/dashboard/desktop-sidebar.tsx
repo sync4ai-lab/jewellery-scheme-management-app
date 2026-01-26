@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, Users, Sparkles, TrendingUp, LogOut, Gem, AlertCircle } from 'lucide-react';
+import { Activity, Users, Sparkles, TrendingUp, LogOut, Gem, AlertCircle, UserCircle, Award } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -8,11 +8,13 @@ import { useAuth } from '@/lib/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 
 const navItems = [
-  { name: 'Pulse', href: '/dashboard', icon: Activity, description: 'Business Health' },
-  { name: 'Schemes', href: '/dashboard/schemes', icon: Users, description: 'Customer Journey' },
-  { name: 'Due & Overdue', href: '/dashboard/due', icon: AlertCircle, description: 'Payment Tracking' },
-  { name: 'Gold Engine', href: '/dashboard/gold-engine', icon: Sparkles, description: 'Trust Core' },
-  { name: 'Growth', href: '/dashboard/growth', icon: TrendingUp, description: 'Staff & Incentives' },
+  { name: 'Pulse', href: '/pulse', icon: Activity, description: 'Business Health' },
+  { name: 'Customers', href: '/customers', icon: UserCircle, description: 'Customer Management' },
+  { name: 'Collections', href: '/collections', icon: Users, description: 'Payment Collection' },
+  { name: 'Enroll', href: '/enroll', icon: Users, description: 'New Enrollment' },
+  { name: 'Plans', href: '/plans', icon: Sparkles, description: 'Scheme Templates' },
+  { name: 'Redemptions', href: '/redemptions', icon: Award, description: 'Withdrawals' },
+  { name: 'Settings', href: '/settings', icon: TrendingUp, description: 'Configuration' },
 ];
 
 export function DesktopSidebar() {
