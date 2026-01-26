@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Users, Search, TrendingUp, Award, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { CustomerDetailModal } from '@/components/customer-detail-modal';
 
 type CustomerEnrollment = {
   customer_id: string;
@@ -42,6 +43,8 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
 
   useEffect(() => {
     if (profile?.retailer_id) {
@@ -417,7 +420,14 @@ export default function CustomersPage() {
                       const isSilver = enrollment.karat === 'SILVER';
 
                       return (
-                        <TableRow key={`${customer.customer_id}-${enrollment.id}`}>
+                        <TableRow 
+                          key={`${customer.customer_id}-${enrollment.id}`}
+                          className="cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => {
+                            setSelectedCustomerId(customer.customer_id);
+                            setDetailModalOpen(true);
+                          }}
+                        >
                           <TableCell rowSpan={idx === 0 ? customer.enrollments.length : undefined} className={idx === 0 ? "border-r" : "hidden"}>
                             {idx === 0 && (
                               <div>
@@ -485,6 +495,16 @@ export default function CustomersPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Customer Detail Modal */}
+      <CustomerDetailModal
+        customerId={selectedCustomerId}
+        open={detailModalOpen}
+        onClose={() => {
+          setDetailModalOpen(false);
+          setSelectedCustomerId(null);
+        }}
+      />
     </div>
   );
 }

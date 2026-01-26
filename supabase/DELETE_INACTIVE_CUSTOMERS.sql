@@ -196,3 +196,31 @@ WHERE id NOT IN (
     AND payment_status = 'SUCCESS'
 );
 */
+
+-- ==============================================================
+-- ⚠️ READY TO RUN: DELETE INACTIVE CUSTOMERS NOW
+-- ==============================================================
+-- This query is UNCOMMENTED and ready to execute.
+-- Run this to permanently delete all customers with NO enrollments.
+-- CASCADE will automatically delete related records in:
+--   - enrollments, transactions, enrollment_billing_months, redemptions
+
+-- DELETE CUSTOMERS WITH NO ENROLLMENTS AT ALL
+DELETE FROM customers
+WHERE id NOT IN (
+    SELECT DISTINCT customer_id 
+    FROM enrollments
+);
+
+-- If the above doesn't work as expected, use this alternative:
+-- (This deletes customers with 0 ACTIVE enrollments)
+/*
+DELETE FROM customers
+WHERE id IN (
+    SELECT c.id
+    FROM customers c
+    LEFT JOIN enrollments e ON e.customer_id = c.id
+    GROUP BY c.id
+    HAVING COUNT(CASE WHEN e.status = 'ACTIVE' THEN 1 END) = 0
+);
+*/
