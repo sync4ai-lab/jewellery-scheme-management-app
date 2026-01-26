@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, Users, Sparkles, TrendingUp, AlertCircle, UserCircle, Award } from 'lucide-react';
+import { Activity, Users, Sparkles, TrendingUp, AlertCircle, UserCircle, Award, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -13,14 +13,15 @@ const navItems = [
   { name: 'REDEEM', href: '/redemptions', icon: Award },
   { name: 'DUES', href: '/dashboard', icon: AlertCircle },
   { name: 'GROWTH', href: '/dashboard', icon: TrendingUp },
+  { name: 'SETTINGS', href: '/settings', icon: Settings },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-lg md:hidden">
-      <div className="flex items-center justify-around px-2 py-3">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-lg md:hidden overflow-x-auto">
+      <div className="flex items-center gap-1 px-2 py-3 min-w-max">
         {navItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname?.startsWith(item.href));
           const Icon = item.icon;
