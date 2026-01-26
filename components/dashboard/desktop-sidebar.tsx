@@ -10,11 +10,12 @@ import { Button } from '@/components/ui/button';
 const navItems = [
   { name: 'Pulse', href: '/pulse', icon: Activity, description: 'Business Health' },
   { name: 'Customers', href: '/customers', icon: UserCircle, description: 'Customer Management' },
-  { name: 'Collections', href: '/collections', icon: Users, description: 'Payment Collection' },
-  { name: 'Enroll', href: '/enroll', icon: Users, description: 'New Enrollment' },
   { name: 'Plans', href: '/plans', icon: Sparkles, description: 'Scheme Templates' },
+  { name: 'Collections', href: '/collections', icon: Users, description: 'Payment Collection' },
   { name: 'Redemptions', href: '/redemptions', icon: Award, description: 'Withdrawals' },
-  { name: 'Settings', href: '/settings', icon: TrendingUp, description: 'Configuration' },
+  { name: 'Dues', href: '/dashboard', icon: AlertCircle, description: 'Overdue Payments' },
+  { name: 'Growth', href: '/dashboard', icon: TrendingUp, description: 'Staff Performance' },
+  { name: 'Settings', href: '/settings', icon: Gem, description: 'Configuration' },
 ];
 
 export function DesktopSidebar() {

@@ -8,9 +8,11 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { name: 'PULSE', href: '/pulse', icon: Activity },
   { name: 'CUSTOMERS', href: '/customers', icon: UserCircle },
+  { name: 'PLANS', href: '/plans', icon: Sparkles },
   { name: 'COLLECT', href: '/collections', icon: Users },
   { name: 'REDEEM', href: '/redemptions', icon: Award },
-  { name: 'PLANS', href: '/plans', icon: Sparkles },
+  { name: 'DUES', href: '/dashboard', icon: AlertCircle },
+  { name: 'GROWTH', href: '/dashboard', icon: TrendingUp },
 ];
 
 export function MobileNav() {
