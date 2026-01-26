@@ -325,20 +325,38 @@ export default function SettingsPage() {
 
     setUploadingLogo(true);
     try {
+      // Check if bucket exists
+      const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+      
+      if (bucketError) {
+        console.error('Bucket check error:', bucketError);
+        throw new Error('Unable to access storage. Please contact support.');
+      }
+
+      const bucketExists = buckets?.some(b => b.id === 'retailer-assets');
+      
+      if (!bucketExists) {
+        throw new Error('Storage bucket not configured. Please run the storage migration in Supabase SQL Editor first.');
+      }
+
       // Create a unique file name
       const fileExt = file.name.split('.').pop();
       const fileName = `${profile.retailer_id}-${Date.now()}.${fileExt}`;
       const filePath = `logos/${fileName}`;
 
-      // Upload to Supabase Storage
-      const { error: uploadError } = await supabase.storage
+      // Upload to Supabase Storage with content-type
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('retailer-assets')
         .upload(filePath, file, {
           cacheControl: '3600',
           upsert: false,
+          contentType: file.type,
         });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw new Error(uploadError.message || 'Failed to upload file to storage');
+      }
 
       // Get public URL
       const { data: urlData } = supabase.storage
@@ -364,7 +382,13 @@ export default function SettingsPage() {
       toast.success('✅ Logo uploaded successfully!');
     } catch (error: any) {
       console.error('Error uploading logo:', error);
-      toast.error(`Failed to upload logo: ${error?.message || 'Unknown error'}`);
+      const errorMessage = error?.message || 'Unknown error';
+      
+      if (errorMessage.includes('Bucket not found') || errorMessage.includes('bucket not configured')) {
+        toast.error('Storage not configured. Please run the SQL migration first.');
+      } else {
+        toast.error(`Failed to upload logo: ${errorMessage}`);
+      }
     } finally {
       setUploadingLogo(false);
     }
