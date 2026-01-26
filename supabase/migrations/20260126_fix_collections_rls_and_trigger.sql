@@ -13,11 +13,26 @@
 */
 
 -- =====================================================
--- 1. DROP BUGGY TRIGGER
+-- 1. DROP BUGGY TRIGGER - AGGRESSIVE CLEANUP
 -- =====================================================
 
+-- Drop all variations of the buggy trigger
 DROP TRIGGER IF EXISTS check_payment_due_status ON transactions;
+DROP TRIGGER IF EXISTS check_monthly_payment_status_trigger ON transactions;
+DROP TRIGGER IF EXISTS payment_status_trigger ON transactions;
+
+-- Drop all variations of the buggy function
 DROP FUNCTION IF EXISTS check_monthly_payment_status();
+DROP FUNCTION IF EXISTS check_monthly_payment_status(text);
+DROP FUNCTION IF EXISTS check_payment_status();
+
+-- Drop and recreate the set_billing_month trigger to ensure it's clean
+DROP TRIGGER IF EXISTS set_billing_month_trigger ON transactions;
+DROP FUNCTION IF EXISTS set_billing_month() CASCADE;
+
+-- Drop and recreate validate_transaction_amount trigger
+DROP TRIGGER IF EXISTS validate_transaction_amount_trigger ON transactions;
+DROP FUNCTION IF EXISTS validate_transaction_amount() CASCADE;
 
 -- =====================================================
 -- 2. ADD MISSING RLS POLICY FOR STAFF
@@ -132,9 +147,10 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =====================================================
--- 4. ADD RECORDED_AT FIELD IF MISSING
+-- 4. RECREATE REQUIRED TRIGGERS
 -- =====================================================
 
+-- Add recorded_at column if missing
 DO $$ 
 BEGIN
   IF NOT EXISTS (
@@ -145,18 +161,18 @@ BEGIN
   END IF;
 END $$;
 
--- Update set_billing_month function to handle recorded_at
+-- Recreate set_billing_month function (FIXED)
 CREATE OR REPLACE FUNCTION set_billing_month()
 RETURNS TRIGGER AS $$
 BEGIN
   -- Set recorded_at for offline payments if not provided
-  IF NEW.source = 'STAFF_OFFLINE' AND NEW.recorded_at IS NULL THEN
+  IF NEW.source = 'STAFF_OFFLINE'::transaction_source AND NEW.recorded_at IS NULL THEN
     NEW.recorded_at := NOW();
   END IF;
   
   -- Calculate billing_month from paid_at (online) or recorded_at (offline)
   IF NEW.billing_month IS NULL THEN
-    IF NEW.source = 'CUSTOMER_ONLINE' THEN
+    IF NEW.source = 'CUSTOMER_ONLINE'::transaction_source THEN
       NEW.billing_month := DATE_TRUNC('month', COALESCE(NEW.paid_at, NOW()))::date;
     ELSE
       NEW.billing_month := DATE_TRUNC('month', COALESCE(NEW.recorded_at, NOW()))::date;
@@ -166,6 +182,53 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Recreate the trigger
+CREATE TRIGGER set_billing_month_trigger
+  BEFORE INSERT ON transactions
+  FOR EACH ROW
+  EXECUTE FUNCTION set_billing_month();
+
+-- Recreate validate_transaction_amount function (FIXED)
+CREATE OR REPLACE FUNCTION validate_transaction_amount()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_commitment_amount numeric;
+BEGIN
+  -- Skip validation for non-payment types
+  IF NEW.txn_type IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- Get the enrollment's commitment amount (FIXED: use enrollment_id)
+  SELECT commitment_amount INTO v_commitment_amount
+  FROM enrollments
+  WHERE id = NEW.enrollment_id;
+
+  -- Validate PRIMARY_INSTALLMENT amount
+  IF NEW.txn_type = 'PRIMARY_INSTALLMENT' THEN
+    IF NEW.amount_paid < v_commitment_amount THEN
+      RAISE EXCEPTION 'PRIMARY_INSTALLMENT amount (₹%) must be >= monthly commitment (₹%)', 
+        NEW.amount_paid, v_commitment_amount;
+    END IF;
+  END IF;
+
+  -- Validate TOP_UP amount
+  IF NEW.txn_type = 'TOP_UP' THEN
+    IF NEW.amount_paid <= 0 THEN
+      RAISE EXCEPTION 'TOP_UP amount must be > 0';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Recreate the trigger
+CREATE TRIGGER validate_transaction_amount_trigger
+  BEFORE INSERT OR UPDATE ON transactions
+  FOR EACH ROW
+  EXECUTE FUNCTION validate_transaction_amount();
 
 COMMENT ON FUNCTION create_due_reminders IS 'Fixed to use enrollment_id instead of scheme_id';
 COMMENT ON POLICY "Staff can record offline payments" ON transactions IS 'Allows staff to record cash/offline payments for customers';
