@@ -13,6 +13,9 @@ import {
   Edit,
   Trophy,
   ArrowRight,
+  Search,
+  Download,
+  Calendar,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -23,6 +26,7 @@ import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 type DashboardMetrics = {
   periodCollections: number;
@@ -84,6 +88,19 @@ export default function PulseDashboard() {
   const [collectionsTrend, setCollectionsTrend] = useState<Array<{ date: string; collections: number }>>([]);
   const [overdueTrend, setOverdueTrend] = useState<Array<{ date: string; overdue: number }>>([]);
   const [enrollmentTrend, setEnrollmentTrend] = useState<Array<{ date: string; enrollments: number }>>([]);
+  
+  // New analytics state
+  const [analyticsFilter, setAnalyticsFilter] = useState<'7D' | '30D' | '3M' | '6M' | '1Y' | 'CUSTOM'>('30D');
+  const [analyticsStart, setAnalyticsStart] = useState('');
+  const [analyticsEnd, setAnalyticsEnd] = useState('');
+  const [revenueByMetal, setRevenueByMetal] = useState<Array<{ date: string; k18: number; k22: number; k24: number; silver: number; total: number }>>([]);
+  const [customerMetrics, setCustomerMetrics] = useState<Array<{ date: string; newEnrollments: number; activeCustomers: number }>>([]);
+  const [goldAllocationTrend, setGoldAllocationTrend] = useState<Array<{ date: string; k18: number; k22: number; k24: number; silver: number }>>([]);
+  const [paymentBehavior, setPaymentBehavior] = useState<Array<{ date: string; onTime: number; late: number; completionRate: number }>>([]);
+  const [schemeHealth, setSchemeHealth] = useState<Array<{ date: string; onTrack: number; due: number; missed: number; readyToRedeem: number }>>([]);
+  const [staffPerformance, setStaffPerformance] = useState<Array<{ date: string; [key: string]: any }>>([]);
+  const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
+  const [metalTypeFilter, setMetalTypeFilter] = useState<'ALL' | '18K' | '22K' | '24K' | 'SILVER'>('ALL');
 
   const [updateRateDialog, setUpdateRateDialog] = useState(false);
   const [newRate, setNewRate] = useState('');
@@ -91,6 +108,18 @@ export default function PulseDashboard() {
   const [timeFilter, setTimeFilter] = useState<'DAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'RANGE'>('DAY');
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
+  
+  // Transactions list state
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [txnTypeFilter, setTxnTypeFilter] = useState<'ALL' | 'COLLECTIONS' | 'REDEMPTIONS'>('ALL');
+  const [txnDateFilter, setTxnDateFilter] = useState<'DAY' | 'WEEK' | 'MONTH' | 'RANGE'>('DAY');
+  const [txnSearchQuery, setTxnSearchQuery] = useState('');
+  const [txnStartDate, setTxnStartDate] = useState('');
+  const [txnEndDate, setTxnEndDate] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+  
   const periodLabel = useMemo(() => {
     switch (timeFilter) {
       case 'DAY': return 'Day';
@@ -117,6 +146,7 @@ export default function PulseDashboard() {
     if (!profile?.retailer_id) return;
     void loadDashboard();
     void loadChartTrends();
+    void loadAdvancedAnalytics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.retailer_id]);
 
@@ -125,6 +155,12 @@ export default function PulseDashboard() {
     void loadDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeFilter, customStart, customEnd]);
+
+  useEffect(() => {
+    if (!profile?.retailer_id) return;
+    void loadAdvancedAnalytics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analyticsFilter, analyticsStart, analyticsEnd, metalTypeFilter]);
 
   async function safeCountCustomers(retailerId: string): Promise<number> {
     const { count, error } = await supabase
@@ -512,6 +548,307 @@ export default function PulseDashboard() {
       console.error('Error loading chart trends:', error);
     }
   }
+
+  async function loadAdvancedAnalytics() {
+    if (!profile?.retailer_id) return;
+
+    try {
+      const now = new Date();
+      let daysBack: number;
+      let startDate: Date;
+
+      if (analyticsFilter === 'CUSTOM' && analyticsStart && analyticsEnd) {
+        startDate = new Date(analyticsStart);
+      } else {
+        switch (analyticsFilter) {
+          case '7D': daysBack = 7; break;
+          case '30D': daysBack = 30; break;
+          case '3M': daysBack = 90; break;
+          case '6M': daysBack = 180; break;
+          case '1Y': daysBack = 365; break;
+          default: daysBack = 30;
+        }
+        startDate = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
+      }
+
+      const endDate = analyticsFilter === 'CUSTOM' && analyticsEnd ? new Date(analyticsEnd) : now;
+
+      // Fetch all enrollments to get karat information
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('id, karat, customer_id, created_at, status')
+        .eq('retailer_id', profile.retailer_id);
+
+      const enrollmentKaratMap = new Map<string, string>();
+      const enrollmentCustomerMap = new Map<string, string>();
+      (enrollmentsData || []).forEach((e: any) => {
+        enrollmentKaratMap.set(e.id, e.karat);
+        enrollmentCustomerMap.set(e.id, e.customer_id);
+      });
+
+      // 1. Revenue & Collection Trends by Metal Type
+      const { data: txnData } = await supabase
+        .from('transactions')
+        .select('paid_at, amount_paid, enrollment_id, grams_allocated_snapshot')
+        .eq('retailer_id', profile.retailer_id)
+        .eq('payment_status', 'SUCCESS')
+        .gte('paid_at', startDate.toISOString())
+        .lte('paid_at', endDate.toISOString());
+
+      const revenueMap = new Map<string, { k18: number; k22: number; k24: number; silver: number; total: number }>();
+      const goldAllocationMap = new Map<string, { k18: number; k22: number; k24: number; silver: number }>();
+
+      (txnData || []).forEach((txn: any) => {
+        const date = new Date(txn.paid_at).toISOString().split('T')[0];
+        const karat = enrollmentKaratMap.get(txn.enrollment_id) || '';
+        const amount = safeNumber(txn.amount_paid);
+        const grams = safeNumber(txn.grams_allocated_snapshot);
+
+        if (!revenueMap.has(date)) {
+          revenueMap.set(date, { k18: 0, k22: 0, k24: 0, silver: 0, total: 0 });
+        }
+        if (!goldAllocationMap.has(date)) {
+          goldAllocationMap.set(date, { k18: 0, k22: 0, k24: 0, silver: 0 });
+        }
+
+        const rev = revenueMap.get(date)!;
+        const gold = goldAllocationMap.get(date)!;
+
+        if (karat === '18K') { rev.k18 += amount; gold.k18 += grams; }
+        else if (karat === '22K') { rev.k22 += amount; gold.k22 += grams; }
+        else if (karat === '24K') { rev.k24 += amount; gold.k24 += grams; }
+        else if (karat === 'SILVER') { rev.silver += amount; gold.silver += grams; }
+
+        rev.total += amount;
+      });
+
+      setRevenueByMetal(Array.from(revenueMap).map(([date, data]) => ({ date, ...data })).sort((a, b) => a.date.localeCompare(b.date)));
+      setGoldAllocationTrend(Array.from(goldAllocationMap).map(([date, data]) => ({ date, ...data })).sort((a, b) => a.date.localeCompare(b.date)));
+
+      // 2. Customer Acquisition & Retention
+      const customerMap = new Map<string, { newEnrollments: number; activeCustomers: number }>();
+      const activeCustomersSet = new Set<string>();
+
+      (enrollmentsData || []).forEach((enroll: any) => {
+        const createdDate = new Date(enroll.created_at).toISOString().split('T')[0];
+        if (createdDate >= startDate.toISOString().split('T')[0] && createdDate <= endDate.toISOString().split('T')[0]) {
+          if (!customerMap.has(createdDate)) {
+            customerMap.set(createdDate, { newEnrollments: 0, activeCustomers: 0 });
+          }
+          customerMap.get(createdDate)!.newEnrollments += 1;
+        }
+        if (enroll.status === 'ACTIVE') {
+          activeCustomersSet.add(enroll.customer_id);
+        }
+      });
+
+      // Calculate cumulative active customers
+      const customerData = Array.from(customerMap).map(([date, data]) => ({
+        date,
+        newEnrollments: data.newEnrollments,
+        activeCustomers: activeCustomersSet.size,
+      })).sort((a, b) => a.date.localeCompare(b.date));
+
+      setCustomerMetrics(customerData);
+
+      // 3. Payment Behavior Analysis
+      const { data: billingData } = await supabase
+        .from('enrollment_billing_months')
+        .select('due_date, primary_paid, paid_at, enrollment_id')
+        .eq('retailer_id', profile.retailer_id)
+        .gte('due_date', startDate.toISOString().split('T')[0])
+        .lte('due_date', endDate.toISOString().split('T')[0]);
+
+      const paymentMap = new Map<string, { onTime: number; late: number; total: number }>();
+
+      (billingData || []).forEach((billing: any) => {
+        const dueDate = billing.due_date;
+        if (!paymentMap.has(dueDate)) {
+          paymentMap.set(dueDate, { onTime: 0, late: 0, total: 0 });
+        }
+
+        const payment = paymentMap.get(dueDate)!;
+        payment.total += 1;
+
+        if (billing.primary_paid) {
+          const paidDate = billing.paid_at ? new Date(billing.paid_at).toISOString().split('T')[0] : null;
+          if (paidDate && paidDate <= dueDate) {
+            payment.onTime += 1;
+          } else {
+            payment.late += 1;
+          }
+        }
+      });
+
+      setPaymentBehavior(Array.from(paymentMap).map(([date, data]) => ({
+        date,
+        onTime: data.onTime,
+        late: data.late,
+        completionRate: data.total > 0 ? Math.round((data.onTime / data.total) * 100) : 0,
+      })).sort((a, b) => a.date.localeCompare(b.date)));
+
+      // 4. Scheme Health Score (simplified - use billing status as proxy)
+      const schemeHealthMap = new Map<string, { onTrack: number; due: number; missed: number; readyToRedeem: number }>();
+      const today = now.toISOString().split('T')[0];
+
+      (billingData || []).forEach((billing: any) => {
+        const dueDate = billing.due_date;
+        if (!schemeHealthMap.has(dueDate)) {
+          schemeHealthMap.set(dueDate, { onTrack: 0, due: 0, missed: 0, readyToRedeem: 0 });
+        }
+
+        const health = schemeHealthMap.get(dueDate)!;
+
+        if (billing.primary_paid) {
+          health.onTrack += 1;
+        } else if (dueDate < today) {
+          health.missed += 1;
+        } else {
+          health.due += 1;
+        }
+      });
+
+      setSchemeHealth(Array.from(schemeHealthMap).map(([date, data]) => ({ date, ...data })).sort((a, b) => a.date.localeCompare(b.date)));
+
+      // 5. Staff Performance Trends
+      const { data: staffData } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .eq('retailer_id', profile.retailer_id)
+        .in('role', ['STAFF', 'ADMIN']);
+
+      const staffMap = new Map<string, string>();
+      (staffData || []).forEach((s: any) => {
+        staffMap.set(s.id, s.full_name);
+      });
+
+      const staffPerfMap = new Map<string, any>();
+
+      (txnData || []).forEach((txn: any) => {
+        const date = new Date(txn.paid_at).toISOString().split('T')[0];
+        if (!staffPerfMap.has(date)) {
+          staffPerfMap.set(date, { date });
+        }
+
+        const dayData = staffPerfMap.get(date)!;
+        // Note: transactions don't have staff_id, so this is a simplified version
+        // You may need to add staff_id to transactions table or use another method
+        dayData.total = (dayData.total || 0) + safeNumber(txn.amount_paid);
+      });
+
+      setStaffPerformance(Array.from(staffPerfMap.values()).sort((a, b) => a.date.localeCompare(b.date)));
+
+    } catch (error) {
+      console.error('Error loading advanced analytics:', error);
+      toast.error('Failed to load analytics data');
+    }
+  }
+
+  async function loadTransactions() {
+    if (!profile?.retailer_id) return;
+    setTransactionsLoading(true);
+
+    try {
+      let startDate: string;
+      let endDate: string;
+
+      const now = new Date();
+      
+      if (txnDateFilter === 'DAY') {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).toISOString();
+      } else if (txnDateFilter === 'WEEK') {
+        const day = now.getDay();
+        const diff = (day + 6) % 7; // Monday start
+        const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff, 0, 0, 0);
+        startDate = monday.toISOString();
+        endDate = new Date(monday.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      } else if (txnDateFilter === 'MONTH') {
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0).toISOString();
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0).toISOString();
+      } else if (txnDateFilter === 'RANGE' && txnStartDate && txnEndDate) {
+        startDate = new Date(txnStartDate).toISOString();
+        endDate = new Date(new Date(txnEndDate).getTime() + 24 * 60 * 60 * 1000).toISOString();
+      } else {
+        // Default to today
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).toISOString();
+      }
+
+      // Build query
+      let query = supabase
+        .from('transactions')
+        .select(`
+          id,
+          amount_paid,
+          payment_status,
+          mode,
+          txn_type,
+          paid_at,
+          grams_allocated_snapshot,
+          rate_per_gram_snapshot,
+          source,
+          customers (
+            id,
+            full_name,
+            phone
+          ),
+          enrollments (
+            id,
+            karat,
+            scheme_templates (
+              name
+            )
+          )
+        `)
+        .eq('retailer_id', profile.retailer_id)
+        .eq('payment_status', 'SUCCESS')
+        .gte('paid_at', startDate)
+        .lt('paid_at', endDate)
+        .order('paid_at', { ascending: false });
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Filter by transaction type if needed
+      let filteredData = data || [];
+      if (txnTypeFilter === 'COLLECTIONS') {
+        filteredData = filteredData.filter(t => t.txn_type === 'PRIMARY_INSTALLMENT' || t.txn_type === 'TOP_UP');
+      } else if (txnTypeFilter === 'REDEMPTIONS') {
+        // Add redemption filter when redemptions are tracked differently
+        // For now, we only have payment collections
+        filteredData = [];
+      }
+
+      // Filter by search query
+      if (txnSearchQuery.trim()) {
+        const query = txnSearchQuery.toLowerCase();
+        filteredData = filteredData.filter(t => {
+          const customer = t.customers as any;
+          return (
+            t.id.toLowerCase().includes(query) ||
+            customer?.full_name?.toLowerCase().includes(query) ||
+            customer?.phone?.includes(query)
+          );
+        });
+      }
+
+      setTransactions(filteredData);
+    } catch (error: any) {
+      console.error('Error loading transactions:', error);
+      toast.error('Failed to load transactions');
+    } finally {
+      setTransactionsLoading(false);
+    }
+  }
+
+  // Load transactions when filters change
+  useEffect(() => {
+    if (profile?.retailer_id) {
+      void loadTransactions();
+    }
+  }, [profile?.retailer_id, txnDateFilter, txnTypeFilter, txnSearchQuery, txnStartDate, txnEndDate]);
 
   async function handleUpdateRate() {
     if (!profile?.retailer_id) {
@@ -915,83 +1252,559 @@ export default function PulseDashboard() {
         </Card>
       </div>
 
-      {/* Analytics Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Collections Trend */}
-        <Card className="glass-card border-2 border-primary/20">
+      {/* Advanced Analytics Section */}
+      <div className="space-y-6">
+        {/* Analytics Filter Bar */}
+        <Card className="jewel-card">
+          <CardContent className="pt-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold mb-1">Business Analytics</h3>
+                <p className="text-sm text-muted-foreground">Comprehensive insights into your business health</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs whitespace-nowrap">Analysis Period</Label>
+                  <Select value={analyticsFilter} onValueChange={(v: any) => setAnalyticsFilter(v)}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="7D">Last 7 Days</SelectItem>
+                      <SelectItem value="30D">Last 30 Days</SelectItem>
+                      <SelectItem value="3M">Last 3 Months</SelectItem>
+                      <SelectItem value="6M">Last 6 Months</SelectItem>
+                      <SelectItem value="1Y">Last Year</SelectItem>
+                      <SelectItem value="CUSTOM">Custom Range</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {analyticsFilter === 'CUSTOM' && (
+                  <>
+                    <Input type="date" value={analyticsStart} onChange={(e) => setAnalyticsStart(e.target.value)} className="w-40" />
+                    <span className="text-muted-foreground">to</span>
+                    <Input type="date" value={analyticsEnd} onChange={(e) => setAnalyticsEnd(e.target.value)} className="w-40" />
+                  </>
+                )}
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs whitespace-nowrap">Metal Type</Label>
+                  <Select value={metalTypeFilter} onValueChange={(v: any) => setMetalTypeFilter(v)}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">All Metals</SelectItem>
+                      <SelectItem value="18K">18K Gold</SelectItem>
+                      <SelectItem value="22K">22K Gold</SelectItem>
+                      <SelectItem value="24K">24K Gold</SelectItem>
+                      <SelectItem value="SILVER">Silver</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Chart 1: Revenue & Collection Trends by Metal Type */}
+        <Card className="jewel-card border-2 border-primary/20">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-green-600" />
-              Collections Trend
+              Revenue & Collection Trends
             </CardTitle>
-            <CardDescription>Last 7 days of collections</CardDescription>
+            <CardDescription>Daily collections broken down by metal type</CardDescription>
           </CardHeader>
           <CardContent>
-            {collectionsTrend.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={collectionsTrend}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip formatter={(value) => `₹${value.toLocaleString()}`} />
-                  <Line type="monotone" dataKey="collections" stroke="#10B981" strokeWidth={2} dot={{ fill: '#10B981' }} />
+            {revenueByMetal.length > 0 ? (
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={revenueByMetal}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip formatter={(value) => `₹${Number(value).toLocaleString()}`} />
+                  <Legend />
+                  {(metalTypeFilter === 'ALL' || metalTypeFilter === '18K') && (
+                    <Line type="monotone" dataKey="k18" stroke="#F59E0B" strokeWidth={2} name="18K Gold" dot={{ fill: '#F59E0B' }} />
+                  )}
+                  {(metalTypeFilter === 'ALL' || metalTypeFilter === '22K') && (
+                    <Line type="monotone" dataKey="k22" stroke="#D97706" strokeWidth={2} name="22K Gold" dot={{ fill: '#D97706' }} />
+                  )}
+                  {(metalTypeFilter === 'ALL' || metalTypeFilter === '24K') && (
+                    <Line type="monotone" dataKey="k24" stroke="#EAB308" strokeWidth={2} name="24K Gold" dot={{ fill: '#EAB308' }} />
+                  )}
+                  {(metalTypeFilter === 'ALL' || metalTypeFilter === 'SILVER') && (
+                    <Line type="monotone" dataKey="silver" stroke="#64748B" strokeWidth={2} name="Silver" dot={{ fill: '#64748B' }} />
+                  )}
+                  {metalTypeFilter === 'ALL' && (
+                    <Line type="monotone" dataKey="total" stroke="#10B981" strokeWidth={3} name="Total Collections" dot={{ fill: '#10B981' }} />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-80 flex items-center justify-center text-muted-foreground">No data available</div>
+              <div className="h-96 flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <TrendingUp className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>No collection data available for selected period</p>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Enrollment Trend */}
-        <Card className="glass-card border-2 border-primary/20">
+        {/* Chart 2: Customer Acquisition & Retention */}
+        <Card className="jewel-card border-2 border-primary/20">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="w-5 h-5 text-blue-600" />
-              New Enrollments
+              Customer Acquisition & Retention
             </CardTitle>
-            <CardDescription>Last 7 days of new customers</CardDescription>
+            <CardDescription>Track new enrollments and active customer base growth</CardDescription>
           </CardHeader>
           <CardContent>
-            {enrollmentTrend.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={enrollmentTrend}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
+            {customerMetrics.length > 0 ? (
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={customerMetrics}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Bar dataKey="enrollments" fill="#3B82F6" name="New Enrollments" />
-                </BarChart>
+                  <Legend />
+                  <Line type="monotone" dataKey="newEnrollments" stroke="#3B82F6" strokeWidth={2} name="New Enrollments" dot={{ fill: '#3B82F6' }} />
+                  <Line type="monotone" dataKey="activeCustomers" stroke="#8B5CF6" strokeWidth={2} name="Total Active Customers" dot={{ fill: '#8B5CF6' }} />
+                </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-80 flex items-center justify-center text-muted-foreground">No data available</div>
+              <div className="h-96 flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>No customer data available for selected period</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Chart 3: Gold Allocation Trends */}
+        <Card className="jewel-card border-2 border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Coins className="w-5 h-5 text-gold-600" />
+              Gold & Silver Allocation Trends
+            </CardTitle>
+            <CardDescription>Metal allocation in grams over time by karat type</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {goldAllocationTrend.length > 0 ? (
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={goldAllocationTrend}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip formatter={(value) => `${Number(value).toFixed(4)}g`} />
+                  <Legend />
+                  {(metalTypeFilter === 'ALL' || metalTypeFilter === '18K') && (
+                    <Line type="monotone" dataKey="k18" stroke="#F59E0B" strokeWidth={2} name="18K (grams)" dot={{ fill: '#F59E0B' }} />
+                  )}
+                  {(metalTypeFilter === 'ALL' || metalTypeFilter === '22K') && (
+                    <Line type="monotone" dataKey="k22" stroke="#D97706" strokeWidth={2} name="22K (grams)" dot={{ fill: '#D97706' }} />
+                  )}
+                  {(metalTypeFilter === 'ALL' || metalTypeFilter === '24K') && (
+                    <Line type="monotone" dataKey="k24" stroke="#EAB308" strokeWidth={2} name="24K (grams)" dot={{ fill: '#EAB308' }} />
+                  )}
+                  {(metalTypeFilter === 'ALL' || metalTypeFilter === 'SILVER') && (
+                    <Line type="monotone" dataKey="silver" stroke="#64748B" strokeWidth={2} name="Silver (grams)" dot={{ fill: '#64748B' }} />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-96 flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <Coins className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>No allocation data available for selected period</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Chart 4: Payment Behavior Analysis */}
+        <Card className="jewel-card border-2 border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-orange-600" />
+              Payment Behavior Analysis
+            </CardTitle>
+            <CardDescription>Track on-time vs late payment patterns</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {paymentBehavior.length > 0 ? (
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={paymentBehavior}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} domain={[0, 100]} />
+                  <Tooltip />
+                  <Legend />
+                  <Line yAxisId="left" type="monotone" dataKey="onTime" stroke="#10B981" strokeWidth={2} name="On-Time Payments" dot={{ fill: '#10B981' }} />
+                  <Line yAxisId="left" type="monotone" dataKey="late" stroke="#EF4444" strokeWidth={2} name="Late Payments" dot={{ fill: '#EF4444' }} />
+                  <Line yAxisId="right" type="monotone" dataKey="completionRate" stroke="#3B82F6" strokeWidth={2} name="Completion Rate (%)" dot={{ fill: '#3B82F6' }} strokeDasharray="5 5" />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-96 flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <Clock className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>No payment behavior data available for selected period</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Chart 5: Scheme Health Score */}
+        <Card className="jewel-card border-2 border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-purple-600" />
+              Scheme Health Overview
+            </CardTitle>
+            <CardDescription>Distribution of schemes by status over time</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {schemeHealth.length > 0 ? (
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={schemeHealth}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="onTrack" stroke="#10B981" strokeWidth={2} name="On Track" dot={{ fill: '#10B981' }} />
+                  <Line type="monotone" dataKey="due" stroke="#F59E0B" strokeWidth={2} name="Due" dot={{ fill: '#F59E0B' }} />
+                  <Line type="monotone" dataKey="missed" stroke="#EF4444" strokeWidth={2} name="Missed" dot={{ fill: '#EF4444' }} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-96 flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>No scheme health data available for selected period</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Chart 6: Staff Performance Trends */}
+        <Card className="jewel-card border-2 border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-gold-600" />
+              Staff Performance Trends
+            </CardTitle>
+            <CardDescription>Track team member collections over time</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {staffPerformance.length > 0 ? (
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={staffPerformance}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip formatter={(value) => `₹${Number(value).toLocaleString()}`} />
+                  <Legend />
+                  <Line type="monotone" dataKey="total" stroke="#D97706" strokeWidth={2} name="Total Collections" dot={{ fill: '#D97706' }} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-96 flex items-center justify-center text-muted-foreground">
+                <div className="text-center">
+                  <Trophy className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>No staff performance data available for selected period</p>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Overdue Tracking */}
-      <Card className="glass-card border-2 border-red-200 dark:border-red-900">
+      {/* Transactions List Section */}
+      <Card className="glass-card border-2 border-primary/20">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-red-600" />
-            Overdue Tracking
-          </CardTitle>
-          <CardDescription>Due payments not received on time</CardDescription>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Coins className="w-5 h-5 text-gold-600" />
+                Transactions
+              </CardTitle>
+              <CardDescription>Complete transaction history with filters</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" className="gap-2">
+                <Download className="w-4 h-4" />
+                Export
+              </Button>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search customer name, ID, mobile..."
+                value={txnSearchQuery}
+                onChange={(e) => {
+                  setTxnSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="pl-9"
+              />
+            </div>
+
+            {/* Transaction Type Filter */}
+            <Select
+              value={txnTypeFilter}
+              onValueChange={(v: 'ALL' | 'COLLECTIONS' | 'REDEMPTIONS') => {
+                setTxnTypeFilter(v);
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Transaction Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Transactions</SelectItem>
+                <SelectItem value="COLLECTIONS">Payment Collections</SelectItem>
+                <SelectItem value="REDEMPTIONS">Redemptions</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Date Filter */}
+            <Select
+              value={txnDateFilter}
+              onValueChange={(v: 'DAY' | 'WEEK' | 'MONTH' | 'RANGE') => {
+                setTxnDateFilter(v);
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Date Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="DAY">Today</SelectItem>
+                <SelectItem value="WEEK">This Week</SelectItem>
+                <SelectItem value="MONTH">This Month</SelectItem>
+                <SelectItem value="RANGE">Custom Range</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Date Range Inputs (visible only when RANGE is selected) */}
+            {txnDateFilter === 'RANGE' && (
+              <>
+                <Input
+                  type="date"
+                  value={txnStartDate}
+                  onChange={(e) => setTxnStartDate(e.target.value)}
+                  className="w-full"
+                />
+                <Input
+                  type="date"
+                  value={txnEndDate}
+                  onChange={(e) => setTxnEndDate(e.target.value)}
+                  className="w-full"
+                />
+              </>
+            )}
+
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Calendar className="w-4 h-4" />
+              {transactions.length} transaction{transactions.length !== 1 ? 's' : ''}
+            </div>
+          </div>
         </CardHeader>
+
         <CardContent>
-          {overdueTrend.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={overdueTrend}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="overdue" stroke="#EF4444" strokeWidth={2} dot={{ fill: '#EF4444' }} />
-              </LineChart>
-            </ResponsiveContainer>
+          {transactionsLoading ? (
+            <div className="py-12 text-center">
+              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent"></div>
+              <p className="mt-4 text-muted-foreground">Loading transactions...</p>
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="py-12 text-center">
+              <Coins className="w-12 h-12 mx-auto text-muted-foreground mb-4 opacity-50" />
+              <p className="text-muted-foreground">No transactions found for the selected filters</p>
+            </div>
           ) : (
-            <div className="h-80 flex items-center justify-center text-muted-foreground">No overdue data - Great job!</div>
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Customer Name</TableHead>
+                      <TableHead>Transaction ID</TableHead>
+                      <TableHead className="text-right">Monthly Amount</TableHead>
+                      <TableHead>Paid Date</TableHead>
+                      <TableHead>Mode of Payment</TableHead>
+                      <TableHead>Payment Gateway</TableHead>
+                      <TableHead>Payment Month</TableHead>
+                      <TableHead className="text-right">Gold Accumulated</TableHead>
+                      <TableHead className="text-right">Gold Rate During Purchase</TableHead>
+                      <TableHead>Order Id</TableHead>
+                      <TableHead className="text-center">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {transactions
+                      .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                      .map((txn) => {
+                        const customer = txn.customers as any;
+                        const enrollment = txn.enrollments as any;
+                        const plan = enrollment?.scheme_templates as any;
+                        
+                        return (
+                          <TableRow key={txn.id}>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{customer?.full_name || 'N/A'}</div>
+                                <div className="text-xs text-muted-foreground">{customer?.phone}</div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <code className="text-xs bg-muted px-2 py-1 rounded">
+                                {txn.id.slice(0, 8)}
+                              </code>
+                            </TableCell>
+                            <TableCell className="text-right font-semibold">
+                              ₹{(txn.amount_paid || 0).toLocaleString()}
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm">
+                                {new Date(txn.paid_at).toLocaleDateString('en-IN', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {new Date(txn.paid_at).toLocaleTimeString('en-IN', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{txn.mode || 'N/A'}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">{txn.source || 'STAFF_OFFLINE'}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant={txn.txn_type === 'PRIMARY_INSTALLMENT' ? 'default' : 'outline'}
+                                className={txn.txn_type === 'PRIMARY_INSTALLMENT' ? 'bg-green-100 text-green-800 border-green-300' : ''}
+                              >
+                                {txn.txn_type === 'PRIMARY_INSTALLMENT' ? 'Monthly' : 'Top-up'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span className="font-semibold gold-text">
+                                {(txn.grams_allocated_snapshot || 0).toFixed(4)}g
+                              </span>
+                              <div className="text-xs text-muted-foreground">
+                                {enrollment?.karat || 'N/A'}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span className="font-medium">
+                                ₹{(txn.rate_per_gram_snapshot || 0).toLocaleString()}
+                              </span>
+                              <div className="text-xs text-muted-foreground">/gram</div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-xs">
+                                {plan?.name || 'N/A'}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 gold-text hover:bg-gold-50">
+                                <ArrowRight className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Pagination */}
+              {transactions.length > itemsPerPage && (
+                <div className="flex items-center justify-between mt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, transactions.length)} of {transactions.length} transactions
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.ceil(transactions.length / itemsPerPage) }, (_, i) => i + 1)
+                        .filter(page => {
+                          // Show first, last, current, and adjacent pages
+                          return page === 1 ||
+                            page === Math.ceil(transactions.length / itemsPerPage) ||
+                            Math.abs(page - currentPage) <= 1;
+                        })
+                        .map((page, idx, arr) => {
+                          // Add ellipsis
+                          if (idx > 0 && page - arr[idx - 1] > 1) {
+                            return [
+                              <span key={`ellipsis-${page}`} className="px-2 text-muted-foreground">...</span>,
+                              <Button
+                                key={page}
+                                variant={currentPage === page ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => setCurrentPage(page)}
+                                className="w-9"
+                              >
+                                {page}
+                              </Button>
+                            ];
+                          }
+                          return (
+                            <Button
+                              key={page}
+                              variant={currentPage === page ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => setCurrentPage(page)}
+                              className="w-9"
+                            >
+                              {page}
+                            </Button>
+                          );
+                        })}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.min(Math.ceil(transactions.length / itemsPerPage), p + 1))}
+                      disabled={currentPage >= Math.ceil(transactions.length / itemsPerPage)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

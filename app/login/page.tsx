@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Gem, Sparkles } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,13 +9,40 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { AnimatedLogo } from '@/components/ui/animated-logo';
+import { Footer } from '@/components/ui/footer';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [retailerName, setRetailerName] = useState('Sync4AI');
+  const [retailerLogo, setRetailerLogo] = useState<string | null>(null);
   const router = useRouter();
+
+  // Fetch retailer branding (if demo credentials are used or after login)
+  useEffect(() => {
+    async function fetchRetailerBranding() {
+      try {
+        // Try to get the first retailer's branding for the login page
+        const { data, error } = await supabase
+          .from('retailers')
+          .select('name, logo_url, business_name')
+          .limit(1)
+          .single();
+
+        if (data && !error) {
+          setRetailerName(data.name || data.business_name || 'Sync4AI');
+          setRetailerLogo(data.logo_url);
+        }
+      } catch (err) {
+        console.error('Error fetching retailer branding:', err);
+      }
+    }
+
+    fetchRetailerBranding();
+  }, []);
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -40,16 +67,17 @@ export default function LoginPage() {
         {/* Header */}
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gold-400 to-gold-600 flex items-center justify-center animate-float">
-              <Gem className="w-10 h-10 text-white" />
-            </div>
+            <AnimatedLogo logoUrl={retailerLogo} size="lg" showAnimation={true} />
           </div>
 
-          <h1 className="text-4xl font-bold gold-gradient-shimmer bg-clip-text text-transparent">
-            GoldSaver
-          </h1>
+          {/* Retailer Name Banner */}
+          <div className="w-full py-3 px-6 rounded-2xl bg-gradient-to-r from-gold-400 via-gold-500 to-gold-600 shadow-lg">
+            <h1 className="text-2xl font-bold text-white drop-shadow-md">
+              {retailerName}
+            </h1>
+          </div>
 
-          <p className="text-muted-foreground">Premium Gold Savings Scheme Management</p>
+          <p className="text-muted-foreground mt-4">Premium Gold Savings Scheme Management</p>
 
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Sparkles className="w-4 h-4 text-primary" />
@@ -126,7 +154,7 @@ export default function LoginPage() {
         </Card>
 
         <div className="text-center text-sm text-muted-foreground">
-          <p>Built with security, transparency, and trust</p>
+          <Footer />
         </div>
       </div>
     </div>

@@ -14,12 +14,15 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/lib/contexts/auth-context';
+import { useBranding } from '@/lib/contexts/branding-context';
+import { AnimatedLogo } from '@/components/ui/animated-logo';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export function TopBar() {
   const [searchQuery, setSearchQuery] = useState('');
   const { user, signOut } = useAuth();
+  const { branding } = useBranding();
   const router = useRouter();
 
   async function handleSignOut() {
@@ -32,12 +35,9 @@ export function TopBar() {
       <div className="flex items-center justify-between px-8 py-5 gap-4">
         {/* Logo Section - Premium */}
         <Link href="/pulse" className="flex items-center gap-4 flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity">
-          <div className="relative w-12 h-12 rounded-2xl luxury-gold-gradient flex items-center justify-center overflow-hidden group hover:shadow-lg transition-shadow">
-            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-white/20"></div>
-            <span className="text-xl font-bold text-white drop-shadow-lg">G</span>
-          </div>
+          <AnimatedLogo logoUrl={branding.logoUrl} size="md" showAnimation={true} />
           <div>
-            <h2 className="text-xl font-bold gold-text">GoldSave</h2>
+            <h2 className="text-xl font-bold gold-text">{branding.name}</h2>
             <p className="text-xs font-medium text-gold-600 dark:text-gold-400">Premium Suite</p>
           </div>
         </Link>
