@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,15 +10,17 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { AnimatedLogo } from '@/components/ui/animated-logo';
+import { PublicBrandingProvider, usePublicBranding } from '@/lib/contexts/public-branding-context';
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [retailerName] = useState('Sync4AI');
-  const [retailerLogo] = useState<string | null>(null);
   const router = useRouter();
+  
+  // Use public branding based on subdomain
+  const { branding, loading: brandingLoading } = usePublicBranding();
 
   async function handleLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -37,19 +39,28 @@ export default function LoginPage() {
     }
   }
 
+  // Show loading state while branding loads
+  if (brandingLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-gold-500" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-gold-50/20 to-background">
       <div className="w-full max-w-md space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <AnimatedLogo logoUrl={retailerLogo} size="lg" showAnimation={true} />
+            <AnimatedLogo logoUrl={branding.logoUrl} size="lg" showAnimation={true} />
           </div>
 
           {/* Retailer Name Banner */}
           <div className="w-full py-3 px-6 rounded-2xl bg-gradient-to-r from-gold-400 via-gold-500 to-gold-600 shadow-lg">
             <h1 className="text-2xl font-bold text-white drop-shadow-md">
-              {retailerName}
+              {branding.name}
             </h1>
           </div>
 
@@ -114,9 +125,18 @@ export default function LoginPage() {
         </Card>
 
         <div className="text-center text-sm text-muted-foreground mt-4">
-          <p>© 2026 Sync4AI. All rights reserved.</p>
+          <p>© 2026 {branding.businessName}. All rights reserved.</p>
         </div>
       </div>
     </div>
+  );
+}
+
+// Wrap with PublicBrandingProvider
+export default function LoginPage() {
+  return (
+    <PublicBrandingProvider>
+      <LoginForm />
+    </PublicBrandingProvider>
   );
 }

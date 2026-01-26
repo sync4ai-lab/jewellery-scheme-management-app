@@ -55,7 +55,12 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
         .eq('id', profile.retailer_id)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Branding fetch error:', error);
+        throw error;
+      }
+
+      console.log('Fetched retailer branding:', data);
 
       if (data) {
         setBranding({
@@ -64,8 +69,13 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
           businessName: data.business_name || 'Sync4AI',
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching retailer branding:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+      });
       setBranding(defaultBranding);
     } finally {
       setLoading(false);
