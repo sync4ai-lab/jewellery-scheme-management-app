@@ -48,10 +48,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create Supabase auth user with PHONE only (no email required)
+    // Create Supabase auth user with BOTH phone and email
+    // Email is derived from phone for internal use, users only see/use phone
+    const customerEmail = `${phone.replace(/\+/g, '').replace(/\s/g, '')}@customer.goldsaver.app`;
+    
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: customerEmail,
       phone: phone,
-      phone_confirm: true,  // Auto-confirm phone
+      email_confirm: true,
+      phone_confirm: true,
       user_metadata: {
         full_name,
         phone,

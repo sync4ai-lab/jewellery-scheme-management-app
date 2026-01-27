@@ -65,38 +65,59 @@ export async function POST(request: Request) {
       );
     }
 
-    // OTP already verified above. Now create a session for the phone number.
-    // Find the auth user by phone
-    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-    
-    if (listError) {
-      console.error('Error listing users:', listError);
-      return NextResponse.json(
-        { error: 'Failed to find user account' },
-        { status: 500 }
-      );
-    }
+    // Get customer record first
+    const { data: customer, error: customerError } = await supabaseAdmin
+      .from('customers')
+      .select('id')
+      .eq('phone', phone)
+      .maybeSingle();
 
-    const authUser = users.find(u => u.phone === phone);
-
-    if (!authUser) {
+    if (customerError || !customer) {
       return NextResponse.json(
-        { error: 'No account found for this phone number. Please register first.' },
+        { error: 'Customer not found. Please register first.' },
         { status: 404 }
       );
     }
 
-    // Generate auth tokens using signInWithOtp - create a verified session
-    // Since we already verified the OTP, we'll use a workaround: update the user to create tokens
+    // Get user_profile to find auth user ID
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('user_profiles')
+      .select('id')
+      .eq('customer_id', customer.id)
+      .eq('role', 'CUSTOMER')
+      .maybeSingle();
+
+    if (profileError || !profile) {
+      return NextResponse.json(
+        { error: 'User account not set up. Please contact support.' },
+        { status: 404 }
+      );
+    }
+
+    // Convert phone to the email format used during registration
+    const customerEmail = `${phone.replace(/\+/g, '').replace(/\s/g, '')}@customer.goldsaver.app`;
+    
+    // Generate tokens using the derived email
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'magiclink',
-      phone: phone,
+      email: customerEmail,
     });
 
     if (linkError || !linkData?.properties) {
-      console.error('Link generation error:', linkError);
+      console.error('Failed to generate link:', linkError);
       return NextResponse.json(
-        { error: 'Failed to create session' },
+        { error: 'Failed to create session. Error: ' + (linkError?.message || 'Unknown') },
+        { status: 500 }
+      );
+    }
+
+    // Return the tokens from the link
+    const { access_token, refresh_token } = linkData.properties;
+
+    if (!access_token || !refresh_token) {
+      console.error('No tokens in link properties:', linkData.properties);
+      return NextResponse.json(
+        { error: 'Session tokens not generated' },
         { status: 500 }
       );
     }
@@ -104,8 +125,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       session: {
-        access_token: linkData.properties.access_token,
-        refresh_token: linkData.properties.refresh_token,
+        access_token,
+        refresh_token,
       },
     });
   } catch (error: any) {
