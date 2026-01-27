@@ -124,6 +124,21 @@ function LoginForm() {
           </CardContent>
         </Card>
 
+        {/* Customer Portal Link */}
+        <Card className="bg-gold-50 border-gold-200">
+          <CardContent className="pt-6 text-center">
+            <p className="text-sm text-gray-600 mb-2">
+              Are you a customer looking to manage your gold savings?
+            </p>
+            <a 
+              href="/c/login" 
+              className="text-gold-600 hover:text-gold-700 font-semibold underline"
+            >
+              Go to Customer Portal →
+            </a>
+          </CardContent>
+        </Card>
+
         <div className="text-center text-sm text-muted-foreground mt-4">
           <p>© 2026 {branding.businessName}. All rights reserved.</p>
         </div>
