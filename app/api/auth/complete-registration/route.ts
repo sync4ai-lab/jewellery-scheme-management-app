@@ -15,7 +15,7 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { phone, full_name, address, pan_number, retailer_id, pin } = await request.json();
+    const { phone, full_name, address, pan_number, retailer_id, pin, customer_id } = await request.json();
 
     if (!phone || !full_name || !retailer_id || !pin) {
       return NextResponse.json(
@@ -32,26 +32,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Call the database function to complete registration
-    const { data, error } = await supabaseAdmin.rpc('complete_customer_registration', {
-      p_phone: phone,
-      p_full_name: full_name,
-      p_address: address,
-      p_pan_number: pan_number,
-      p_retailer_id: retailer_id,
-    });
-
-    if (error) {
-      console.error('Error completing registration:', error);
+    // customer_id should be provided by the enrollment page (after customer creation)
+    if (!customer_id) {
       return NextResponse.json(
-        { error: 'Failed to complete registration. Please try again.' },
-        { status: 500 }
-      );
-    }
-
-    if (!data.success) {
-      return NextResponse.json(
-        { error: data.message || 'Registration failed' },
+        { error: 'Customer ID is required' },
         { status: 400 }
       );
     }
@@ -77,13 +61,10 @@ export async function POST(request: Request) {
 
     if (authError) {
       console.error('Error creating auth user:', authError);
-      // Customer record created but auth failed - they can contact admin
       return NextResponse.json({
-        success: true,
-        message: 'Registration completed but login setup failed. Please contact admin.',
-        customer_id: data.customer_id,
-        partial: true,
-      });
+        success: false,
+        error: 'Failed to create login credentials: ' + authError.message,
+      }, { status: 500 });
     }
 
     // Create user_profile for customer
@@ -94,25 +75,29 @@ export async function POST(request: Request) {
         role: 'CUSTOMER',
         full_name,
         phone,
-        customer_id: data.customer_id,
+        customer_id: customer_id,
       });
 
       if (profileError) {
         console.error('Error creating user profile:', profileError);
+        return NextResponse.json({
+          success: false,
+          error: 'Failed to create user profile: ' + profileError.message,
+        }, { status: 500 });
       }
     }
 
     // Registration completed successfully
     return NextResponse.json({
       success: true,
-      message: data.message,
-      customer_id: data.customer_id,
-      registration_id: data.registration_id,
+      message: 'Customer login credentials created successfully',
+      customer_id: customer_id,
+      user_id: authData.user.id,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in complete-registration API:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error.message || 'Internal server error' },
       { status: 500 }
     );
   }

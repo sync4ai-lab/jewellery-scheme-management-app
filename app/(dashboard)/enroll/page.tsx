@@ -264,8 +264,9 @@ export default function EnrollmentWizard() {
         toast.error('Please enter customer name');
         return;
       }
-      if (!customerPin || customerPin.length !== 4 || !/^\d{4}$/.test(customerPin)) {
-        toast.error('Please enter a valid 4-digit PIN for the customer');
+      // PIN is optional - if provided, must be 4 digits
+      if (customerPin && (customerPin.length !== 4 || !/^\d{4}$/.test(customerPin))) {
+        toast.error('PIN must be exactly 4 digits');
         return;
       }
       setStep(2);
@@ -376,8 +377,14 @@ export default function EnrollmentWizard() {
               .select()
               .single();
   
-            // Create auth user for customer with PIN
-            try {
+if (customerError) throw customerError;
+            existingId = newCustomer.id;
+            createdCustomerId = newCustomer.id; // Track that we created this customer
+
+            // Create auth user for customer with PIN (after customer creation)
+            // Only if PIN is provided
+            if (customerPin && customerPin.length === 4) {
+              try {
               const authResponse = await fetch('/api/auth/complete-registration', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -387,6 +394,7 @@ export default function EnrollmentWizard() {
                   address: customerAddress || '',
                   pan_number: customerPan || '',
                   retailer_id: profile.retailer_id,
+                  customer_id: newCustomer.id, // Pass the customer ID
                   pin: customerPin,
                 }),
               });
@@ -399,15 +407,12 @@ export default function EnrollmentWizard() {
               } else {
                 toast.success('Customer login credentials created successfully!');
               }
-            } catch (authError) {
-              console.error('Auth API error:', authError);
-              // Don't fail the whole enrollment if auth setup fails
-              toast.warning('Customer created but login setup failed.');
+              } catch (authError) {
+                console.error('Auth API error:', authError);
+                // Don't fail the whole enrollment if auth setup fails
+                toast.warning('Customer created but login setup failed.');
+              }
             }
-          
-            if (customerError) throw customerError;
-            existingId = newCustomer.id;
-            createdCustomerId = newCustomer.id; // Track that we created this customer
           }
         }
 
@@ -646,7 +651,7 @@ export default function EnrollmentWizard() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="pin">4-Digit Login PIN *</Label>
+              <Label htmlFor="pin">4-Digit Login PIN (Optional)</Label>
               <Input
                 id="pin"
                 type="password"
@@ -655,10 +660,9 @@ export default function EnrollmentWizard() {
                 onChange={(e) => setCustomerPin(e.target.value.replace(/\D/g, ''))}
                 maxLength={4}
                 disabled={!!existingCustomer}
-                required
               />
               <p className="text-xs text-muted-foreground">
-                🔐 Customer will use their phone + this PIN to login to the mobile app
+                🔐 Optional: Set PIN now for immediate login access, or set later from customer details
               </p>
             </div>
 
