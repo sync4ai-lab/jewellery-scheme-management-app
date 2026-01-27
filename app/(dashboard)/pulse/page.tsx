@@ -285,10 +285,10 @@ export default function PulseDashboard() {
           .lt('paid_at', endISO)
           .limit(10000), // Limit to prevent slow queries
 
-        // Dues outstanding - count of unpaid billing months
+        // Dues outstanding - get unpaid billing months
         supabase
           .from('enrollment_billing_months')
-          .select('enrollment_id', { count: 'exact', head: false })
+          .select('enrollment_id')
           .eq('retailer_id', retailerId)
           .gte('due_date', startISO.split('T')[0])
           .lt('due_date', endISO.split('T')[0])
