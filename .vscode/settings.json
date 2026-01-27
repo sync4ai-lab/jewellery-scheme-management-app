@@ -1,0 +1,12 @@
+{
+  "terminal.integrated.env.windows": {
+    "NODE_VERSION": "20.19.0"
+  },
+  "terminal.integrated.profiles.windows": {
+    "PowerShell (Node 20)": {
+      "source": "PowerShell",
+      "args": ["-NoExit", "-Command", "nvm use 20.19.0 2>&1 | Out-Null"]
+    }
+  },
+  "terminal.integrated.defaultProfile.windows": "PowerShell (Node 20)"
+}
