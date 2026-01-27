@@ -24,8 +24,25 @@ export async function POST(request: Request) {
       );
     }
 
-    // Default retailer ID if not provided
-    const effectiveRetailerId = retailer_id || '00000000-0000-0000-0000-000000000001';
+    // Get retailer ID - either from request or fetch the first available retailer
+    let effectiveRetailerId = retailer_id;
+    
+    if (!effectiveRetailerId) {
+      const { data: retailer, error: retailerError } = await supabaseAdmin
+        .from('retailers')
+        .select('id')
+        .limit(1)
+        .single();
+      
+      if (retailerError || !retailer) {
+        return NextResponse.json(
+          { error: 'No retailer found. Please contact support.' },
+          { status: 500 }
+        );
+      }
+      
+      effectiveRetailerId = retailer.id;
+    }
 
     // Verify OTP
     const { data: otpData, error: otpError } = await supabaseAdmin.rpc('verify_registration_otp', {
@@ -76,7 +93,6 @@ export async function POST(request: Request) {
         phone: phone,
         full_name: phone, // Temporary - will be updated in enrollment
         customer_code: `CUST${Date.now()}`,
-        source: 'SELF_REGISTRATION',
         kyc_status: 'PENDING',
       })
       .select('id')
@@ -112,7 +128,7 @@ export async function POST(request: Request) {
 
     // Create user_profile link
     if (authData.user) {
-      await supabaseAdmin.from('user_profiles').insert({
+      const { error: profileError } = await supabaseAdmin.from('user_profiles').insert({
         id: authData.user.id,
         retailer_id: effectiveRetailerId,
         role: 'CUSTOMER',
@@ -120,26 +136,26 @@ export async function POST(request: Request) {
         phone: phone,
         customer_id: newCustomer.id,
       });
+      
+      if (profileError) {
+        console.error('Error creating user profile:', profileError);
+        // Continue anyway - profile can be created later
+      }
     }
 
-    // Generate a login link for auto-login
-    const { data: magicLinkData, error: magicLinkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink',
-      email: customerEmail,
-    });
-
+    // Return success without magic link - customer will login via OTP
     return NextResponse.json({
       success: true,
-      message: 'OTP verified successfully',
+      message: 'Registration complete! Please login to continue.',
       customer_id: newCustomer.id,
       registration_id: otpData.registration_id,
       email: customerEmail,
-      magic_link: magicLinkData?.properties?.action_link, // Auto-login URL
+      requires_login: true,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in verify-otp API:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error.message || 'Internal server error' },
       { status: 500 }
     );
   }

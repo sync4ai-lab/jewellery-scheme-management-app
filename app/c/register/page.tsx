@@ -129,8 +129,6 @@ export default function CustomerRegistrationPage() {
     setIsVerifying(true);
     
     try {
-      const { supabase } = await import('@/lib/supabase/client');
-      
       const response = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -145,44 +143,12 @@ export default function CustomerRegistrationPage() {
       
       toast({
         title: 'Registration Complete!',
-        description: 'Logging you in...',
+        description: data.message || 'Please login to continue',
       });
       
-      // If magic link is provided, verify and sign in
-      if (data.magic_link) {
-        // Extract hash from magic link
-        const url = new URL(data.magic_link);
-        const hashParams = new URLSearchParams(url.hash.substring(1));
-        const accessToken = hashParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token');
-        
-        if (accessToken && refreshToken) {
-          // Set the session
-          await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-          
-          toast({
-            title: 'Success!',
-            description: 'Redirecting to enrollment...',
-          });
-          
-          setTimeout(() => {
-            router.push('/c/enroll');
-          }, 1000);
-          return;
-        }
-      }
-      
-      // Fallback: redirect to login
-      toast({
-        title: 'Registration Complete!',
-        description: 'Please login to continue...',
-      });
-      
+      // Redirect to customer login
       setTimeout(() => {
-        router.push(`/c/login?phone=${encodeURIComponent(phone)}&new=true`);
+        router.push(`/c/login?phone=${encodeURIComponent(phone)}`);
       }, 1500);
     } catch (error: any) {
       toast({
