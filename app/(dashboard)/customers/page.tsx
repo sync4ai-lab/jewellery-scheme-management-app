@@ -276,14 +276,23 @@ export default function CustomersPage() {
           </h1>
           <p className="text-muted-foreground">Manage customer enrollments and track progress</p>
         </div>
-        <Button 
-          onClick={() => loadCustomers()} 
-          variant="outline"
-          className="gap-2"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Refresh Data
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={() => window.location.href = '/enroll'}
+            className="luxury-gold-gradient text-white gap-2"
+          >
+            <Users className="w-4 h-4" />
+            Add Customer / Enrollment
+          </Button>
+          <Button 
+            onClick={() => loadCustomers()} 
+            variant="outline"
+            className="gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh Data
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
