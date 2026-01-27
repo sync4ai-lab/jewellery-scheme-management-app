@@ -31,65 +31,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
+    let mounted = true;
+
     const initializeAuth = async () => {
       try {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (!mounted) return;
+        
         if (sessionError) {
           console.error('Session error:', sessionError);
+          setLoading(false);
+          return;
         }
-        console.log('Session:', session?.user?.id);
+
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          try {
-            console.log('Fetching profile for user:', session.user.id);
-            const { data, error } = await supabase
-              .from('user_profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .maybeSingle();
+          // Fetch profile in parallel with setting user
+          const { data, error } = await supabase
+            .from('user_profiles')
+            .select('id, retailer_id, role, full_name, phone, employee_id')
+            .eq('id', session.user.id)
+            .maybeSingle();
 
+          if (mounted) {
             if (error) {
               console.error('Error fetching user profile:', error);
-            } else {
-              console.log('Profile fetched:', data);
             }
             setProfile(data);
-          } catch (profileErr) {
-            console.error('Exception fetching user profile:', profileErr);
+            setLoading(false);
           }
         } else {
-          console.log('No user session found');
+          if (mounted) {
+            setLoading(false);
+          }
         }
-
-        setLoading(false);
       } catch (authErr) {
         console.error('Auth initialization error:', authErr);
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
     initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      (async () => {
-        setUser(session?.user ?? null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return;
+      
+      setUser(session?.user ?? null);
 
-        if (session?.user) {
-          const { data } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
+      if (session?.user) {
+        const { data } = await supabase
+          .from('user_profiles')
+          .select('id, retailer_id, role, full_name, phone, employee_id')
+          .eq('id', session.user.id)
+          .maybeSingle();
 
+        if (mounted) {
           setProfile(data);
-        } else {
+        }
+      } else {
+        if (mounted) {
           setProfile(null);
         }
-      })();
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {

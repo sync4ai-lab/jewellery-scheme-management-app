@@ -275,14 +275,15 @@ export default function PulseDashboard() {
           .limit(1)
           .maybeSingle(),
 
-        // Period paid transactions - WITHOUT JOIN for now to avoid errors
+        // Period paid transactions - limit for performance
         supabase
           .from('transactions')
           .select('amount_paid, grams_allocated_snapshot, paid_at, enrollment_id')
           .eq('retailer_id', retailerId)
           .eq('payment_status', 'SUCCESS')
           .gte('paid_at', startISO)
-          .lt('paid_at', endISO),
+          .lt('paid_at', endISO)
+          .limit(10000), // Limit to prevent slow queries
 
         // Dues outstanding - count of unpaid billing months
         supabase

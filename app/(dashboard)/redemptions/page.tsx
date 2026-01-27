@@ -232,7 +232,7 @@ export default function RedemptionsPage() {
   }
 
   async function processRedemption() {
-    if (!selectedEnrollment || !profile?.user_id) return;
+    if (!selectedEnrollment || !profile?.id) return;
 
     setProcessing(true);
     try {
@@ -250,7 +250,7 @@ export default function RedemptionsPage() {
         redemption_status: 'PENDING',
         payment_method: paymentMethod,
         notes,
-        processed_by: profile.user_id,
+        processed_by: profile.id,
         processed_at: new Date().toISOString(),
         total_redemption_value: value,
       };

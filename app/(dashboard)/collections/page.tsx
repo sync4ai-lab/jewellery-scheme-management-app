@@ -12,6 +12,7 @@ import { useAuth } from '@/lib/contexts/auth-context';
 import { toast } from 'sonner';
 import { TrendingUp, Plus, Coins, Search, Download, Calendar } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useDebounce } from '@/lib/hooks/use-debounce';
 import {
   Dialog,
   DialogContent,
@@ -96,6 +97,9 @@ export default function CollectionsPage() {
   const [txnEndDate, setTxnEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
+
+  // Debounce search query to prevent too many API calls
+  const debouncedSearchQuery = useDebounce(txnSearchQuery, 500);
 
   useEffect(() => {
     void loadStores();
@@ -473,7 +477,7 @@ export default function CollectionsPage() {
         endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).toISOString();
       } else if (txnDateFilter === 'WEEK') {
         const day = now.getDay();
-        const diff = (day + 6) % 7; // Monday start
+        const diff = (day + 6) % 7;
         const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff, 0, 0, 0);
         startDate = monday.toISOString();
         endDate = new Date(monday.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -484,13 +488,12 @@ export default function CollectionsPage() {
         startDate = new Date(txnStartDate).toISOString();
         endDate = new Date(new Date(txnEndDate).getTime() + 24 * 60 * 60 * 1000).toISOString();
       } else {
-        // Default to this month
         startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0).toISOString();
         endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0).toISOString();
       }
 
-      // Build query
-      let query = supabase
+      // Build query - limit to reasonable number
+      const { data, error } = await supabase
         .from('transactions')
         .select(`
           id,
@@ -501,7 +504,6 @@ export default function CollectionsPage() {
           paid_at,
           grams_allocated_snapshot,
           rate_per_gram_snapshot,
-          source,
           enrollment_id,
           customers (
             id,
@@ -513,37 +515,28 @@ export default function CollectionsPage() {
         .eq('payment_status', 'SUCCESS')
         .gte('paid_at', startDate)
         .lt('paid_at', endDate)
-        .order('paid_at', { ascending: false });
-
-      const { data, error } = await query;
+        .order('paid_at', { ascending: false })
+        .limit(500); // Limit results for performance
 
       if (error) throw error;
 
-      // Fetch enrollment data for each transaction
       let enrichedData = data || [];
+      
+      // Only fetch enrollment data if we have transactions
       if (enrichedData.length > 0) {
         const enrollmentIds = [...new Set(enrichedData.map(t => t.enrollment_id).filter(Boolean))];
         
         if (enrollmentIds.length > 0) {
           const { data: enrollmentsData } = await supabase
             .from('enrollments')
-            .select(`
-              id,
-              karat,
-              plan_id,
-              scheme_templates:plan_id (
-                name
-              )
-            `)
+            .select('id, karat, plan_id, scheme_templates:plan_id(name)')
             .in('id', enrollmentIds);
 
-          // Create a map for quick lookup
           const enrollmentMap = new Map();
           enrollmentsData?.forEach(enrollment => {
             enrollmentMap.set(enrollment.id, enrollment);
           });
 
-          // Enrich transactions with enrollment data
           enrichedData = enrichedData.map(txn => ({
             ...txn,
             enrollments: txn.enrollment_id ? enrollmentMap.get(txn.enrollment_id) : null
@@ -551,19 +544,16 @@ export default function CollectionsPage() {
         }
       }
 
-      // Filter by transaction type if needed
+      // Apply filters client-side (already limited data from server)
       let filteredData = enrichedData;
       if (txnTypeFilter === 'COLLECTIONS') {
         filteredData = filteredData.filter(t => t.txn_type === 'PRIMARY_INSTALLMENT' || t.txn_type === 'TOP_UP');
       } else if (txnTypeFilter === 'REDEMPTIONS') {
-        // Add redemption filter when redemptions are tracked differently
-        // For now, we only have payment collections
         filteredData = [];
       }
 
-      // Filter by search query
-      if (txnSearchQuery.trim()) {
-        const query = txnSearchQuery.toLowerCase();
+      if (debouncedSearchQuery.trim()) {
+        const query = debouncedSearchQuery.toLowerCase();
         filteredData = filteredData.filter(t => {
           const customer = t.customers as any;
           return (
@@ -583,12 +573,12 @@ export default function CollectionsPage() {
     }
   }
 
-  // Load all transactions when filters change
+  // Load all transactions when filters change (using debounced search)
   useEffect(() => {
     if (profile?.retailer_id) {
       void loadAllTransactions();
     }
-  }, [profile?.retailer_id, txnDateFilter, txnTypeFilter, txnSearchQuery, txnStartDate, txnEndDate]);
+  }, [profile?.retailer_id, txnDateFilter, txnTypeFilter, debouncedSearchQuery, txnStartDate, txnEndDate]);
 
   return (
     <div className="space-y-6 pb-32">

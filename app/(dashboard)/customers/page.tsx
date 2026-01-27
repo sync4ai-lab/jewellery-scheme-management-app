@@ -80,35 +80,31 @@ export default function CustomersPage() {
     setLoading(true);
 
     try {
-      // Fetch all customers
-      const { data: customersData, error: customersError } = await supabase
-        .from('customers')
-        .select('id, full_name, phone, status')
-        .eq('retailer_id', profile.retailer_id)
-        .order('full_name');
+      // Fetch all data in parallel for better performance
+      const [customersResult, enrollmentsResult] = await Promise.all([
+        supabase
+          .from('customers')
+          .select('id, full_name, phone, status')
+          .eq('retailer_id', profile.retailer_id)
+          .order('full_name')
+          .limit(500), // Limit to reasonable number
+        supabase
+          .from('enrollments')
+          .select('id, customer_id, plan_id, karat, status, created_at')
+          .eq('retailer_id', profile.retailer_id)
+          .limit(1000)
+      ]);
 
-      if (customersError) throw customersError;
-
-      if (!customersData || customersData.length === 0) {
+      if (customersResult.error) throw customersResult.error;
+      if (!customersResult.data || customersResult.data.length === 0) {
         setCustomers([]);
         setLoading(false);
         return;
       }
 
-      const customerIds = customersData.map(c => c.id);
-
-      // Fetch all enrollments for these customers
-      const { data: enrollmentsData, error: enrollmentsError } = await supabase
-        .from('enrollments')
-        .select('id, customer_id, plan_id, karat, status, created_at')
-        .eq('retailer_id', profile.retailer_id)
-        .in('customer_id', customerIds);
-
-      if (enrollmentsError) throw enrollmentsError;
-
-      if (!enrollmentsData || enrollmentsData.length === 0) {
-        // Customers exist but no enrollments
-        const customersWithNoEnrollments = customersData.map(c => ({
+      if (enrollmentsResult.error) throw enrollmentsResult.error;
+      if (!enrollmentsResult.data || enrollmentsResult.data.length === 0) {
+        const customersWithNoEnrollments = customersResult.data.map(c => ({
           customer_id: c.id,
           customer_name: c.full_name,
           customer_phone: c.phone,
@@ -126,35 +122,34 @@ export default function CustomersPage() {
         return;
       }
 
-      const enrollmentIds = enrollmentsData.map(e => e.id);
-      const planIds = Array.from(new Set(enrollmentsData.map(e => e.plan_id)));
+      const enrollmentIds = enrollmentsResult.data.map(e => e.id);
+      const planIds = Array.from(new Set(enrollmentsResult.data.map(e => e.plan_id)));
 
-      // Fetch plan details
-      const { data: plansData } = await supabase
-        .from('scheme_templates')
-        .select('id, name, duration_months')
-        .in('id', planIds);
+      // Fetch related data in parallel
+      const [plansResult, transactionsResult, billingResult] = await Promise.all([
+        supabase
+          .from('scheme_templates')
+          .select('id, name, duration_months')
+          .in('id', planIds),
+        supabase
+          .from('transactions')
+          .select('enrollment_id, amount_paid, grams_allocated_snapshot, payment_status')
+          .eq('retailer_id', profile.retailer_id)
+          .in('enrollment_id', enrollmentIds)
+          .eq('payment_status', 'SUCCESS'),
+        supabase
+          .from('enrollment_billing_months')
+          .select('enrollment_id, primary_paid')
+          .eq('retailer_id', profile.retailer_id)
+          .in('enrollment_id', enrollmentIds)
+          .eq('primary_paid', true) // Only fetch paid months for counting
+      ]);
 
-      const plansMap = new Map((plansData || []).map(p => [p.id, p]));
-
-      // Fetch transactions for all enrollments
-      const { data: transactionsData } = await supabase
-        .from('transactions')
-        .select('enrollment_id, amount_paid, grams_allocated_snapshot, payment_status')
-        .eq('retailer_id', profile.retailer_id)
-        .in('enrollment_id', enrollmentIds)
-        .eq('payment_status', 'SUCCESS');
-
-      // Fetch billing months to count paid months
-      const { data: billingData } = await supabase
-        .from('enrollment_billing_months')
-        .select('enrollment_id, primary_paid')
-        .eq('retailer_id', profile.retailer_id)
-        .in('enrollment_id', enrollmentIds);
+      const plansMap = new Map((plansResult.data || []).map(p => [p.id, p]));
 
       // Group transactions by enrollment
       const transactionsByEnrollment = new Map<string, Array<any>>();
-      (transactionsData || []).forEach(t => {
+      (transactionsResult.data || []).forEach(t => {
         if (!transactionsByEnrollment.has(t.enrollment_id)) {
           transactionsByEnrollment.set(t.enrollment_id, []);
         }
@@ -163,18 +158,16 @@ export default function CustomersPage() {
 
       // Count paid months by enrollment
       const paidMonthsByEnrollment = new Map<string, number>();
-      (billingData || []).forEach(b => {
-        if (b.primary_paid) {
-          paidMonthsByEnrollment.set(
-            b.enrollment_id,
-            (paidMonthsByEnrollment.get(b.enrollment_id) || 0) + 1
-          );
-        }
+      (billingResult.data || []).forEach(b => {
+        paidMonthsByEnrollment.set(
+          b.enrollment_id,
+          (paidMonthsByEnrollment.get(b.enrollment_id) || 0) + 1
+        );
       });
 
       // Group enrollments by customer
       const enrollmentsByCustomer = new Map<string, Array<any>>();
-      enrollmentsData.forEach(e => {
+      enrollmentsResult.data.forEach(e => {
         if (!enrollmentsByCustomer.has(e.customer_id)) {
           enrollmentsByCustomer.set(e.customer_id, []);
         }
@@ -182,7 +175,7 @@ export default function CustomersPage() {
       });
 
       // Build customer enrollment summary
-      const customerSummaries: CustomerEnrollment[] = customersData.map(customer => {
+      const customerSummaries: CustomerEnrollment[] = customersResult.data.map(customer => {
         const enrollments = enrollmentsByCustomer.get(customer.id) || [];
         
         let totalPaid = 0;
