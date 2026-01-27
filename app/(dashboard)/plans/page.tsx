@@ -140,7 +140,7 @@ export default function PlansPage() {
       const statsMap = new Map<string, number>();
       (data || []).forEach((enrollment: any) => {
         const count = statsMap.get(enrollment.plan_id) || 0;
-        statsMap.set(enrollment.plan_id, count + 1;
+        statsMap.set(enrollment.plan_id, count + 1);
       });
 
       // Get scheme names
