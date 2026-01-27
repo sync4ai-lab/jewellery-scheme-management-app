@@ -84,8 +84,15 @@ export async function POST(request: Request) {
     // Use the same password format as registration
     const password = `${phone}_${customer.retailer_id}_GS2026`;
     
+    // Create a regular Supabase client instance for authentication
+    const { createClient } = require('@supabase/supabase-js');
+    const regularClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    
     // Sign in with password to get session tokens
-    const { data: signInData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+    const { data: signInData, error: signInError } = await regularClient.auth.signInWithPassword({
       email: customerEmail,
       password: password,
     });
