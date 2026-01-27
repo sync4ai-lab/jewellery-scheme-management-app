@@ -12,38 +12,21 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 
 export default function CustomerLoginPage() {
-  const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
+  const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { sendOTP, verifyOTP } = useCustomerAuth();
+  const { signInWithPhone } = useCustomerAuth();
 
-  async function handleSendOTP(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const result = await sendOTP(phone);
-
-    if (result.success) {
-      setStep('otp');
-    } else {
-      setError(result.error || 'Failed to send OTP');
-    }
-
-    setLoading(false);
-  }
-
-  async function handleVerifyOTP(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    const result = await verifyOTP(phone, otp);
+    const result = await signInWithPhone(phone, pin);
 
     if (!result.success) {
-      setError(result.error || 'Failed to verify OTP');
+      setError(result.error || 'Invalid phone number or PIN');
     }
 
     setLoading(false);
@@ -70,100 +53,70 @@ export default function CustomerLoginPage() {
 
         <Card className="glass-card">
           <CardHeader>
-            <CardTitle>{step === 'phone' ? 'Sign In' : 'Verify OTP'}</CardTitle>
+            <CardTitle>Sign In</CardTitle>
             <CardDescription>
-              {step === 'phone'
-                ? 'Enter your registered mobile number'
-                : `We sent a 6-digit code to ${phone}`
-              }
+              Enter your registered mobile number and PIN
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {step === 'phone' ? (
-              <form onSubmit={handleSendOTP} className="space-y-4">
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
+            <form onSubmit={handleLogin} className="space-y-4">
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Mobile Number</Label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="phone"
-                      type="tel"
-                      placeholder="+91 98765 43210"
-                      className="pl-10"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Use the mobile number registered with your jeweller
-                  </p>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Mobile Number</Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="phone"
+                    type="tel"
+                    placeholder="+91 98765 43210"
+                    className="pl-10"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    required
+                  />
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Use the mobile number registered with your jeweller
+                </p>
+              </div>
 
-                <Button
-                  type="submit"
-                  className="w-full gold-gradient text-white hover:opacity-90"
-                  disabled={loading}
-                >
-                  {loading ? 'Sending...' : 'Send OTP'}
-                </Button>
-                
-                <div className="text-center text-sm text-gray-600">
-                  New customer?{' '}
-                  <a href="/c/register" className="text-gold-600 hover:text-gold-700 font-medium underline">
-                    Register here
-                  </a>
+              <div className="space-y-2">
+                <Label htmlFor="pin">4-Digit PIN</Label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="pin"
+                    type="password"
+                    placeholder="****"
+                    className="pl-10 text-center text-2xl tracking-widest"
+                    maxLength={4}
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                    required
+                  />
                 </div>
-              </form>
-            ) : (
-              <form onSubmit={handleVerifyOTP} className="space-y-4">
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
+              </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="otp">Enter 6-Digit OTP</Label>
-                  <div className="relative">
-                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="otp"
-                      type="text"
-                      placeholder="123456"
-                      className="pl-10 text-center text-2xl tracking-widest"
-                      maxLength={6}
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full gold-gradient text-white hover:opacity-90"
-                  disabled={loading || otp.length !== 6}
-                >
-                  {loading ? 'Verifying...' : 'Verify & Sign In'}
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="w-full"
-                  onClick={() => setStep('phone')}
-                >
-                  Change Number
-                </Button>
-              </form>
-            )}
+              <Button
+                type="submit"
+                className="w-full gold-gradient text-white hover:opacity-90"
+                disabled={loading || pin.length !== 4}
+              >
+                {loading ? 'Signing in...' : 'Sign In'}
+              </Button>
+              
+              <div className="text-center text-sm text-gray-600">
+                New customer?{' '}
+                <a href="/c/register" className="text-gold-600 hover:text-gold-700 font-medium underline">
+                  Register here
+                </a>
+              </div>
+            </form>
           </CardContent>
         </Card>
 
@@ -172,16 +125,13 @@ export default function CustomerLoginPage() {
             <div className="space-y-2">
               <h3 className="font-semibold flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-primary" />
-                Demo Mode Active
+                PIN-Based Authentication
               </h3>
               <p className="text-sm text-muted-foreground">
-                📱 <strong>Supabase Phone OTP integration point</strong>
+                🔐 <strong>Simple & Secure</strong> - No OTP needed
               </p>
               <p className="text-xs text-muted-foreground">
-                For demo: Use any phone number, then enter OTP: <code className="px-2 py-1 rounded bg-muted font-mono">123456</code>
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                In production, this uses: <code className="text-xs">supabase.auth.signInWithOtp()</code>
+                Your 4-digit PIN is securely encrypted. You can upgrade to SMS OTP in production.
               </p>
             </div>
           </CardContent>

@@ -97,6 +97,7 @@ export default function EnrollmentWizard() {
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [customerPan, setCustomerPan] = useState('');
+  const [customerPin, setCustomerPin] = useState('');
   const [source, setSource] = useState('WALK_IN');
   const [existingCustomer, setExistingCustomer] = useState<any>(null);
 
@@ -219,6 +220,7 @@ export default function EnrollmentWizard() {
     // Reset all form fields to blank
     setCustomerPhone('');
     setCustomerName('');
+    setCustomerPin('');
     setSource('WALK_IN');
     setExistingCustomer(null);
     setSelectedCustomerId('');
@@ -260,6 +262,10 @@ export default function EnrollmentWizard() {
       }
       if (!customerName.trim()) {
         toast.error('Please enter customer name');
+        return;
+      }
+      if (!customerPin || customerPin.length !== 4 || !/^\d{4}$/.test(customerPin)) {
+        toast.error('Please enter a valid 4-digit PIN for the customer');
         return;
       }
       setStep(2);
@@ -369,7 +375,36 @@ export default function EnrollmentWizard() {
               })
               .select()
               .single();
+  
+            // Create auth user for customer with PIN
+            try {
+              const authResponse = await fetch('/api/auth/complete-registration', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  phone: customerPhone,
+                  full_name: customerName,
+                  address: customerAddress || '',
+                  pan_number: customerPan || '',
+                  retailer_id: profile.retailer_id,
+                  pin: customerPin,
+                }),
+              });
 
+              const authData = await authResponse.json();
+
+              if (!authResponse.ok) {
+                console.error('Auth creation failed:', authData.error);
+                toast.warning('Customer created but login setup failed. Customer can contact admin.');
+              } else {
+                toast.success('Customer login credentials created successfully!');
+              }
+            } catch (authError) {
+              console.error('Auth API error:', authError);
+              // Don't fail the whole enrollment if auth setup fails
+              toast.warning('Customer created but login setup failed.');
+            }
+          
             if (customerError) throw customerError;
             existingId = newCustomer.id;
             createdCustomerId = newCustomer.id; // Track that we created this customer
@@ -608,6 +643,23 @@ export default function EnrollmentWizard() {
                   required
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="pin">4-Digit Login PIN *</Label>
+              <Input
+                id="pin"
+                type="password"
+                placeholder="Set a 4-digit PIN for customer login"
+                value={customerPin}
+                onChange={(e) => setCustomerPin(e.target.value.replace(/\D/g, ''))}
+                maxLength={4}
+                disabled={!!existingCustomer}
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                🔐 Customer will use their phone + this PIN to login to the mobile app
+              </p>
             </div>
 
             <div className="space-y-2">

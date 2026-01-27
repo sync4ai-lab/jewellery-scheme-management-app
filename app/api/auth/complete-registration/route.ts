@@ -15,11 +15,19 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { phone, full_name, address, pan_number, retailer_id } = await request.json();
+    const { phone, full_name, address, pan_number, retailer_id, pin } = await request.json();
 
-    if (!phone || !full_name || !retailer_id) {
+    if (!phone || !full_name || !retailer_id || !pin) {
       return NextResponse.json(
-        { error: 'Phone, full name, and retailer ID are required' },
+        { error: 'Phone, full name, retailer ID, and PIN are required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate PIN is 4 digits
+    if (!/^\d{4}$/.test(pin)) {
+      return NextResponse.json(
+        { error: 'PIN must be exactly 4 digits' },
         { status: 400 }
       );
     }
@@ -51,8 +59,8 @@ export async function POST(request: Request) {
     // Create Supabase auth user with BOTH phone and email
     // Email is derived from phone for internal use, users only see/use phone
     const customerEmail = `${phone.replace(/\+/g, '').replace(/\s/g, '')}@customer.goldsaver.app`;
-    // Use a secure password derived from phone + retailer_id
-    const password = `${phone}_${retailer_id}_GS2026`;
+    // Use PIN as password (hashed by Supabase)
+    const password = pin;
     
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: customerEmail,

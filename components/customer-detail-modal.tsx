@@ -249,9 +249,46 @@ export function CustomerDetailModal({ customerId, open, onClose }: CustomerDetai
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle className="text-2xl font-bold">Customer Details</DialogTitle>
-            <Button variant="ghost" size="icon" onClick={onClose}>
-              <X className="w-5 h-5" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  if (!confirm('Reset PIN for this customer? They will receive a new temporary PIN.')) return;
+                  
+                  try {
+                    const newPin = Math.floor(1000 + Math.random() * 9000).toString();
+                    const response = await fetch('/api/auth/reset-customer-pin', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ 
+                        customerId: customer.id,
+                        newPin 
+                      }),
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                      toast.success(`PIN reset successful! New PIN: ${newPin}`, {
+                        duration: 10000,
+                        description: 'Please share this with the customer securely. It will not be shown again.'
+                      });
+                    } else {
+                      toast.error(data.error || 'Failed to reset PIN');
+                    }
+                  } catch (error) {
+                    toast.error('Failed to reset PIN');
+                  }
+                }}
+                className="text-xs"
+              >
+                🔐 Reset PIN
+              </Button>
+              <Button variant="ghost" size="icon" onClick={onClose}>
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
           </div>
         </DialogHeader>
 

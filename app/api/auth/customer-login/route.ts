@@ -15,55 +15,24 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { phone, otp } = await request.json();
+    const { phone, pin } = await request.json();
 
-    if (!phone || !otp) {
+    if (!phone || !pin) {
       return NextResponse.json(
-        { error: 'Phone and OTP are required' },
+        { error: 'Phone and PIN are required' },
         { status: 400 }
       );
     }
 
-    // Demo mode: Accept OTP 123456 for any phone number in development
-    const isDemoOTP = otp === '123456';
-    const isDevelopment = process.env.NODE_ENV === 'development';
-
-    let otpValid = false;
-
-    if (isDevelopment && isDemoOTP) {
-      // Demo mode: Always accept 123456
-      otpValid = true;
-    } else {
-      // Verify OTP using registration_otps table
-      const { data: otpRecord, error: otpError } = await supabaseAdmin
-        .from('registration_otps')
-        .select('*')
-        .eq('phone', phone)
-        .eq('otp_code', otp)
-        .gte('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (!otpError && otpRecord) {
-        otpValid = true;
-        
-        // Mark OTP as verified if not already
-        if (!otpRecord.verified) {
-          await supabaseAdmin
-            .from('registration_otps')
-            .update({ verified: true })
-            .eq('id', otpRecord.id);
-        }
-      }
-    }
-
-    if (!otpValid) {
+    // Validate PIN format
+    if (!/^\d{4}$/.test(pin)) {
       return NextResponse.json(
-        { error: 'Invalid or expired OTP' },
+        { error: 'Invalid PIN format' },
         { status: 400 }
       );
     }
+
+    // PIN authentication - no OTP needed
 
     // Get customer record and retailer_id
     const { data: customer, error: customerError } = await supabaseAdmin
@@ -79,29 +48,27 @@ export async function POST(request: Request) {
       );
     }
 
-    // Convert phone to the email format used during registration
+    // Convert phone to email format
     const customerEmail = `${phone.replace(/\+/g, '').replace(/\s/g, '')}@customer.goldsaver.app`;
-    // Use the same password format as registration
-    const password = `${phone}_${customer.retailer_id}_GS2026`;
     
-    // Create a regular Supabase client instance for authentication
+    // Create regular Supabase client for authentication
     const { createClient } = require('@supabase/supabase-js');
-    const regularClient = createClient(
+    const authClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
     
-    // Sign in with password to get session tokens
-    const { data: signInData, error: signInError } = await regularClient.auth.signInWithPassword({
+    // Authenticate with email (derived from phone) + PIN
+    const { data: signInData, error: signInError } = await authClient.auth.signInWithPassword({
       email: customerEmail,
-      password: password,
+      password: pin,
     });
 
     if (signInError || !signInData?.session) {
-      console.error('Sign in error:', signInError);
+      console.error('PIN authentication failed:', signInError);
       return NextResponse.json(
-        { error: 'Failed to sign in: ' + (signInError?.message || 'Unknown error') },
-        { status: 500 }
+        { error: 'Invalid phone number or PIN' },
+        { status: 401 }
       );
     }
 

@@ -19,6 +19,7 @@ type CustomerAuthContextType = {
   loading: boolean;
   sendOTP: (phone: string) => Promise<{ success: boolean; error?: string }>;
   verifyOTP: (phone: string, otp: string) => Promise<{ success: boolean; error?: string }>;
+  signInWithPhone: (phone: string, pin: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
 };
 
@@ -136,6 +137,42 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     }
   };
 
+  const signInWithPhone = async (phone: string, pin: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      // Sign in with phone and PIN
+      const response = await fetch('/api/auth/customer-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, pin }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { success: false, error: data.error || 'Invalid credentials' };
+      }
+
+      // Set the session from the response
+      if (data.session) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
+
+        if (sessionError) {
+          return { success: false, error: sessionError.message };
+        }
+
+        // Navigate to schemes page
+        router.push('/c/schemes');
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -144,7 +181,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
   };
 
   return (
-    <CustomerAuthContext.Provider value={{ user, customer, loading, sendOTP, verifyOTP, signOut }}>
+    <CustomerAuthContext.Provider value={{ user, customer, loading, sendOTP, verifyOTP, signInWithPhone, signOut }}>
       {children}
     </CustomerAuthContext.Provider>
   );
