@@ -44,6 +44,38 @@ export async function POST(request: Request) {
       effectiveRetailerId = retailer.id;
     }
 
+    // Get default store (first active store or one named "Main")
+    const { data: defaultStore } = await supabaseAdmin
+      .from('stores')
+      .select('id')
+      .eq('retailer_id', effectiveRetailerId)
+      .eq('is_active', true)
+      .or('name.ilike.%main%,name.ilike.%head%')
+      .limit(1)
+      .maybeSingle();
+    
+    // If no "Main" store found, get any active store
+    let storeId = defaultStore?.id;
+    if (!storeId) {
+      const { data: anyStore } = await supabaseAdmin
+        .from('stores')
+        .select('id')
+        .eq('retailer_id', effectiveRetailerId)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+      storeId = anyStore?.id;
+    }
+
+    // Get an admin user to assign as staff
+    const { data: adminUser } = await supabaseAdmin
+      .from('user_profiles')
+      .select('id')
+      .eq('retailer_id', effectiveRetailerId)
+      .eq('role', 'ADMIN')
+      .limit(1)
+      .maybeSingle();
+
     // Verify OTP
     const { data: otpData, error: otpError } = await supabaseAdmin.rpc('verify_registration_otp', {
       p_phone: phone,
@@ -94,6 +126,8 @@ export async function POST(request: Request) {
         full_name: phone, // Temporary - will be updated in enrollment
         customer_code: `CUST${Date.now()}`,
         kyc_status: 'PENDING',
+        store_id: storeId, // Assign to default store
+        created_by: adminUser?.id, // Assign admin as creator/staff
       })
       .select('id')
       .single();

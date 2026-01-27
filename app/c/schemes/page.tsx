@@ -220,9 +220,6 @@ export default function CustomerSchemesPage() {
         );
 
         const duration = Number(plan?.duration_months || 0);
-        const txnTotals = transactionTotals.get(e.id) || { totalPaid: 0, totalGrams: 0 };
-        const totalPaid = txnTotals.totalPaid;
-        const totalGrams = txnTotals.totalGrams;
         const totalPaid = Number(e.total_paid || 0);
         const totalGrams = Number(e.total_grams_allocated || 0);
 
