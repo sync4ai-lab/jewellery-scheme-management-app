@@ -130,19 +130,22 @@ export default function CustomersPage() {
         supabase
           .from('scheme_templates')
           .select('id, name, duration_months')
-          .in('id', planIds),
+          .in('id', planIds)
+          .limit(100), // Plans are limited
         supabase
           .from('transactions')
           .select('enrollment_id, amount_paid, grams_allocated_snapshot, payment_status')
           .eq('retailer_id', profile.retailer_id)
           .in('enrollment_id', enrollmentIds)
-          .eq('payment_status', 'SUCCESS'),
+          .eq('payment_status', 'SUCCESS')
+          .limit(10000), // Prevent fetching millions of transactions
         supabase
           .from('enrollment_billing_months')
           .select('enrollment_id, primary_paid')
           .eq('retailer_id', profile.retailer_id)
           .in('enrollment_id', enrollmentIds)
           .eq('primary_paid', true) // Only fetch paid months for counting
+          .limit(50000) // Max billing months to process
       ]);
 
       const plansMap = new Map((plansResult.data || []).map(p => [p.id, p]));

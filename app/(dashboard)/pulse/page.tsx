@@ -321,13 +321,15 @@ export default function PulseDashboard() {
           .from('enrollments')
           .select('id, plan_id, status')
           .eq('retailer_id', retailerId)
-          .eq('status', 'ACTIVE'),
+          .eq('status', 'ACTIVE')
+          .limit(5000), // Reasonable limit for large retailers
 
         // All schemes
         supabase
           .from('scheme_templates')
           .select('id, installment_amount, duration_months')
-          .eq('retailer_id', retailerId),
+          .eq('retailer_id', retailerId)
+          .limit(100), // Templates are limited, 100 is safe
       ]);
 
       // Log any errors from the parallel queries

@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     // Get customer by phone
     const { data: customer, error: customerError } = await supabaseAdmin
       .from('customers')
-      .select('id, user_id')
+      .select('id, full_name')
       .eq('phone', phone)
       .maybeSingle();
 
@@ -79,21 +79,24 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get the auth user associated with this customer
-    const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(
-      customer.user_id
-    );
+    // Get user_profile to find the auth user ID linked to this customer
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('user_profiles')
+      .select('id, role')
+      .eq('customer_id', customer.id)
+      .eq('role', 'CUSTOMER')
+      .maybeSingle();
 
-    if (authUserError || !authUser) {
+    if (profileError || !profile) {
       return NextResponse.json(
-        { error: 'Authentication user not found. Please contact support.' },
+        { error: 'User profile not found. Please complete registration or contact support.' },
         { status: 404 }
       );
     }
 
-    // Create a session for this user using admin API
+    // Create a session for this user using the profile.id (which is the auth user ID)
     const { data: sessionData, error: sessionError } = await supabaseAdmin.auth.admin.createSession({
-      user_id: authUser.user.id,
+      user_id: profile.id,
     });
 
     if (sessionError || !sessionData) {
