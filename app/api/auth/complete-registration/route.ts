@@ -1,5 +1,17 @@
-import { supabase } from '@/lib/supabase/client';
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+
+// Create admin client for server-side operations
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+);
 
 export async function POST(request: Request) {
   try {
@@ -13,7 +25,7 @@ export async function POST(request: Request) {
     }
 
     // Call the database function to complete registration
-    const { data, error } = await supabase.rpc('complete_customer_registration', {
+    const { data, error } = await supabaseAdmin.rpc('complete_customer_registration', {
       p_phone: phone,
       p_full_name: full_name,
       p_address: address,
@@ -41,15 +53,14 @@ export async function POST(request: Request) {
     const customerEmail = `${phone.replace(/\+/g, '')}@customer.goldsaver.com`;
     
     // Create Supabase auth user
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: customerEmail,
       password: `${phone}${full_name}`,  // Temporary password, customer can change later
-      options: {
-        data: {
-          full_name,
-          phone,
-          role: 'CUSTOMER',
-        },
+      email_confirm: true,  // Auto-confirm email
+      user_metadata: {
+        full_name,
+        phone,
+        role: 'CUSTOMER',
       },
     });
 
@@ -66,7 +77,7 @@ export async function POST(request: Request) {
 
     // Create user_profile for customer
     if (authData.user) {
-      const { error: profileError } = await supabase.from('user_profiles').insert({
+      const { error: profileError } = await supabaseAdmin.from('user_profiles').insert({
         id: authData.user.id,
         retailer_id,
         role: 'CUSTOMER',
