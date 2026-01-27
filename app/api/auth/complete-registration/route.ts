@@ -51,10 +51,13 @@ export async function POST(request: Request) {
     // Create Supabase auth user with BOTH phone and email
     // Email is derived from phone for internal use, users only see/use phone
     const customerEmail = `${phone.replace(/\+/g, '').replace(/\s/g, '')}@customer.goldsaver.app`;
+    // Use a secure password derived from phone + retailer_id
+    const password = `${phone}_${retailer_id}_GS2026`;
     
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: customerEmail,
       phone: phone,
+      password: password,
       email_confirm: true,
       phone_confirm: true,
       user_metadata: {

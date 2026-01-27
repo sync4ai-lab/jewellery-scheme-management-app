@@ -65,10 +65,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get customer record first
+    // Get customer record and retailer_id
     const { data: customer, error: customerError } = await supabaseAdmin
       .from('customers')
-      .select('id')
+      .select('id, retailer_id')
       .eq('phone', phone)
       .maybeSingle();
 
@@ -79,45 +79,21 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get user_profile to find auth user ID
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('user_profiles')
-      .select('id')
-      .eq('customer_id', customer.id)
-      .eq('role', 'CUSTOMER')
-      .maybeSingle();
-
-    if (profileError || !profile) {
-      return NextResponse.json(
-        { error: 'User account not set up. Please contact support.' },
-        { status: 404 }
-      );
-    }
-
     // Convert phone to the email format used during registration
     const customerEmail = `${phone.replace(/\+/g, '').replace(/\s/g, '')}@customer.goldsaver.app`;
+    // Use the same password format as registration
+    const password = `${phone}_${customer.retailer_id}_GS2026`;
     
-    // Generate tokens using the derived email
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink',
+    // Sign in with password to get session tokens
+    const { data: signInData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
       email: customerEmail,
+      password: password,
     });
 
-    if (linkError || !linkData?.properties) {
-      console.error('Failed to generate link:', linkError);
+    if (signInError || !signInData?.session) {
+      console.error('Sign in error:', signInError);
       return NextResponse.json(
-        { error: 'Failed to create session. Error: ' + (linkError?.message || 'Unknown') },
-        { status: 500 }
-      );
-    }
-
-    // Return the tokens from the link
-    const { access_token, refresh_token } = linkData.properties;
-
-    if (!access_token || !refresh_token) {
-      console.error('No tokens in link properties:', linkData.properties);
-      return NextResponse.json(
-        { error: 'Session tokens not generated' },
+        { error: 'Failed to sign in: ' + (signInError?.message || 'Unknown error') },
         { status: 500 }
       );
     }
@@ -125,8 +101,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       session: {
-        access_token,
-        refresh_token,
+        access_token: signInData.session.access_token,
+        refresh_token: signInData.session.refresh_token,
       },
     });
   } catch (error: any) {
