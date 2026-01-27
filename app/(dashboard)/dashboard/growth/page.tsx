@@ -41,23 +41,68 @@ export default function GrowthPage() {
 
     setLoading(true);
     try {
-      // No month column exists, so we show current snapshot/leaderboard.
-      const { data, error } = await supabase
-        .from('staff_performance')
-        .select('staff_id, retailer_id, full_name, enrollments_count, transactions_count, total_collected')
+      // Note: staff_performance view doesn't exist
+      // Query data from enrollments and transactions directly
+      
+      // Get all staff members
+      const { data: staffData, error: staffError } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
         .eq('retailer_id', profile.retailer_id)
-        .order('total_collected', { ascending: false });
+        .in('role', ['ADMIN', 'STAFF']);
 
-      if (error) throw error;
+      if (staffError) throw staffError;
 
-      const normalized: StaffPerformance[] = (data || []).map((r: any) => ({
-        staff_id: r.staff_id,
-        retailer_id: r.retailer_id,
-        full_name: r.full_name ?? 'Staff',
-        enrollments_count: Number(r.enrollments_count || 0),
-        transactions_count: Number(r.transactions_count || 0),
-        total_collected: Number(r.total_collected || 0),
+      if (!staffData || staffData.length === 0) {
+        setRows([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get enrollment counts per staff
+      const { data: enrollmentsData } = await supabase
+        .from('enrollments')
+        .select('assigned_staff_id')
+        .eq('retailer_id', profile.retailer_id)
+        .not('assigned_staff_id', 'is', null);
+
+      // Get transaction counts and totals per staff (using created_by from transactions)
+      const { data: transactionsData } = await supabase
+        .from('transactions')
+        .select('created_by, amount_paid')
+        .eq('retailer_id', profile.retailer_id)
+        .eq('payment_status', 'SUCCESS')
+        .not('created_by', 'is', null);
+
+      // Count enrollments by staff
+      const enrollmentCounts = new Map<string, number>();
+      (enrollmentsData || []).forEach((e: any) => {
+        const count = enrollmentCounts.get(e.assigned_staff_id) || 0;
+        enrollmentCounts.set(e.assigned_staff_id, count + 1);
+      });
+
+      // Count transactions and sum amounts by staff
+      const transactionCounts = new Map<string, number>();
+      const totalCollected = new Map<string, number>();
+      (transactionsData || []).forEach((t: any) => {
+        const count = transactionCounts.get(t.created_by) || 0;
+        const total = totalCollected.get(t.created_by) || 0;
+        transactionCounts.set(t.created_by, count + 1);
+        totalCollected.set(t.created_by, total + (t.amount_paid || 0));
+      });
+
+      // Build performance data
+      const normalized: StaffPerformance[] = staffData.map((staff: any) => ({
+        staff_id: staff.id,
+        retailer_id: profile.retailer_id,
+        full_name: staff.full_name ?? 'Staff',
+        enrollments_count: enrollmentCounts.get(staff.id) || 0,
+        transactions_count: transactionCounts.get(staff.id) || 0,
+        total_collected: totalCollected.get(staff.id) || 0,
       }));
+
+      // Sort by total collected descending
+      normalized.sort((a, b) => b.total_collected - a.total_collected);
 
       setRows(normalized);
     } catch (err) {

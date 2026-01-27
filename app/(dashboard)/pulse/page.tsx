@@ -293,10 +293,10 @@ export default function PulseDashboard() {
           .gte('paid_at', startISO)
           .lt('paid_at', endISO),
 
-        // Dues outstanding - WITHOUT JOIN for now to avoid errors
+        // Dues outstanding - count of unpaid billing months
         supabase
           .from('enrollment_billing_months')
-          .select('enrollment_id, monthly_amount')
+          .select('enrollment_id', { count: 'exact', head: false })
           .eq('retailer_id', retailerId)
           .gte('due_date', startISO.split('T')[0])
           .lt('due_date', endISO.split('T')[0])
@@ -421,22 +421,31 @@ export default function PulseDashboard() {
       const goldAllocatedPeriod = gold18KAllocated + gold22KAllocated + gold24KAllocated;
 
       // Calculate dues outstanding broken down by metal type
+      // We need to fetch enrollment details for unpaid billing months
       let dues18K = 0, dues22K = 0, dues24K = 0, duesSilver = 0;
       
-      (duesResult.data || []).forEach((d: any) => {
-        const karat = enrollmentKaratMap.get(d.enrollment_id);
-        const amt = safeNumber(d.monthly_amount);
+      if (duesResult.data && duesResult.data.length > 0) {
+        const dueEnrollmentIds = duesResult.data.map((d: any) => d.enrollment_id);
+        const { data: dueEnrollments } = await supabase
+          .from('enrollments')
+          .select('id, karat, commitment_amount')
+          .eq('retailer_id', retailerId)
+          .in('id', dueEnrollmentIds);
         
-        if (karat === '18K') {
-          dues18K += amt;
-        } else if (karat === '22K') {
-          dues22K += amt;
-        } else if (karat === '24K') {
-          dues24K += amt;
-        } else if (karat === 'SILVER') {
-          duesSilver += amt;
-        }
-      });
+        (dueEnrollments || []).forEach((e: any) => {
+          const amt = safeNumber(e.commitment_amount);
+          
+          if (e.karat === '18K') {
+            dues18K += amt;
+          } else if (e.karat === '22K') {
+            dues22K += amt;
+          } else if (e.karat === '24K') {
+            dues24K += amt;
+          } else if (e.karat === 'SILVER') {
+            duesSilver += amt;
+          }
+        });
+      }
 
       const duesOutstanding = dues18K + dues22K + dues24K + duesSilver;
 
@@ -670,7 +679,7 @@ export default function PulseDashboard() {
       // 3. Payment Behavior Analysis
       const { data: billingData } = await supabase
         .from('enrollment_billing_months')
-        .select('due_date, primary_paid, paid_at, enrollment_id')
+        .select('due_date, primary_paid, billing_month, enrollment_id')
         .eq('retailer_id', profile.retailer_id)
         .gte('due_date', startDate.toISOString().split('T')[0])
         .lte('due_date', endDate.toISOString().split('T')[0]);
@@ -686,13 +695,11 @@ export default function PulseDashboard() {
         const payment = paymentMap.get(dueDate)!;
         payment.total += 1;
 
+        // Count as on-time if primary_paid is true
+        // Note: We don't have exact paid_at, so we can't check if payment was before due date
+        // This is a simplified version - primary_paid means it was paid
         if (billing.primary_paid) {
-          const paidDate = billing.paid_at ? new Date(billing.paid_at).toISOString().split('T')[0] : null;
-          if (paidDate && paidDate <= dueDate) {
-            payment.onTime += 1;
-          } else {
-            payment.late += 1;
-          }
+          payment.onTime += 1;
         }
       });
 

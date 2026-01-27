@@ -130,7 +130,7 @@ export default function PlansPage() {
     try {
       const { data, error } = await supabase
         .from('enrollments')
-        .select('scheme_id')
+        .select('plan_id')
         .eq('retailer_id', profile.retailer_id)
         .eq('status', 'ACTIVE');
 
@@ -139,8 +139,8 @@ export default function PlansPage() {
       // Count enrollments per scheme
       const statsMap = new Map<string, number>();
       (data || []).forEach((enrollment: any) => {
-        const count = statsMap.get(enrollment.scheme_id) || 0;
-        statsMap.set(enrollment.scheme_id, count + 1);
+        const count = statsMap.get(enrollment.plan_id) || 0;
+        statsMap.set(enrollment.plan_id, count + 1;
       });
 
       // Get scheme names

@@ -59,22 +59,88 @@ export default function DuePage() {
     setLoading(true);
 
     try {
-      let q = supabase
-        .from('overdue_billing_months')
-        .select('*')
-        .order('days_overdue', { ascending: false });
+      // Note: overdue_billing_months view doesn't exist
+      // Query enrollment_billing_months directly instead
+      const today = new Date().toISOString().split('T')[0];
+      
+      const { data: billingData, error: billingError } = await supabase
+        .from('enrollment_billing_months')
+        .select('enrollment_id, billing_month, due_date, status, retailer_id')
+        .eq('primary_paid', false)
+        .lt('due_date', today)
+        .order('due_date', { ascending: true });
 
-      // If your dashboard user object has retailer_id, scope it.
-      // If not available, you MUST rely on RLS / view filtering.
-      const retailerId = (user as any)?.retailer_id;
-      if (retailerId) q = q.eq('retailer_id', retailerId);
+      if (billingError) throw billingError;
 
-      const { data, error } = await q;
-      if (error) throw error;
+      // Get enrollment and customer details
+      if (!billingData || billingData.length === 0) {
+        setOverdues([]);
+        setLoading(false);
+        return;
+      }
 
-      setOverdues((data || []) as OverdueEnrollment[]);
+      const enrollmentIds = billingData.map(b => b.enrollment_id);
+      const { data: enrollments, error: enrollError } = await supabase
+        .from('enrollments')
+        .select(`
+          id,
+          customer_id,
+          plan_id,
+          commitment_amount,
+          customers(id, full_name, phone),
+          scheme_templates(name)
+        `)
+        .in('id', enrollmentIds);
+
+      if (enrollError) throw enrollError;
+
+      // Map enrollment data
+      const enrollmentMap = new Map(
+        (enrollments || []).map((e: any) => [
+          e.id,
+          {
+            customer_name: e.customers?.full_name || 'Unknown',
+            customer_phone: e.customers?.phone || '',
+            customer_id: e.customer_id,
+            plan_name: e.scheme_templates?.name || 'Unknown Plan',
+            monthly_amount: e.commitment_amount || 0,
+          },
+        ])
+      );
+
+      // Combine data
+      const overdueList: OverdueEnrollment[] = billingData.map((b: any) => {
+        const enrollment = enrollmentMap.get(b.enrollment_id) || {
+          customer_name: 'Unknown',
+          customer_phone: '',
+          customer_id: '',
+          plan_name: 'Unknown',
+          monthly_amount: 0,
+        };
+        
+        const dueDate = new Date(b.due_date);
+        const now = new Date();
+        const daysOverdue = Math.floor((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+
+        return {
+          enrollment_id: b.enrollment_id,
+          retailer_id: b.retailer_id,
+          plan_name: enrollment.plan_name,
+          customer_id: enrollment.customer_id,
+          customer_name: enrollment.customer_name,
+          customer_phone: enrollment.customer_phone,
+          billing_month: b.billing_month,
+          due_date: b.due_date,
+          status: b.status || 'MISSED',
+          days_overdue: daysOverdue,
+          monthly_amount: enrollment.monthly_amount,
+        };
+      });
+
+      setOverdues(overdueList);
     } catch (error) {
       console.error('Error loading overdue enrollments:', error);
+      setOverdues([]);
     } finally {
       setLoading(false);
     }

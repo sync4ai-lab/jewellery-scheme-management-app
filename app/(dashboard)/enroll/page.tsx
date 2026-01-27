@@ -383,7 +383,10 @@ export default function EnrollmentWizard() {
       startDate.setHours(0, 0, 0, 0);
 
       const billingDay = startDate.getDate();
-      const maturity = new Date(startDate.getFullYear(), startDate.getMonth() + safeNumber(plan.duration_months), startDate.getDate());
+      // Fix: Use date arithmetic properly to avoid PostgreSQL errors
+      const durationMonths = safeNumber(plan.duration_months);
+      const maturity = new Date(startDate);
+      maturity.setMonth(maturity.getMonth() + durationMonths);
       maturity.setHours(0, 0, 0, 0);
 
       const { data: enrollment, error: enrollErr } = await supabase
@@ -400,7 +403,7 @@ export default function EnrollmentWizard() {
           karat: selectedKarat,
           source,
           maturity_date: toISODate(maturity),
-          store_id: selectedStore,
+          store_id: selectedStore || null, // Ensure null instead of empty string
 
           // optional: you have assigned_staff_id column
           assigned_staff_id: assignedStaff || null,
@@ -439,12 +442,22 @@ export default function EnrollmentWizard() {
       }, 1500);
     } catch (error: any) {
       console.error('Enrollment error:', error);
+      console.error('Error details:', {
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+      });
       
       // Provide more specific error messages
       if (error?.code === '23503') {
         toast.error('Database constraint error. Please ensure all required data exists.');
       } else if (error?.code === '42P01') {
         toast.error('Database table not found. Please run the latest migrations.');
+      } else if (error?.code === 'PGRST116') {
+        toast.error('Table access denied. Check RLS policies on enrollments table.');
+      } else if (error?.message?.includes('operator does not exist')) {
+        toast.error('Date calculation error. Please contact support.');
       } else {
         toast.error(error?.message || 'Failed to enroll customer');
       }

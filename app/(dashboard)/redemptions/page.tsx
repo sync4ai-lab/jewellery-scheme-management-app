@@ -125,14 +125,18 @@ export default function RedemptionsPage() {
     if (!profile?.retailer_id) return;
 
     try {
-      const { data, error } = await supabase
-        .from('redemption_summary')
-        .select('*')
-        .eq('retailer_id', profile.retailer_id)
-        .order('redemption_date', { ascending: false });
-
-      if (error) throw error;
-      setRedemptions((data || []) as Redemption[]);
+      // Note: redemption_summary view/table doesn't exist yet
+      // For now, return empty array until migration is created
+      setRedemptions([]);
+      
+      // TODO: Create redemptions table and summary view
+      // const { data, error } = await supabase
+      //   .from('redemption_summary')
+      //   .select('*')
+      //   .eq('retailer_id', profile.retailer_id)
+      //   .order('redemption_date', { ascending: false });
+      // if (error) throw error;
+      // setRedemptions((data || []) as Redemption[]);
     } catch (error) {
       console.error('Error loading redemptions:', error);
       toast.error('Failed to load redemptions');
@@ -144,17 +148,23 @@ export default function RedemptionsPage() {
     setLoading(true);
 
     try {
-      // Call function to update eligibility first
-      await supabase.rpc('update_redemption_eligibility');
-
-      // Fetch eligible enrollments
+      // Note: Redemption columns don't exist in enrollments table yet
+      // Query basic enrollments and calculate eligibility client-side
+      
       const { data: enrollmentsData, error: enrollError } = await supabase
         .from('enrollments')
-        .select('id, customer_id, plan_id, karat, created_at, redemption_eligible_date, customers(full_name, phone)')
+        .select(`
+          id, 
+          customer_id, 
+          plan_id, 
+          karat, 
+          created_at, 
+          maturity_date,
+          customers(full_name, phone),
+          scheme_templates(name, duration_months)
+        `)
         .eq('retailer_id', profile.retailer_id)
-        .eq('status', 'ACTIVE')
-        .eq('eligible_for_redemption', true)
-        .is('redemption_status', null);
+        .eq('status', 'ACTIVE');
 
       if (enrollError) throw enrollError;
 
@@ -164,18 +174,9 @@ export default function RedemptionsPage() {
         return;
       }
 
-      const enrollmentIds = enrollmentsData.map(e => e.id);
-      const planIds = Array.from(new Set(enrollmentsData.map((e: any) => e.plan_id)));
+      const enrollmentIds = enrollmentsData.map((e: any) => e.id);
 
-      // Fetch plan details
-      const { data: plansData } = await supabase
-        .from('scheme_templates')
-        .select('id, name')
-        .in('id', planIds);
-
-      const plansMap = new Map((plansData || []).map(p => [p.id, p]));
-
-      // Fetch transactions to calculate total grams
+      // Fetch transactions to calculate total grams and paid amount
       const { data: transactionsData } = await supabase
         .from('transactions')
         .select('enrollment_id, grams_allocated_snapshot, amount_paid')
@@ -184,7 +185,7 @@ export default function RedemptionsPage() {
         .eq('payment_status', 'SUCCESS');
 
       const gramsMap = new Map<string, { grams: number; paid: number }>();
-      (transactionsData || []).forEach(t => {
+      (transactionsData || []).forEach((t: any) => {
         const current = gramsMap.get(t.enrollment_id) || { grams: 0, paid: 0 };
         gramsMap.set(t.enrollment_id, {
           grams: current.grams + (t.grams_allocated_snapshot || 0),
@@ -192,23 +193,34 @@ export default function RedemptionsPage() {
         });
       });
 
-      const eligible: EligibleEnrollment[] = enrollmentsData.map((e: any) => {
-        const plan = plansMap.get(e.plan_id);
-        const totals = gramsMap.get(e.id) || { grams: 0, paid: 0 };
+      // Filter to only mature/eligible enrollments
+      // Eligibility: maturity_date has passed or is today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
 
-        return {
-          id: e.id,
-          customer_id: e.customer_id,
-          customer_name: e.customers?.full_name || 'Unknown',
-          customer_phone: e.customers?.phone || '',
-          plan_name: plan?.name || 'Unknown Plan',
-          karat: e.karat || '22K',
-          created_at: e.created_at,
-          eligible_date: e.redemption_eligible_date,
-          total_grams: totals.grams,
-          total_paid: totals.paid,
-        };
-      });
+      const eligible: EligibleEnrollment[] = enrollmentsData
+        .filter((e: any) => {
+          if (!e.maturity_date) return false;
+          const maturityDate = new Date(e.maturity_date);
+          maturityDate.setHours(0, 0, 0, 0);
+          return maturityDate <= today;
+        })
+        .map((e: any) => {
+          const totals = gramsMap.get(e.id) || { grams: 0, paid: 0 };
+
+          return {
+            id: e.id,
+            customer_id: e.customer_id,
+            customer_name: e.customers?.full_name || 'Unknown',
+            customer_phone: e.customers?.phone || '',
+            plan_name: e.scheme_templates?.name || 'Unknown Plan',
+            karat: e.karat || '22K',
+            created_at: e.created_at,
+            eligible_date: e.maturity_date,
+            total_grams: totals.grams,
+            total_paid: totals.paid,
+          };
+        });
 
       setEligibleEnrollments(eligible);
     } catch (error) {
