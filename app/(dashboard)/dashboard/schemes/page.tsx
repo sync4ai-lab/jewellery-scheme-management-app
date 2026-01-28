@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Plus, User, Phone, Calendar, Users, Save, Download, Upload } from 'lucide-react';
+import { Search, Plus, User, Phone, Calendar, Users, Save, Download, Upload, LayoutGrid, List } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -82,6 +82,7 @@ export default function SchemesPage() {
   const { profile } = useAuth();
   const router = useRouter();
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
   const [transactions, setTransactions] = useState<Txn[]>([]);
@@ -370,6 +371,25 @@ export default function SchemesPage() {
         </div>
 
         <div className="flex gap-2">
+          <div className="flex gap-1 mr-2">
+            <Button
+              variant={viewMode === 'card' ? 'default' : 'outline'}
+              size="icon"
+              onClick={() => setViewMode('card')}
+              title="Card View"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={viewMode === 'table' ? 'default' : 'outline'}
+              size="icon"
+              onClick={() => setViewMode('table')}
+              title="Table View"
+            >
+              <List className="w-4 h-4" />
+            </Button>
+          </div>
+          
           <Button 
             variant="outline"
             onClick={exportToExcel}
@@ -419,7 +439,89 @@ export default function SchemesPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {viewMode === 'table' ? (
+        /* Table View */
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-muted/50">
+                <tr className="border-b">
+                  <th className="text-left p-4 font-medium">Customer</th>
+                  <th className="text-left p-4 font-medium">Phone</th>
+                  <th className="text-left p-4 font-medium">Plan</th>
+                  <th className="text-right p-4 font-medium">Monthly</th>
+                  <th className="text-center p-4 font-medium">Tenure</th>
+                  <th className="text-center p-4 font-medium">Status</th>
+                  <th className="text-center p-4 font-medium">Start Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((enrollment) => {
+                  const c = enrollment.customers;
+                  const p = enrollment.scheme_templates;
+                  const monthly = getMonthlyAmount(enrollment);
+                  const tenure = getTenure(enrollment);
+
+                  return (
+                    <Dialog
+                      key={enrollment.id}
+                      onOpenChange={(open) => {
+                        if (open) {
+                          setSelectedEnrollment(enrollment);
+                          void loadTransactions(enrollment.id);
+                        } else {
+                          setTransactions([]);
+                        }
+                      }}
+                    >
+                      <DialogTrigger asChild>
+                        <tr className="border-b hover:bg-muted/50 cursor-pointer transition-colors">
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                                <User className="w-4 h-4 text-primary" />
+                              </div>
+                              <span className="font-medium">{c?.full_name || 'Unknown'}</span>
+                            </div>
+                          </td>
+                          <td className="p-4 text-sm text-muted-foreground">{c?.phone || '—'}</td>
+                          <td className="p-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm">{p?.name || 'Plan'}</span>
+                              {enrollment.karat && (
+                                <Badge variant="outline" className="text-xs">{enrollment.karat}</Badge>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-4 text-right font-semibold">₹{monthly.toLocaleString()}</td>
+                          <td className="p-4 text-center text-sm">{tenure}</td>
+                          <td className="p-4 text-center">{getStatusBadge(enrollment.status)}</td>
+                          <td className="p-4 text-center text-sm text-muted-foreground">
+                            {new Date(enrollment.start_date).toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </td>
+                        </tr>
+                      </DialogTrigger>
+                      {/* Dialog content will be rendered outside */}
+                    </Dialog>
+                  );
+                })}
+              </tbody>
+            </table>
+            {filtered.length === 0 && (
+              <div className="text-center py-12">
+                <Users className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
+                <p className="text-muted-foreground">No enrollments found</p>
+              </div>
+            )}
+          </div>
+        </Card>
+      ) : (
+        /* Card View */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.map((enrollment) => {
           const c = enrollment.customers;
           const p = enrollment.scheme_templates;
@@ -666,16 +768,17 @@ export default function SchemesPage() {
             </Dialog>
           );
         })}
+        
+        {filtered.length === 0 && (
+          <Card className="p-12 col-span-full">
+            <div className="text-center text-muted-foreground">
+              <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p className="text-lg">No enrollments found</p>
+              <p className="text-sm mt-2">Start by enrolling your first customer</p>
+            </div>
+          </Card>
+        )}
       </div>
-
-      {filtered.length === 0 && (
-        <Card className="p-12">
-          <div className="text-center text-muted-foreground">
-            <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p className="text-lg">No enrollments found</p>
-            <p className="text-sm mt-2">Start by enrolling your first customer</p>
-          </div>
-        </Card>
       )}
     </div>
   );
