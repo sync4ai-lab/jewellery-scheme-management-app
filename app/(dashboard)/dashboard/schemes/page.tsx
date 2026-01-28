@@ -366,7 +366,7 @@ export default function SchemesPage() {
     <div className="p-4 md:p-8 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Schemes</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Enrollments</h1>
           <p className="text-muted-foreground">Manage customer gold savings journey</p>
         </div>
 
@@ -446,7 +446,7 @@ export default function SchemesPage() {
             <table className="w-full">
               <thead className="bg-muted/50">
                 <tr className="border-b">
-                  <th className="text-left p-4 font-medium">Customer</th>
+                  <th className="text-left p-4 font-medium">Enrolled Customer</th>
                   <th className="text-left p-4 font-medium">Phone</th>
                   <th className="text-left p-4 font-medium">Plan</th>
                   <th className="text-right p-4 font-medium">Monthly</th>

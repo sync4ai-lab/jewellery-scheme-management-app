@@ -257,7 +257,7 @@ export function CustomerDetailModal({ customerId, open, onClose }: CustomerDetai
                   if (!confirm('Reset PIN for this customer? They will receive a new temporary PIN.')) return;
                   
                   try {
-                    const newPin = Math.floor(1000 + Math.random() * 9000).toString();
+                    const newPin = Math.floor(100000 + Math.random() * 900000).toString();
                     const response = await fetch('/api/auth/reset-customer-pin', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },

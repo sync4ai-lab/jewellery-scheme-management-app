@@ -86,15 +86,15 @@ export default function CustomerLoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="pin">4-Digit PIN</Label>
+                <Label htmlFor="pin">6-Digit PIN</Label>
                 <div className="relative">
                   <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     id="pin"
                     type="password"
-                    placeholder="****"
+                    placeholder="******"
                     className="pl-10 text-center text-2xl tracking-widest"
-                    maxLength={4}
+                    maxLength={6}
                     value={pin}
                     onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
                     required

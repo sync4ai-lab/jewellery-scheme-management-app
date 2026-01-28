@@ -17,6 +17,8 @@ export async function POST(request: Request) {
   try {
     const { phone, pin } = await request.json();
 
+    console.log('Customer login attempt:', { phone: phone?.substring(0, 6) + '****' });
+
     if (!phone || !pin) {
       return NextResponse.json(
         { error: 'Phone and PIN are required' },
@@ -25,7 +27,8 @@ export async function POST(request: Request) {
     }
 
     // Validate PIN format
-    if (!/^\d{4}$/.test(pin)) {
+    if (!/^\d{6}$/.test(pin)) {
+      console.log('Invalid PIN format');
       return NextResponse.json(
         { error: 'Invalid PIN format' },
         { status: 400 }
@@ -42,14 +45,18 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (customerError || !customer) {
+      console.log('Customer not found:', phone);
       return NextResponse.json(
-        { error: 'Customer not found. Please register first.' },
+        { error: 'Customer not found. Please contact your jeweller.' },
         { status: 404 }
       );
     }
 
+    console.log('Customer found, attempting auth...');
+
     // Convert phone to email format
     const customerEmail = `${phone.replace(/\+/g, '').replace(/\s/g, '')}@customer.goldsaver.app`;
+    console.log('Using email:', customerEmail);
     
     // Create regular Supabase client for authentication
     const { createClient } = require('@supabase/supabase-js');

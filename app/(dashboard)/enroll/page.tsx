@@ -264,9 +264,9 @@ export default function EnrollmentWizard() {
         toast.error('Please enter customer name');
         return;
       }
-      // PIN is optional - if provided, must be 4 digits
-      if (customerPin && (customerPin.length !== 4 || !/^\d{4}$/.test(customerPin))) {
-        toast.error('PIN must be exactly 4 digits');
+      // PIN is optional - if provided, must be 6 digits
+      if (customerPin && (customerPin.length !== 6 || !/^\d{6}$/.test(customerPin))) {
+        toast.error('PIN must be exactly 6 digits');
         return;
       }
       setStep(2);
@@ -383,33 +383,37 @@ if (customerError) throw customerError;
 
             // Create auth user for customer with PIN (after customer creation)
             // Only if PIN is provided
-            if (customerPin && customerPin.length === 4) {
+            if (customerPin && customerPin.length === 6) {
               try {
-              const authResponse = await fetch('/api/auth/complete-registration', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  phone: customerPhone,
-                  full_name: customerName,
-                  address: customerAddress || '',
-                  pan_number: customerPan || '',
-                  retailer_id: profile.retailer_id,
-                  customer_id: newCustomer.id, // Pass the customer ID
-                  pin: customerPin,
-                }),
-              });
+                console.log('Creating auth for customer:', { phone: customerPhone, customerId: newCustomer.id });
+                const authResponse = await fetch('/api/auth/complete-registration', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    phone: customerPhone,
+                    full_name: customerName,
+                    address: customerAddress || '',
+                    pan_number: customerPan || '',
+                    retailer_id: profile.retailer_id,
+                    customer_id: newCustomer.id,
+                    pin: customerPin,
+                  }),
+                });
 
-              const authData = await authResponse.json();
+                const authData = await authResponse.json();
 
-              if (!authResponse.ok) {
-                console.error('Auth creation failed:', authData.error);
-                // Don't show toast here - will show summary toast at the end
-              }
+                if (!authResponse.ok) {
+                  console.error('Auth creation failed:', authData);
+                  toast.error('Login setup failed: ' + (authData.error || 'Unknown error'));
+                } else {
+                  console.log('Auth created successfully:', authData);
+                }
               } catch (authError) {
                 console.error('Auth API error:', authError);
-                // Don't fail the whole enrollment if auth setup fails
-                toast.warning('Customer created but login setup failed.');
+                toast.error('Login setup failed. Use Reset PIN from customer details.');
               }
+            } else if (customerPin && customerPin.length !== 4) {
+              console.warn('PIN provided but invalid length:', customerPin.length);
             }
           }
         }
@@ -479,9 +483,9 @@ if (customerError) throw customerError;
       setStep(0);
       setEnrollmentType(null);
       
-      // Optionally navigate to schemes page after a short delay
+      // Navigate to customers page after a short delay
       setTimeout(() => {
-        router.push('/dashboard/schemes');
+        router.push('/dashboard/customers');
       }, 1500);
     } catch (error: any) {
       console.error('Enrollment error:', error);
@@ -650,14 +654,14 @@ if (customerError) throw customerError;
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="pin">4-Digit Login PIN (Optional)</Label>
+              <Label htmlFor="pin">6-Digit Login PIN (Optional)</Label>
               <Input
                 id="pin"
                 type="password"
-                placeholder="Set a 4-digit PIN for customer login"
+                placeholder="Set a 6-digit PIN for customer login"
                 value={customerPin}
                 onChange={(e) => setCustomerPin(e.target.value.replace(/\D/g, ''))}
-                maxLength={4}
+                maxLength={6}
                 disabled={!!existingCustomer}
               />
               <p className="text-xs text-muted-foreground">

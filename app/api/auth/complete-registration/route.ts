@@ -24,10 +24,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate PIN is 4 digits
-    if (!/^\d{4}$/.test(pin)) {
+    // Validate PIN is 6 digits
+    if (!/^\d{6}$/.test(pin)) {
       return NextResponse.json(
-        { error: 'PIN must be exactly 4 digits' },
+        { error: 'PIN must be exactly 6 digits' },
         { status: 400 }
       );
     }
