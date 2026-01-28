@@ -32,7 +32,6 @@ type Plan = {
   name: string;
   installment_amount: number;
   duration_months: number;
-  karat: string;
 };
 
 type Enrollment = {
@@ -43,6 +42,7 @@ type Enrollment = {
   start_date: string;
   billing_day_of_month: number;
   commitment_amount: number | null;
+  karat: string;
   created_at: string;
 
   customers: Customer | null;
@@ -112,6 +112,7 @@ export default function SchemesPage() {
           status,
           billing_day_of_month,
           commitment_amount,
+          karat,
           created_at,
           customers (
             id,
@@ -122,8 +123,7 @@ export default function SchemesPage() {
             id,
             name,
             installment_amount,
-            duration_months,
-            karat
+            duration_months
           )
         `)
         .eq('retailer_id', profile.retailer_id)
