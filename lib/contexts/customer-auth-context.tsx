@@ -162,15 +162,12 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         if (sessionError) {
           return { success: false, error: sessionError.message };
         }
-        
-        // Navigate after session is set
-        router.push('/c/schemes');
       }
 
       return { success: true };
     } catch (error: any) {
       console.error('Login error:', error);
-      return { success: false, error: error.message || 'Login failed' };
+      return { success: false, error: 'Login failed. Please try again.' };
     }
   };
 

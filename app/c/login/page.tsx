@@ -25,17 +25,15 @@ export default function CustomerLoginPage() {
     setError('');
     setLoading(true);
 
-    try {
-      const result = await signInWithPhone(phone, pin);
+    const result = await signInWithPhone(phone, pin);
+    
+    setLoading(false);
 
-      if (!result.success) {
-        setError(result.error || 'Invalid phone number or PIN');
-        setLoading(false);
-      }
-      // Don't navigate here - let the auth state change handle it
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
-      setLoading(false);
+    if (!result.success) {
+      setError(result.error || 'Invalid phone number or PIN');
+    } else {
+      // Success - navigate using window.location to force full page reload
+      window.location.href = '/c/schemes';
     }
   }
 
