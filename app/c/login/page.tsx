@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Gem, Sparkles, Phone, KeyRound } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,15 +19,22 @@ export default function CustomerLoginPage() {
   const [error, setError] = useState('');
   const { signInWithPhone } = useCustomerAuth();
   const router = useRouter();
+  const submittingRef = useRef(false); // Prevent double submission
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
+    
+    // Prevent double submission
+    if (submittingRef.current) return;
+    
+    submittingRef.current = true;
     setError('');
     setLoading(true);
 
     const result = await signInWithPhone(phone, pin);
     
     setLoading(false);
+    submittingRef.current = false;
 
     if (!result.success) {
       setError(result.error || 'Invalid phone number or PIN');

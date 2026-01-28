@@ -139,11 +139,12 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
 
   const signInWithPhone = async (phone: string, pin: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      // Sign in with phone and PIN
+      // Sign in with phone and PIN - use keepalive to prevent abort
       const response = await fetch('/api/auth/customer-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, pin }),
+        keepalive: true, // Prevents abort even if component unmounts
       });
 
       const data = await response.json();
