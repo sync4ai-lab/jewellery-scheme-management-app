@@ -128,6 +128,7 @@ export function PublicBrandingProvider({ children }: { children: ReactNode }) {
       isMounted = false;
       abortController.abort();
     };
+  }, []);
 
   return (
     <PublicBrandingContext.Provider value={{ branding, loading, isSubdomainMode }}>
