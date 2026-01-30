@@ -485,7 +485,7 @@ if (customerError) throw customerError;
       
       // Navigate to customers page after a short delay
       setTimeout(() => {
-        router.push('/dashboard/customers');
+        router.push('/customers');
       }, 1500);
     } catch (error: any) {
       console.error('Enrollment error:', error);
