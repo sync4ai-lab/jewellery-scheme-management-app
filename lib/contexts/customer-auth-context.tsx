@@ -75,18 +75,31 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
    * Centralized customer hydration
    */
   const hydrateCustomer = async (userId: string) => {
-    const { data, error } = await supabase
+    // Get the current user session to access phone/email
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setCustomer(null);
+      return;
+    }
+    // Prefer phone, fallback to email
+    let query = supabase
       .from('customers')
       .select('id, retailer_id, full_name, phone, email')
-      .eq('user_id', userId)
       .maybeSingle();
-
+    if (user.phone) {
+      query = query.eq('phone', user.phone);
+    } else if (user.email) {
+      query = query.eq('email', user.email);
+    } else {
+      setCustomer(null);
+      return;
+    }
+    const { data, error } = await query;
     if (error) {
       console.error('Customer hydrate error:', error);
       setCustomer(null);
       return;
     }
-
     setCustomer(data ?? null);
   };
 
