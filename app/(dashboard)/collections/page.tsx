@@ -453,6 +453,7 @@ export default function CollectionsPage() {
       setMode('CASH');
       await loadTransactions(selectedCustomerId);
       await loadMonthlyPaymentInfo(selectedEnrollmentId);
+      await loadAllTransactions();
     } catch (error: any) {
       console.error('Error recording payment:', error);
       toast.error(error?.message || 'Failed to record payment');
