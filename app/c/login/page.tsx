@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase/client';
+import { useBranding } from '@/lib/contexts/branding-context';
 
 export default function CustomerLoginPage() {
   const [phone, setPhone] = useState('');
@@ -18,6 +19,7 @@ export default function CustomerLoginPage() {
   const [error, setError] = useState('');
   const router = useRouter();
   const submittingRef = useRef(false);
+  const { branding } = useBranding();
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -31,12 +33,20 @@ export default function CustomerLoginPage() {
     try {
       // Clean phone number - remove spaces and special chars
       const cleanPhone = phone.replace(/\s+/g, '').replace(/[^\d+]/g, '');
-      
-      // Check if customer exists with this phone
+      // Get retailer_id from branding context
+      const retailerId = branding?.retailer_id || branding?.id;
+      if (!retailerId) {
+        setError('Retailer not found. Please contact support.');
+        setLoading(false);
+        submittingRef.current = false;
+        return;
+      }
+      // Check if customer exists with this phone and retailer
       const { data: customer, error: fetchError } = await supabase
         .from('customers')
-        .select('id, full_name, phone')
+        .select('id, full_name, phone, retailer_id')
         .eq('phone', cleanPhone)
+        .eq('retailer_id', retailerId)
         .maybeSingle();
 
       if (fetchError) {
