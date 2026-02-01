@@ -235,7 +235,6 @@ export default function PulseDashboard() {
         activeEnrollmentsAll,
         schemesAll,
       ] = await Promise.all([
-        // Latest gold rate (18K)
         supabase
           .from('gold_rates')
           .select('rate_per_gram, karat, effective_from')
@@ -244,8 +243,6 @@ export default function PulseDashboard() {
           .order('effective_from', { ascending: false })
           .limit(1)
           .maybeSingle(),
-
-        // Latest gold rate (22K)
         supabase
           .from('gold_rates')
           .select('rate_per_gram, karat, effective_from')
@@ -254,8 +251,6 @@ export default function PulseDashboard() {
           .order('effective_from', { ascending: false })
           .limit(1)
           .maybeSingle(),
-
-        // Latest gold rate (24K)
         supabase
           .from('gold_rates')
           .select('rate_per_gram, karat, effective_from')
@@ -264,8 +259,6 @@ export default function PulseDashboard() {
           .order('effective_from', { ascending: false })
           .limit(1)
           .maybeSingle(),
-
-        // Latest silver rate
         supabase
           .from('gold_rates')
           .select('rate_per_gram, karat, effective_from')
@@ -274,8 +267,6 @@ export default function PulseDashboard() {
           .order('effective_from', { ascending: false })
           .limit(1)
           .maybeSingle(),
-
-        // Period paid transactions - limit for performance
         supabase
           .from('transactions')
           .select('amount_paid, grams_allocated_snapshot, paid_at, enrollment_id, txn_type')
@@ -284,53 +275,43 @@ export default function PulseDashboard() {
           .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
           .gte('paid_at', startISO)
           .lt('paid_at', endISO)
-          .limit(10000), // Limit to prevent slow queries
-
-        // Dues outstanding - get unpaid billing months
+          .limit(1000), // Lower limit for faster dashboard
         supabase
           .from('enrollment_billing_months')
           .select('enrollment_id')
           .eq('retailer_id', retailerId)
           .gte('due_date', startISO.split('T')[0])
           .lt('due_date', endISO.split('T')[0])
-          .eq('primary_paid', false),
-
-        // Overdue: due_date before today AND not paid
+          .eq('primary_paid', false)
+          .limit(500),
         supabase
           .from('enrollment_billing_months')
           .select('enrollment_id', { count: 'exact', head: true })
           .eq('retailer_id', retailerId)
           .lt('due_date', todayDateISO)
-          .eq('primary_paid', false),
-
-        // New ACTIVE enrollments created today (UTC range)
+          .eq('primary_paid', false)
+          .limit(500),
         supabase
           .from('enrollments')
           .select('id', { count: 'exact', head: true })
           .eq('retailer_id', retailerId)
           .eq('status', 'ACTIVE')
           .gte('created_at', startISO)
-          .lt('created_at', endISO),
-
+          .lt('created_at', endISO)
+          .limit(500),
         safeCountCustomers(retailerId),
-
-        // RPC leaderboard (keep; your DB function defines output)
         supabase.rpc('get_staff_leaderboard', { period_days: 30 }),
-
-        // All active enrollments (for plan total computation)
         supabase
           .from('enrollments')
           .select('id, plan_id, status')
           .eq('retailer_id', retailerId)
           .eq('status', 'ACTIVE')
-          .limit(5000), // Reasonable limit for large retailers
-
-        // All schemes
+          .limit(500),
         supabase
           .from('scheme_templates')
           .select('id, installment_amount, duration_months')
           .eq('retailer_id', retailerId)
-          .limit(100), // Templates are limited, 100 is safe
+          .limit(100),
       ]);
 
       // Log any errors from the parallel queries

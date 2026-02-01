@@ -493,7 +493,8 @@ export default function CollectionsPage() {
         endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0).toISOString();
       }
 
-      // Build query - limit to reasonable number
+      // Build query - paginated and limited for performance
+      const offset = (currentPage - 1) * itemsPerPage;
       const { data, error } = await supabase
         .from('transactions')
         .select(`
@@ -517,7 +518,7 @@ export default function CollectionsPage() {
         .gte('paid_at', startDate)
         .lt('paid_at', endDate)
         .order('paid_at', { ascending: false })
-        .limit(500); // Limit results for performance
+        .range(offset, offset + itemsPerPage - 1); // Paginate results
 
       if (error) throw error;
 
@@ -525,7 +526,7 @@ export default function CollectionsPage() {
       
       // Only fetch enrollment data if we have transactions
       if (enrichedData.length > 0) {
-        const enrollmentIds = [...new Set(enrichedData.map(t => t.enrollment_id).filter(Boolean))];
+        const enrollmentIds = Array.from(new Set(enrichedData.map(t => t.enrollment_id).filter(Boolean)));
         
         if (enrollmentIds.length > 0) {
           const { data: enrollmentsData } = await supabase
@@ -574,12 +575,12 @@ export default function CollectionsPage() {
     }
   }
 
-  // Load all transactions when filters change (using debounced search)
+  // Load all transactions when filters or page change (using debounced search)
   useEffect(() => {
     if (profile?.retailer_id) {
       void loadAllTransactions();
     }
-  }, [profile?.retailer_id, txnDateFilter, txnTypeFilter, debouncedSearchQuery, txnStartDate, txnEndDate]);
+  }, [profile?.retailer_id, txnDateFilter, txnTypeFilter, debouncedSearchQuery, txnStartDate, txnEndDate, currentPage]);
 
   return (
     <div className="space-y-6 pb-32">
