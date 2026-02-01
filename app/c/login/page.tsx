@@ -20,6 +20,21 @@ export default function CustomerLoginPage() {
   const router = useRouter();
   const submittingRef = useRef(false);
   const { branding } = useBranding();
+  // Fallback: get retailer_id from localStorage or subdomain if branding is missing
+  function getRetailerId() {
+    if (branding?.retailer_id) return branding.retailer_id;
+    if (branding?.id) return branding.id;
+    // Try localStorage
+    const lsRetailerId = typeof window !== 'undefined' ? localStorage.getItem('retailer_id') : null;
+    if (lsRetailerId) return lsRetailerId;
+    // Try to parse from subdomain
+    if (typeof window !== 'undefined') {
+      const host = window.location.host;
+      const subdomain = host.split('.')[0];
+      if (subdomain && subdomain !== 'localhost') return subdomain;
+    }
+    return null;
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -33,8 +48,8 @@ export default function CustomerLoginPage() {
     try {
       // Clean phone number - remove spaces and special chars
       const cleanPhone = phone.replace(/\s+/g, '').replace(/[^\d+]/g, '');
-      // Get retailer_id from branding context
-      const retailerId = branding?.retailer_id || branding?.id;
+      // Get retailer_id from context, localStorage, or subdomain
+      const retailerId = getRetailerId();
       if (!retailerId) {
         setError('Retailer not found. Please contact support.');
         setLoading(false);
