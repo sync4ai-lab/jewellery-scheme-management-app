@@ -12,8 +12,10 @@ export default function CustomerLoginPage() {
   }, []);
 
   return (
-    <div>
-      Customer Login
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        Customer Login
+      </div>
     </div>
   );
 }
