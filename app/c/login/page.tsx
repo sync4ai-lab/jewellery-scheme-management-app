@@ -11,5 +11,9 @@ export default function CustomerLoginPage() {
     console.log('mounted');
   }, []);
 
-  // still NO JSX
+  return (
+    <div>
+      Customer Login
+    </div>
+  );
 }
