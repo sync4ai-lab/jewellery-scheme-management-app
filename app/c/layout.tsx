@@ -3,29 +3,43 @@ import React from "react";
 
 import { CustomerAuthProvider, useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { CustomerMobileNav } from '@/components/customer/mobile-nav';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useEffect } from 'react';
+
+// Routes that don't require authentication
+const PUBLIC_ROUTES = ['/c/login', '/c/register', '/c/forgot-pin'];
 
 function CustomerGuard({ children }: { children: React.ReactNode }) {
   const { user, customer, loading } = useCustomerAuth();
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Check if current route is public (doesn't need auth)
+  const isPublicRoute = PUBLIC_ROUTES.some(route => pathname?.startsWith(route));
 
   useEffect(() => {
-    if (!loading && !user) {
+    // Don't redirect on public routes
+    if (isPublicRoute) return;
+
+    if (!loading && !user && !customer) {
       router.push('/c/login');
     }
-    if (!loading && user && !customer) {
-      // If user exists but customer profile is missing, force logout
-      router.push('/c/login');
-    }
-  }, [user, customer, loading, router]);
+  }, [user, customer, loading, router, isPublicRoute]);
+
+  // Public routes render immediately without auth check
+  if (isPublicRoute) {
+    return <>{children}</>;
+  }
 
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
-  if (!user || !customer) {
+  
+  // For bypass mode, we only have customer (no user)
+  if (!user && !customer) {
     return null;
   }
+  
   return <>{children}</>;
 }
 
