@@ -31,12 +31,41 @@ function CustomerGuard({ children }: { children: React.ReactNode }) {
 export default function CustomerLayout({ children }: { children: React.ReactNode }) {
   return (
     <CustomerAuthProvider>
-      <CustomerGuard>
-        <div className="min-h-screen pb-20 md:pb-0">
-          {children}
-          <CustomerMobileNav />
-        </div>
-      </CustomerGuard>
+      <AbortErrorBoundary>
+        <CustomerGuard>
+          <div className="min-h-screen pb-20 md:pb-0">
+            {children}
+            <CustomerMobileNav />
+          </div>
+        </CustomerGuard>
+      </AbortErrorBoundary>
     </CustomerAuthProvider>
   );
+}
+
+class AbortErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error: any) {
+    if (error?.name === 'AbortError') {
+      // Suppress AbortError
+      return { hasError: false };
+    }
+    return { hasError: true };
+  }
+  componentDidCatch(error: any, info: any) {
+    if (error?.name === 'AbortError') {
+      // Suppress AbortError
+      console.warn('Suppressed AbortError in customer layout:', error);
+      this.setState({ hasError: false });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return <div>Something went wrong.</div>;
+    }
+    return this.props.children;
+  }
 }

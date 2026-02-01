@@ -60,11 +60,24 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       (async () => {
         setLoading(true);
         try {
-          const { data, error } = await supabase
-            .from('customers')
-            .select('id, retailer_id, full_name, phone, email')
-            .eq('phone', phoneBypass)
-            .maybeSingle();
+          let data = null, error = null;
+          try {
+            const result = await supabase
+              .from('customers')
+              .select('id, retailer_id, full_name, phone, email')
+              .eq('phone', phoneBypass)
+              .maybeSingle();
+            data = result.data;
+            error = result.error;
+          } catch (err) {
+            const errorObj = err as any;
+            if (errorObj?.name === 'AbortError') {
+              console.warn('Suppressed AbortError in customer phone bypass:', err);
+              setLoading(false);
+              return;
+            }
+            throw err;
+          }
           if (isMounted) {
             if (data) {
               setCustomer(data);
@@ -75,11 +88,6 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
             setLoading(false);
           }
         } catch (err: any) {
-          if (err?.name === 'AbortError') {
-            // Ignore abort errors silently
-            setLoading(false);
-            return;
-          }
           setError('Customer fetch error: ' + (err?.message || 'Unknown error'));
           setLoading(false);
         }
@@ -128,9 +136,9 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       .select('id, retailer_id, full_name, phone, email')
       .maybeSingle();
     if (user.phone) {
-      query = query.eq('phone', user.phone);
+      (query as any).eq('phone', user.phone);
     } else if (user.email) {
-      query = query.eq('email', user.email);
+      (query as any).eq('email', user.email);
     } else {
       setCustomer(null);
       return;
