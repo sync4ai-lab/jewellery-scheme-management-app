@@ -36,13 +36,26 @@ if (!supabaseUrl || !supabaseAnonKey) {
   });
 }
 
-// Direct client creation - simpler and more reliable
-// The global handlers above will catch any AbortError
+// Custom lock implementation that never aborts - prevents AbortError entirely
+const noOpLock = async <R>(
+  _name: string,
+  _acquireTimeout: number,
+  fn: () => Promise<R>
+): Promise<R> => {
+  // Simply execute the function without any locking
+  return await fn();
+};
+
+// Direct client creation with lock disabled to prevent AbortError
 export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
+    // Disable the Web Locks API to prevent AbortError
+    lock: noOpLock,
+    // Use localStorage directly without locking
+    flowType: 'implicit',
   },
   global: {
     headers: {
