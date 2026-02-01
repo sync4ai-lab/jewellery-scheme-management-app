@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 import { AnimatedLogo } from '@/components/ui/animated-logo';
 import { PublicBrandingProvider, usePublicBranding } from '@/lib/contexts/public-branding-context';
 
-function LoginForm() {
+function LoginFormInner() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,7 +35,7 @@ function LoginForm() {
       if (error) throw error;
       router.push('/pulse');
     } catch (err: any) {
-      setError(err?.message || 'Failed to sign in');
+      setError(err?.message ?? 'Failed to sign in');
     } finally {
       setLoading(false);
     }
@@ -54,27 +54,23 @@ function LoginForm() {
       <div className="w-full max-w-md space-y-6">
 
         <div className="text-center space-y-2">
-          <div className="flex items-center justify-center gap-3 mb-4">
+          <div className="flex justify-center mb-4">
             <AnimatedLogo logoUrl={null} size="lg" showAnimation />
           </div>
 
-          <div className="w-full py-3 px-6 rounded-2xl bg-gradient-to-r from-gold-400 via-gold-500 to-gold-600 shadow-lg">
-            <h1 className="text-2xl font-bold text-white drop-shadow-md">
+          <div className="rounded-2xl bg-gradient-to-r from-gold-400 via-gold-500 to-gold-600 py-3 px-6">
+            <h1 className="text-2xl font-bold text-white">
               {branding.name}
             </h1>
           </div>
 
-          <p className="text-muted-foreground mt-4">
-            Premium Gold Savings Scheme Management
-          </p>
-
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <div className="flex justify-center gap-2 text-sm text-muted-foreground mt-2">
             <Sparkles className="w-4 h-4 text-primary" />
             <span>Trusted by Jewellers Across India</span>
           </div>
         </div>
 
-        <Card className="glass-card">
+        <Card>
           <CardHeader>
             <CardTitle>Sign In</CardTitle>
             <CardDescription>
@@ -91,9 +87,8 @@ function LoginForm() {
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label>Email</Label>
                 <Input
-                  id="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -102,9 +97,8 @@ function LoginForm() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label>Password</Label>
                 <Input
-                  id="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -112,20 +106,16 @@ function LoginForm() {
                 />
               </div>
 
-              <Button
-                type="submit"
-                className="w-full gold-gradient text-white"
-                disabled={loading}
-              >
-                {loading ? 'Signing in...' : 'Sign In'}
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? 'Signing in…' : 'Sign In'}
               </Button>
             </form>
           </CardContent>
         </Card>
 
-        <div className="text-center text-sm text-muted-foreground">
-          © 2026 {branding.businessName}. All rights reserved.
-        </div>
+        <p className="text-center text-sm text-muted-foreground">
+          © 2026 {branding.businessName}
+        </p>
       </div>
     </div>
   );
@@ -134,7 +124,7 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <PublicBrandingProvider>
-      <LoginForm />
+      <LoginFormInner />
     </PublicBrandingProvider>
   );
 }
