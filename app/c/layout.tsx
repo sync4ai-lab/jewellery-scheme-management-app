@@ -48,17 +48,17 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   const BrandingProvider = require('@/lib/contexts/branding-context').BrandingProvider;
   return (
     <CustomerAuthProvider>
-      <BrandingProvider>
-        <AbortErrorBoundary>
-          <CustomerGuard>
+      <AbortErrorBoundary>
+        <CustomerGuard>
+          <BrandingProvider>
             <div className="min-h-screen pb-20 md:pb-0">
               <CustomerTopBar />
               {children}
               <CustomerMobileNav />
             </div>
-          </CustomerGuard>
-        </AbortErrorBoundary>
-      </BrandingProvider>
+          </BrandingProvider>
+        </CustomerGuard>
+      </AbortErrorBoundary>
     </CustomerAuthProvider>
   );
 }
