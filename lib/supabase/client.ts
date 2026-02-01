@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -10,16 +10,59 @@ if (!supabaseUrl || !supabaseAnonKey) {
   });
 }
 
-export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-  },
-  global: {
-    headers: {
-      'Content-Type': 'application/json',
-    },
+// Lazy initialization to avoid AbortError during module loading
+let _supabase: SupabaseClient | null = null;
+
+function getSupabaseClient(): SupabaseClient {
+  if (!_supabase) {
+    try {
+      _supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
+        auth: {
+          autoRefreshToken: true,
+          persistSession: true,
+          detectSessionInUrl: true,
+          // Disable lock to prevent AbortError in some environments
+          lock: typeof navigator !== 'undefined' && navigator.locks ? undefined : false as any,
+        },
+        global: {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      });
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        console.warn('Suppressed AbortError during Supabase client initialization:', err);
+        // Retry without lock
+        _supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
+          auth: {
+            autoRefreshToken: true,
+            persistSession: true,
+            detectSessionInUrl: false,
+          },
+          global: {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          },
+        });
+      } else {
+        throw err;
+      }
+    }
+  }
+  return _supabase;
+}
+
+// Export a proxy that lazily initializes the client
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_, prop) {
+    const client = getSupabaseClient();
+    const value = (client as any)[prop];
+    if (typeof value === 'function') {
+      return value.bind(client);
+    }
+    return value;
   },
 });
 

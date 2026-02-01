@@ -1,5 +1,5 @@
-'import React from "react";'
-'use client';
+"use client";
+import React from "react";
 
 import { CustomerAuthProvider, useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { CustomerMobileNav } from '@/components/customer/mobile-nav';
