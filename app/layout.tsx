@@ -25,6 +25,14 @@ export const metadata: Metadata = {
   },
 };
 
+if (typeof window !== "undefined") {
+  window.addEventListener("unhandledrejection", function(event) {
+    if (event.reason && event.reason.name === "AbortError") {
+      event.preventDefault();
+    }
+  });
+}
+
 export default function RootLayout({
   children,
 }: {
