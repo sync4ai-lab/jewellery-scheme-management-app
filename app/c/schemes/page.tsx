@@ -17,10 +17,11 @@ import { toast } from 'sonner';
 type Plan = {
   id: string;
   retailer_id?: string | null;
-  plan_name: string;
-  monthly_amount: number;
-  tenure_months: number;
-  karat: string | null;
+  name: string;
+  installment_amount: number;
+  duration_months: number;
+  bonus_percentage?: number | null;
+  description?: string | null;
   is_active?: boolean | null;
   allow_self_enroll?: boolean | null;
 };
@@ -83,13 +84,15 @@ export default function CustomerSchemesPage() {
     setLoading(true);
 
     try {
-      // Fetch ALL plans for the retailer (for mapping and available display)
+      // Fetch ALL plans for the retailer (for mapping and available display) from scheme_templates
       const allPlansResult = await supabase
-        .from('plans')
-        .select('id, plan_name, monthly_amount, tenure_months, karat, is_active, allow_self_enroll')
+        .from('scheme_templates')
+        .select('id, retailer_id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll')
         .eq('retailer_id', customer.retailer_id);
       const allPlans: Plan[] = allPlansResult.data || [];
       console.log('DEBUG allPlans:', allPlans);
+      const allPlanIds = allPlans.map(p => p.id);
+      console.log('DEBUG allPlanIds:', allPlanIds);
 
       // Only show available plans as active and self-enrollable
       setAvailablePlans(allPlans.filter(p => p.is_active && p.allow_self_enroll));
@@ -103,16 +106,37 @@ export default function CustomerSchemesPage() {
       console.log('DEBUG enrollmentsResult:', enrollmentsResult.data);
 
       if (enrollmentsResult.data && enrollmentsResult.data.length > 0) {
+
         const enrollmentRows = enrollmentsResult.data as any[];
         const planMap = new Map(allPlans.map(t => [t.id, t]));
+        const enrollmentIds = enrollmentRows.map(e => e.id);
+        const planIdsInEnrollments = enrollmentRows.map(e => e.plan_id);
+        console.log('DEBUG planIdsInEnrollments:', planIdsInEnrollments);
         console.log('DEBUG planMap:', planMap);
 
-        // Fetch transactions
-        const { data: transactions } = await supabase
-          .from('transactions')
-          .select('id, enrollment_id, amount_paid, grams_allocated, month, payment_status')
-          .in('enrollment_id', enrollmentRows.map(e => e.id));
-        console.log('DEBUG transactions:', transactions);
+        let transactions: Transaction[] = [];
+        if (enrollmentRows.length > 0) {
+          // Try with enrollment_id
+          try {
+            const { data: txData, error } = await supabase
+              .from('transactions')
+              .select('id, enrollment_id, scheme_id, amount_paid, grams_allocated, month, payment_status')
+              .or(`enrollment_id.in.(${enrollmentIds.join(',')}),scheme_id.in.(${enrollmentIds.join(',')})`);
+            if (error) {
+              console.warn('DEBUG transaction query error:', error);
+            }
+            if (txData && txData.length > 0) {
+              // Map to enrollment_id if possible, else fallback to scheme_id
+              transactions = txData.map(t => ({
+                ...t,
+                enrollment_id: t.enrollment_id || t.scheme_id
+              }));
+              console.log('DEBUG transactions (merged):', transactions);
+            }
+          } catch (err) {
+            console.error('DEBUG transactions query error:', err);
+          }
+        }
 
         const transactionsMap = new Map<string, Transaction[]>();
         (transactions || []).forEach(tx => {
@@ -125,13 +149,14 @@ export default function CustomerSchemesPage() {
         const cards: EnrollmentCard[] = enrollmentRows.map(e => {
           const plan = planMap.get(e.plan_id);
           if (!plan) console.warn('DEBUG missing plan for enrollment', e);
-          const monthly = Number(e.commitment_amount || plan?.monthly_amount || 0);
-          const duration = Number(plan?.tenure_months || 0);
+          const monthly = Number(e.commitment_amount || plan?.installment_amount || 0);
+          const duration = Number(plan?.duration_months || 0);
           const startDateLabel = e.created_at
             ? new Date(e.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
             : null;
 
-          const txs = transactionsMap.get(e.id) || [];
+          // Find all transactions for this enrollment (by id or plan_id fallback)
+          const txs = transactions.filter(t => t.enrollment_id === e.id || t.scheme_id === e.plan_id);
           const totalPaid = txs.reduce((sum, t) => sum + (t.amount_paid || 0), 0);
           const totalGrams = txs.reduce((sum, t) => sum + (t.grams_allocated || 0), 0);
           const installmentsPaid = txs.filter(t => t.payment_status === 'PAID').length;
@@ -151,7 +176,7 @@ export default function CustomerSchemesPage() {
           return {
             id: e.id,
             status: e.status || 'ACTIVE',
-            planName: plan?.plan_name || 'Unknown Plan',
+            planName: plan?.name || 'Unknown Plan',
             durationMonths: duration,
             monthlyAmount: monthly,
             totalPaid,
@@ -244,16 +269,18 @@ export default function CustomerSchemesPage() {
             <h2 className="text-3xl font-bold bg-gradient-to-r from-gold-600 to-rose-600 bg-clip-text text-transparent">Available Plans</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {availablePlans
-                .filter(plan => !enrollments.some(e => e.planName === plan.plan_name))
+                .filter(plan => !enrollments.some(e => e.planName === plan.name))
                 .map(plan => (
                   <Card key={plan.id} className="group overflow-hidden">
                     <div className="h-28 bg-gradient-to-br from-rose-400 via-gold-400 to-amber-600 relative overflow-hidden">
                       <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-white"></div>
                     </div>
                     <CardHeader className="pt-6">
-                      <CardTitle className="text-2xl">{plan.plan_name}</CardTitle>
+                      <CardTitle className="text-2xl">{plan.name}</CardTitle>
                       <CardDescription>
-                        {plan.karat ? `${plan.karat} • ` : ''}{plan.tenure_months} months • ₹{plan.monthly_amount.toLocaleString()}
+                        {plan.duration_months} months • ₹{plan.installment_amount.toLocaleString()}
+                        {plan.bonus_percentage ? ` • Bonus: ${plan.bonus_percentage}%` : ''}
+                        {plan.description ? <><br />{plan.description}</> : null}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -263,6 +290,9 @@ export default function CustomerSchemesPage() {
                     </CardContent>
                   </Card>
                 ))}
+              {availablePlans.filter(plan => !enrollments.some(e => e.planName === plan.name)).length === 0 && (
+                <div className="col-span-full text-center text-muted-foreground py-8">All available plans are already enrolled.</div>
+              )}
             </div>
           </div>
         )}
@@ -278,8 +308,9 @@ export default function CustomerSchemesPage() {
                   : 0;
                 const isActive = enrollment.status === 'ACTIVE';
                 let dueMessage = '';
-                if (enrollment.monthlyInstallmentPaid) dueMessage = 'Thanks for your timely Payment this month.';
-                else if (enrollment.daysOverdue && enrollment.daysOverdue > 0) dueMessage = 'Your Account is in Due.';
+                if (enrollment.monthlyInstallmentPaid) dueMessage = 'Thanks for your timely payment this month!';
+                else if (enrollment.daysOverdue && enrollment.daysOverdue > 0) dueMessage = `Your account is overdue by ${enrollment.daysOverdue} day(s). Please pay soon.`;
+                else if (!enrollment.monthlyInstallmentPaid) dueMessage = 'Your payment for this month is pending.';
 
                 return (
                   <Card key={enrollment.id} className="overflow-hidden group">
@@ -315,9 +346,10 @@ export default function CustomerSchemesPage() {
                       {enrollment.transactions && (
                         <div className="grid grid-cols-6 gap-1 mt-2">
                           {Array.from({ length: enrollment.durationMonths }, (_, i) => {
+                            // Find transaction for this month (by order)
                             const tx = enrollment.transactions?.[i];
                             const paid = tx?.payment_status === 'PAID';
-                            return <div key={i} className={`w-4 h-4 rounded-full ${paid ? 'bg-gold-500' : 'bg-muted-foreground/40'}`} title={`Month ${i + 1}: ${paid ? 'Paid' : 'Due'}`}></div>;
+                            return <div key={i} className={`w-4 h-4 rounded-full border ${paid ? 'bg-gold-500 border-gold-700' : 'bg-muted-foreground/40 border-gold-200'}`} title={`Month ${i + 1}: ${paid ? 'Paid' : 'Due'}`}></div>;
                           })}
                         </div>
                       )}
@@ -345,7 +377,7 @@ export default function CustomerSchemesPage() {
       <Dialog open={enrollDialogOpen} onOpenChange={setEnrollDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Enroll in {selectedPlan?.plan_name}</DialogTitle>
+            <DialogTitle>Enroll in {selectedPlan?.name}</DialogTitle>
             <DialogDescription>Choose your monthly commitment amount</DialogDescription>
           </DialogHeader>
           {selectedPlan && (
@@ -356,7 +388,7 @@ export default function CustomerSchemesPage() {
                 type="number"
                 value={commitmentAmount}
                 onChange={e => setCommitmentAmount(e.target.value)}
-                min={selectedPlan.monthly_amount}
+                min={selectedPlan.installment_amount}
               />
               <div className="flex gap-3">
                 <Button variant="outline" onClick={() => setEnrollDialogOpen(false)} disabled={enrolling}>Cancel</Button>
