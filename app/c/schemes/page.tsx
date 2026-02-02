@@ -1,3 +1,14 @@
+const { branding, loading: brandingLoading } = useBranding();
+const { customer, loading: authLoading } = useCustomerAuth();
+
+if (brandingLoading || authLoading) {
+  return <div className="p-6">Loading...</div>;
+}
+
+if (!branding || !customer) {
+  return <div className="p-6 text-red-500">Missing context</div>;
+}
+
 'use client';
 export const dynamic = 'force-dynamic';
 
