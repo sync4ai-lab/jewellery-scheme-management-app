@@ -89,6 +89,7 @@ export default function CustomerSchemesPage() {
         .select('id, plan_name, monthly_amount, tenure_months, karat, is_active, allow_self_enroll')
         .eq('retailer_id', customer.retailer_id);
       const allPlans: Plan[] = allPlansResult.data || [];
+      console.log('DEBUG allPlans:', allPlans);
 
       // Only show available plans as active and self-enrollable
       setAvailablePlans(allPlans.filter(p => p.is_active && p.allow_self_enroll));
@@ -99,16 +100,19 @@ export default function CustomerSchemesPage() {
         .select('id, plan_id, commitment_amount, status, created_at')
         .eq('customer_id', customer.id)
         .order('created_at', { ascending: false });
+      console.log('DEBUG enrollmentsResult:', enrollmentsResult.data);
 
       if (enrollmentsResult.data && enrollmentsResult.data.length > 0) {
         const enrollmentRows = enrollmentsResult.data as any[];
         const planMap = new Map(allPlans.map(t => [t.id, t]));
+        console.log('DEBUG planMap:', planMap);
 
         // Fetch transactions
         const { data: transactions } = await supabase
           .from('transactions')
           .select('id, enrollment_id, amount_paid, grams_allocated, month, payment_status')
           .in('enrollment_id', enrollmentRows.map(e => e.id));
+        console.log('DEBUG transactions:', transactions);
 
         const transactionsMap = new Map<string, Transaction[]>();
         (transactions || []).forEach(tx => {
@@ -120,6 +124,7 @@ export default function CustomerSchemesPage() {
         // Map enrollments to cards with live data
         const cards: EnrollmentCard[] = enrollmentRows.map(e => {
           const plan = planMap.get(e.plan_id);
+          if (!plan) console.warn('DEBUG missing plan for enrollment', e);
           const monthly = Number(e.commitment_amount || plan?.monthly_amount || 0);
           const duration = Number(plan?.tenure_months || 0);
           const startDateLabel = e.created_at
@@ -164,7 +169,7 @@ export default function CustomerSchemesPage() {
         setEnrollments(cards);
       }
     } catch (err) {
-      console.error(err);
+      console.error('DEBUG loadData error:', err);
     } finally {
       setLoading(false);
     }
