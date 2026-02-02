@@ -30,10 +30,10 @@ type Transaction = {
   id: string;
   enrollment_id: string;
   amount_paid: number;
-  grams_allocated: number;
-  month: string;
-  payment_status: 'PAID' | 'DUE';
+  grams_allocated_snapshot: number;
+  paid_at: string | null;
   txn_type?: string;
+  payment_status: string;
 };
 
 type EnrollmentCard = {
@@ -51,6 +51,9 @@ type EnrollmentCard = {
   daysOverdue?: number;
   nextPaymentDate?: string | null;
   transactions?: Transaction[];
+  planCreatedAt?: string | null;
+  paidMonths?: Set<string>;
+  planId?: string;
 };
 
 export default function CustomerSchemesPage() {
@@ -79,6 +82,11 @@ export default function CustomerSchemesPage() {
     }
     void loadData();
   }, [customer]);
+
+  function openEnrollDialog(plan: Plan) {
+    setSelectedPlan(plan);
+    setEnrollDialogOpen(true);
+  }
 
   async function loadData() {
     if (!customer) return;
@@ -149,26 +157,25 @@ export default function CustomerSchemesPage() {
         const installmentsPaid = txs.filter(t => t.txn_type === 'PRIMARY_INSTALLMENT').length;
         // Build a map of paid months for calendar
         const paidMonths = new Set(
-          txs.filter(t => t.txn_type === 'PRIMARY_INSTALLMENT').map(t => {
-            if (t.paid_at) {
-              const d = new Date(t.paid_at);
-              return `${d.getFullYear()}-${d.getMonth()}`;
-            }
-            return '';
+          txs.filter(t => t.txn_type === 'PRIMARY_INSTALLMENT' && t.paid_at).map(t => {
+            const d = new Date(t.paid_at!);
+            return `${d.getFullYear()}-${d.getMonth()}`;
           })
         );
 
-        const currentMonthTx = txs.find(t => t.month === currentMonthStr);
-        const monthlyInstallmentPaid = currentMonthTx?.txn_type === 'PRIMARY_INSTALLMENT';
-        const dueDate = currentMonthTx?.month || null;
-        const daysOverdue = monthlyInstallmentPaid
-          ? 0
-          : currentMonthTx
-          ? Math.max(0, Math.floor((Date.now() - new Date(currentMonthTx.month).getTime()) / (1000 * 60 * 60 * 24)))
-          : undefined;
+        // For calendar, use plan created_at if available, else enrollment created_at
+        const planCreatedAt = plan?.created_at || e.created_at || null;
+        const planId = plan?.id || e.plan_id;
 
-        const upcomingTx = txs.find(t => t.txn_type === 'PRIMARY_INSTALLMENT' && t.payment_status !== 'SUCCESS');
-        const nextPaymentDate = upcomingTx ? upcomingTx.month : null;
+        // No 'month' field, so use paid_at for current month logic
+        const now = new Date();
+        const currentMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
+        const monthlyInstallmentPaid = paidMonths.has(currentMonthKey);
+        const dueDate = null;
+        const daysOverdue = undefined;
+
+        // No payment_status 'SUCCESS', so skip nextPaymentDate logic for now
+        const nextPaymentDate = null;
 
         return {
           id: e.id,
@@ -185,8 +192,9 @@ export default function CustomerSchemesPage() {
           daysOverdue,
           nextPaymentDate,
           transactions: txs,
+          planCreatedAt,
           paidMonths,
-          plan,
+          planId,
         };
       });
 
@@ -261,7 +269,7 @@ export default function CustomerSchemesPage() {
             <h2 className="text-3xl font-bold bg-gradient-to-r from-gold-600 to-rose-600 bg-clip-text text-transparent">Available Plans</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {availablePlans
-                .filter(plan => !enrollments.some(e => e.plan && e.plan.id === plan.id))
+                .filter(plan => !enrollments.some(e => e.planId === plan.id))
                 .map(plan => (
                   <Card key={plan.id} className="group overflow-hidden">
                     <div className="h-28 bg-gradient-to-br from-rose-400 via-gold-400 to-amber-600 relative overflow-hidden">
@@ -282,7 +290,7 @@ export default function CustomerSchemesPage() {
                     </CardContent>
                   </Card>
                 ))}
-              {availablePlans.filter(plan => !enrollments.some(e => e.plan && e.plan.id === plan.id)).length === 0 && (
+              {availablePlans.filter(plan => !enrollments.some(e => e.planId === plan.id)).length === 0 && (
                 <div className="col-span-full text-center text-muted-foreground py-8">All available plans are already enrolled.</div>
               )}
             </div>
@@ -342,7 +350,7 @@ export default function CustomerSchemesPage() {
                         <div className="grid grid-cols-6 gap-1">
                           {Array.from({ length: enrollment.durationMonths }, (_, i) => {
                             // Calculate the month for this dot
-                            const start = enrollment.plan?.created_at ? new Date(enrollment.plan.created_at) : (enrollment.startDateLabel ? new Date(enrollment.startDateLabel) : new Date());
+                            const start = enrollment.planCreatedAt ? new Date(enrollment.planCreatedAt) : (enrollment.startDateLabel ? new Date(enrollment.startDateLabel) : new Date());
                             const monthDate = new Date(start.getFullYear(), start.getMonth() + i, 1);
                             const monthKey = `${monthDate.getFullYear()}-${monthDate.getMonth()}`;
                             const paid = enrollment.paidMonths && enrollment.paidMonths.has(monthKey);
@@ -353,7 +361,7 @@ export default function CustomerSchemesPage() {
                         </div>
                         <div className="grid grid-cols-6 gap-1 mt-1">
                           {Array.from({ length: enrollment.durationMonths }, (_, i) => {
-                            const start = enrollment.plan?.created_at ? new Date(enrollment.plan.created_at) : (enrollment.startDateLabel ? new Date(enrollment.startDateLabel) : new Date());
+                            const start = enrollment.planCreatedAt ? new Date(enrollment.planCreatedAt) : (enrollment.startDateLabel ? new Date(enrollment.startDateLabel) : new Date());
                             const monthDate = new Date(start.getFullYear(), start.getMonth() + i, 1);
                             return (
                               <div key={i} className="w-8 text-xs text-center text-muted-foreground">
