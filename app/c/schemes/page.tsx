@@ -1,11 +1,11 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Gem, Plus, ArrowRight, LogOut, Bell, Wallet, Sparkles, Calendar } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Sparkles, ArrowRight, Plus, Calendar } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase/client';
@@ -13,8 +13,6 @@ import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
-
-export const dynamic = 'force-dynamic';
 
 type Plan = {
   id: string;
@@ -25,13 +23,22 @@ type Plan = {
   karat: string | null;
   is_active?: boolean | null;
   allow_self_enroll?: boolean | null;
-} | null;
+};
+
+type Transaction = {
+  id: string;
+  enrollment_id: string;
+  amount_paid: number;
+  grams_allocated: number;
+  month: string;
+  payment_status: 'PAID' | 'DUE';
+};
 
 type EnrollmentCard = {
   id: string;
   status: string;
   planName: string;
-  durationMonths?: number;
+  durationMonths: number;
   monthlyAmount: number;
   totalPaid: number;
   totalGrams: number;
@@ -40,13 +47,8 @@ type EnrollmentCard = {
   monthlyInstallmentPaid?: boolean;
   dueDate?: string | null;
   daysOverdue?: number;
-};
-
-type Notification = {
-  id: string;
-  notification_type?: string | null;
-  message: string;
-  created_at: string;
+  nextPaymentDate?: string | null;
+  transactions?: Transaction[];
 };
 
 export default function CustomerSchemesPage() {
@@ -54,12 +56,10 @@ export default function CustomerSchemesPage() {
   const router = useRouter();
 
   const [enrollments, setEnrollments] = useState<EnrollmentCard[]>([]);
-  const [availablePlans, setAvailablePlans] = useState<NonNullable<Plan>[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [availablePlans, setAvailablePlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
-
   const [enrollDialogOpen, setEnrollDialogOpen] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<NonNullable<Plan> | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [commitmentAmount, setCommitmentAmount] = useState('');
   const [enrolling, setEnrolling] = useState(false);
 
@@ -76,23 +76,109 @@ export default function CustomerSchemesPage() {
       return;
     }
     void loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer, router]);
+  }, [customer]);
 
   async function loadData() {
     if (!customer) return;
     setLoading(true);
+
     try {
-      // fetch enrollments, plans, notifications...
-      // (your existing Supabase logic untouched)
-    } catch (error) {
-      console.error('Error loading data:', error);
+      // Fetch available plans
+      const plansResult = await supabase
+        .from('plans')
+        .select('id, plan_name, monthly_amount, tenure_months, karat, is_active, allow_self_enroll')
+        .eq('retailer_id', customer.retailer_id)
+        .eq('is_active', true)
+        .eq('allow_self_enroll', true)
+        .order('monthly_amount', { ascending: true });
+
+      if (plansResult.data) setAvailablePlans(plansResult.data as Plan[]);
+
+      // Fetch enrollments
+      const enrollmentsResult = await supabase
+        .from('enrollments')
+        .select('id, plan_id, commitment_amount, status, created_at')
+        .eq('customer_id', customer.id)
+        .order('created_at', { ascending: false });
+
+      if (enrollmentsResult.data && enrollmentsResult.data.length > 0) {
+        const enrollmentRows = enrollmentsResult.data as any[];
+        const planIds = [...new Set(enrollmentRows.map(e => e.plan_id))];
+
+        const { data: schemeTemplates } = await supabase
+          .from('plans')
+          .select('id, plan_name, monthly_amount, tenure_months, karat')
+          .in('id', planIds);
+
+        const schemeMap = new Map((schemeTemplates || []).map(t => [t.id, t]));
+
+        // Fetch transactions
+        const { data: transactions } = await supabase
+          .from('transactions')
+          .select('id, enrollment_id, amount_paid, grams_allocated, month, payment_status')
+          .in('enrollment_id', enrollmentRows.map(e => e.id));
+
+        const transactionsMap = new Map<string, Transaction[]>();
+        (transactions || []).forEach(tx => {
+          const arr = transactionsMap.get(tx.enrollment_id) || [];
+          arr.push(tx);
+          transactionsMap.set(tx.enrollment_id, arr);
+        });
+
+        // Map enrollments to cards with live data
+        const cards: EnrollmentCard[] = enrollmentRows.map(e => {
+          const plan = schemeMap.get(e.plan_id);
+          const monthly = Number(e.commitment_amount || plan?.monthly_amount || 0);
+          const duration = Number(plan?.tenure_months || 0);
+          const startDateLabel = e.created_at
+            ? new Date(e.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+            : null;
+
+          const txs = transactionsMap.get(e.id) || [];
+          const totalPaid = txs.reduce((sum, t) => sum + (t.amount_paid || 0), 0);
+          const totalGrams = txs.reduce((sum, t) => sum + (t.grams_allocated || 0), 0);
+          const installmentsPaid = txs.filter(t => t.payment_status === 'PAID').length;
+          const currentMonthTx = txs.find(t => t.month === currentMonthStr);
+          const monthlyInstallmentPaid = currentMonthTx?.payment_status === 'PAID';
+          const dueDate = currentMonthTx?.month || null;
+          const daysOverdue = monthlyInstallmentPaid
+            ? 0
+            : currentMonthTx
+            ? Math.max(0, Math.floor((Date.now() - new Date(currentMonthTx.month).getTime()) / (1000 * 60 * 60 * 24)))
+            : undefined;
+
+          // Next Payment calculation
+          const upcomingTx = txs.find(t => t.payment_status === 'DUE');
+          const nextPaymentDate = upcomingTx ? upcomingTx.month : null;
+
+          return {
+            id: e.id,
+            status: e.status || 'ACTIVE',
+            planName: plan?.plan_name || 'Unknown Plan',
+            durationMonths: duration,
+            monthlyAmount: monthly,
+            totalPaid,
+            totalGrams,
+            installmentsPaid,
+            startDateLabel,
+            monthlyInstallmentPaid,
+            dueDate,
+            daysOverdue,
+            nextPaymentDate,
+            transactions: txs,
+          };
+        });
+
+        setEnrollments(cards);
+      }
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoading(false);
     }
   }
 
-  function openEnrollDialog(plan: NonNullable<Plan>) {
+  function openEnrollDialog(plan: Plan) {
     setSelectedPlan(plan);
     setCommitmentAmount(String(plan.monthly_amount));
     setEnrollDialogOpen(true);
@@ -101,10 +187,11 @@ export default function CustomerSchemesPage() {
   async function handleEnroll() {
     if (!selectedPlan || !commitmentAmount || !customer) return;
     const amount = parseFloat(commitmentAmount);
-    if (Number.isNaN(amount) || amount < Number(selectedPlan.monthly_amount)) {
-      toast.error(`Commitment amount must be at least ₹${Number(selectedPlan.monthly_amount).toLocaleString()}`);
+    if (Number.isNaN(amount) || amount < selectedPlan.monthly_amount) {
+      toast.error(`Commitment must be at least ₹${selectedPlan.monthly_amount}`);
       return;
     }
+
     setEnrolling(true);
     try {
       const { data, error } = await supabase.rpc('customer_self_enroll', {
@@ -113,20 +200,14 @@ export default function CustomerSchemesPage() {
         p_source: 'CUSTOMER_PORTAL',
       });
       if (error) throw error;
-      const result = data as any;
-      const enrollmentId = result?.enrollment_id || result?.scheme_id || result?.id;
-      if (result?.success && enrollmentId) {
-        toast.success(result?.message || 'Successfully enrolled!');
-        setEnrollDialogOpen(false);
-        setSelectedPlan(null);
-        setCommitmentAmount('');
-        router.push(`/c/passbook/${enrollmentId}`);
-        return;
-      }
-      toast.error(result?.error || 'Enrollment failed');
-    } catch (error: any) {
-      console.error('Enrollment error:', error);
-      toast.error(error?.message || 'Failed to enroll. Please try again.');
+      toast.success(data?.message || 'Enrolled successfully!');
+      setEnrollDialogOpen(false);
+      setSelectedPlan(null);
+      setCommitmentAmount('');
+      void loadData();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || 'Enrollment failed');
     } finally {
       setEnrolling(false);
     }
@@ -146,17 +227,148 @@ export default function CustomerSchemesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gold-25 via-background to-gold-50/30 sparkle-bg pb-20">
-      {/* Decorative elements */}
+    <div className="min-h-screen bg-gradient-to-br from-gold-25 via-background to-gold-50/30 sparkle-bg pb-20 relative">
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-gold-200/5 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-0 w-80 h-80 bg-rose-200/5 rounded-full blur-3xl"></div>
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto p-4 md:p-8 space-y-8">
-        {/* Your existing UI JSX completely unchanged */}
-        {/* ...All of your existing cards, plans, enrollments, dialog JSX goes here... */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
+            My Gold Journey
+          </h1>
+          <p className="text-lg text-gold-600/70">Welcome, {customer?.full_name}</p>
+        </div>
+
+        {/* Available Plans */}
+        {availablePlans.length > 0 && (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-gold-600 to-rose-600 bg-clip-text text-transparent">Available Plans</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {availablePlans.map(plan => (
+                <Card key={plan.id} className="group overflow-hidden">
+                  <div className="h-28 bg-gradient-to-br from-rose-400 via-gold-400 to-amber-600 relative overflow-hidden">
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-white"></div>
+                  </div>
+                  <CardHeader className="pt-6">
+                    <CardTitle className="text-2xl">{plan.plan_name}</CardTitle>
+                    <CardDescription>
+                      {plan.karat ? `${plan.karat} • ` : ''}{plan.tenure_months} months • ₹{plan.monthly_amount.toLocaleString()}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button className="w-full luxury-gold-gradient text-white hover:opacity-95 rounded-2xl font-semibold py-2" onClick={() => openEnrollDialog(plan)}>
+                      <Plus className="w-5 h-5 mr-2" /> Enroll Now
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Active Enrollments */}
+        {enrollments.length > 0 && (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-gold-600 to-rose-600 bg-clip-text text-transparent">My Active Plans</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {enrollments.map(enrollment => {
+                const progress = enrollment.durationMonths
+                  ? Math.min(100, (enrollment.installmentsPaid / enrollment.durationMonths) * 100)
+                  : 0;
+                const isActive = enrollment.status === 'ACTIVE';
+                let dueMessage = '';
+                if (enrollment.monthlyInstallmentPaid) dueMessage = 'Thanks for your timely Payment this month.';
+                else if (enrollment.daysOverdue && enrollment.daysOverdue > 0) dueMessage = 'Your Account is in Due.';
+
+                return (
+                  <Card key={enrollment.id} className="overflow-hidden group">
+                    <div className={`h-32 bg-gradient-to-br ${isActive ? 'from-gold-400 via-gold-500 to-rose-500' : 'from-orange-400 via-orange-500 to-red-500'} relative flex flex-col justify-center px-8`}>
+                      <div className="flex justify-between">
+                        <span className="text-2xl font-bold text-white drop-shadow-lg">{enrollment.planName}</span>
+                        <span className="ml-4 px-3 py-1 rounded-full bg-gold-900/80 text-gold-100 text-xs font-semibold">{isActive ? 'Active' : enrollment.status}</span>
+                      </div>
+                      <div className="text-base text-gold-100/80 mt-2">Started: {enrollment.startDateLabel}</div>
+                      <div className="text-sm text-gold-100/80 mt-1">Total Paid: ₹{enrollment.totalPaid.toLocaleString()} • Gold Allocated: {enrollment.totalGrams.toFixed(2)}g</div>
+                    </div>
+
+                    <CardContent className="space-y-4">
+                      {/* Progress Bar */}
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="font-semibold text-foreground">Progress</span>
+                          <span className="font-bold text-gold-600 dark:text-gold-400">{enrollment.installmentsPaid}/{enrollment.durationMonths} paid ({Math.round(progress)}%)</span>
+                        </div>
+                        <div className="w-full bg-gold-100/30 rounded-full h-3 overflow-hidden border border-gold-200/50">
+                          <div className="luxury-gold-gradient h-3 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
+                        </div>
+                      </div>
+
+                      {/* Next Payment */}
+                      {enrollment.nextPaymentDate && (
+                        <div className="p-2 rounded-xl bg-muted/30 text-center text-sm">
+                          Next Payment Due: <span className="font-semibold text-gold-700">{new Date(enrollment.nextPaymentDate).toLocaleDateString('en-IN')}</span>
+                        </div>
+                      )}
+
+                      {/* Mini Calendar / Gold Accumulation */}
+                      {enrollment.transactions && (
+                        <div className="grid grid-cols-6 gap-1 mt-2">
+                          {Array.from({ length: enrollment.durationMonths }, (_, i) => {
+                            const tx = enrollment.transactions?.[i];
+                            const paid = tx?.payment_status === 'PAID';
+                            return <div key={i} className={`w-4 h-4 rounded-full ${paid ? 'bg-gold-500' : 'bg-muted-foreground/40'}`} title={`Month ${i + 1}: ${paid ? 'Paid' : 'Due'}`}></div>;
+                          })}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 mt-2">
+                        {isActive && !enrollment.monthlyInstallmentPaid && (
+                          <Link href={`/c/pay/${enrollment.id}`} className="flex-1">
+                            <Button className="w-full gold-gradient text-white">Pay Now <ArrowRight className="w-4 h-4 ml-2" /></Button>
+                          </Link>
+                        )}
+                        {isActive && enrollment.monthlyInstallmentPaid && (
+                          <Button className="flex-1 gold-gradient text-white opacity-70 cursor-not-allowed" disabled>Top-Up <ArrowRight className="w-4 h-4 ml-2" /></Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Enrollment Dialog */}
+      <Dialog open={enrollDialogOpen} onOpenChange={setEnrollDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enroll in {selectedPlan?.plan_name}</DialogTitle>
+            <DialogDescription>Choose your monthly commitment amount</DialogDescription>
+          </DialogHeader>
+          {selectedPlan && (
+            <div className="space-y-4 py-4">
+              <Label htmlFor="commitment">Monthly Commitment</Label>
+              <Input
+                id="commitment"
+                type="number"
+                value={commitmentAmount}
+                onChange={e => setCommitmentAmount(e.target.value)}
+                min={selectedPlan.monthly_amount}
+              />
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setEnrollDialogOpen(false)} disabled={enrolling}>Cancel</Button>
+                <Button className="flex-1" onClick={handleEnroll} disabled={enrolling || !commitmentAmount}>
+                  {enrolling ? 'Enrolling...' : 'Confirm Enrollment'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
