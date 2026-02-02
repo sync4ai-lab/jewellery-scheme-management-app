@@ -111,7 +111,7 @@ export default function CustomerSchemesPage() {
           try {
             const { data: txData, error } = await supabase
               .from('transactions')
-              .select('id, enrollment_id, amount_paid, grams_allocated_snapshot, paid_at, txn_type, payment_status, month')
+              .select('id, enrollment_id, amount_paid, grams_allocated_snapshot, paid_at, txn_type, payment_status')
               .eq('retailer_id', customer.retailer_id)
               .eq('payment_status', 'SUCCESS')
               .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
