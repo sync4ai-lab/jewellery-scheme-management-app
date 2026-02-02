@@ -265,13 +265,15 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     router.push('/c/login');
   };
 
-  if (error) {
-    return <div className="flex items-center justify-center min-h-screen text-red-600">{error}</div>;
-  }
   return (
     <CustomerAuthContext.Provider
       value={{ user, customer, loading, sendOTP, verifyOTP, signInWithPhone, signOut }}
     >
+      {error && (
+        <div style={{ background: '#fee', color: '#b00', padding: '12px', textAlign: 'center', fontWeight: 'bold', zIndex: 1000 }}>
+          {error}
+        </div>
+      )}
       {children}
     </CustomerAuthContext.Provider>
   );
