@@ -128,36 +128,12 @@ export default function CustomerSchemesPage() {
             if (txData && txData.length > 0) {
               // Map to enrollment_id if possible, else fallback to scheme_id
               transactions = txData.map(t => ({
-                ...t,
-                // Fetch enrollments (with scheme_templates for plan details)
-                const enrollmentsResult = await supabase
-                  .from('enrollments')
-                  .select('id, plan_id, commitment_amount, status, created_at, scheme_templates(name, installment_amount, duration_months)')
-                  .eq('customer_id', customer.id)
-                  .eq('retailer_id', customer.retailer_id)
-                  .order('created_at', { ascending: false });
-                console.log('DEBUG enrollmentsResult:', enrollmentsResult.data);
-
-                let enrollmentRows: any[] = [];
-                let planMap: Map<string, any> = new Map();
-                let enrollmentIds: string[] = [];
-                if (enrollmentsResult.data && enrollmentsResult.data.length > 0) {
-                  enrollmentRows = enrollmentsResult.data as any[];
-                  planMap = new Map(allPlans.map(t => [t.id, t]));
-                  enrollmentIds = enrollmentRows.map(e => e.id);
-                }
-
-                // Fetch transactions for these enrollments, matching Pulse logic
-                let transactions: Transaction[] = [];
-                if (enrollmentIds.length > 0) {
-                  try {
-                    const { data: txData, error } = await supabase
-                      .from('transactions')
-                      .select('id, enrollment_id, amount_paid, grams_allocated_snapshot, paid_at, txn_type, payment_status, month')
-                      .eq('retailer_id', customer.retailer_id)
-                      .eq('payment_status', 'SUCCESS')
-                      .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
-                      .in('enrollment_id', enrollmentIds)
+                ...t
+              }));
+            }
+          } catch (err) {
+            console.error('DEBUG transactions query error:', err);
+          }
                       .order('paid_at', { ascending: false })
                       .limit(500);
                     if (error) {
