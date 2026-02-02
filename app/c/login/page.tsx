@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Gem, Sparkles, Phone } from 'lucide-react';
+import { Gem, Phone } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,27 +12,25 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase/client';
 import { useBranding } from '@/lib/contexts/branding-context';
-import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 
 export default function CustomerLoginPage() {
   const { branding, loading: brandingLoading } = useBranding();
-  const { customer, loading: authLoading } = useCustomerAuth();
-
-  if (brandingLoading || authLoading) {
-    return <div className="p-6">Loading...</div>;
-  }
-
-  if (!branding) {
-    return <div className="p-6 text-red-500">Missing branding context</div>;
-  }
+  const router = useRouter();
 
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [retailers, setRetailers] = useState<{ id: string; business_name: string }[]>([]);
   const [selectedRetailer, setSelectedRetailer] = useState('');
-  const router = useRouter();
   const submittingRef = useRef(false);
+
+  if (brandingLoading) {
+    return <div className="p-6">Loading...</div>;
+  }
+
+  if (!branding) {
+    return <div className="p-6 text-red-500">Missing branding context</div>;
+  }
 
   useEffect(() => {
     async function fetchRetailers() {
@@ -55,12 +53,12 @@ export default function CustomerLoginPage() {
     setLoading(true);
 
     try {
-      const cleanPhone = phone.replace(/\s+/g, '').replace(/[^\d+]/g, '');
-
       if (!selectedRetailer) {
         setError('Please select your retailer.');
         return;
       }
+
+      const cleanPhone = phone.replace(/\s+/g, '').replace(/[^\d+]/g, '');
 
       const { data: customer } = await supabase
         .from('customers')
@@ -77,7 +75,7 @@ export default function CustomerLoginPage() {
       localStorage.setItem('retailer_id', customer.retailer_id);
       localStorage.setItem('customer_phone_bypass', cleanPhone);
 
-      window.location.href = '/c/pulse';
+      router.replace('/c/pulse');
     } catch (err: any) {
       setError(err?.message || 'Login failed');
     } finally {
@@ -132,7 +130,11 @@ export default function CustomerLoginPage() {
                 <Label>Mobile Number</Label>
                 <div className="relative mt-1">
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5" />
-                  <Input className="pl-10" value={phone} onChange={e => setPhone(e.target.value)} />
+                  <Input
+                    className="pl-10"
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
+                  />
                 </div>
               </div>
 
