@@ -1,16 +1,34 @@
-const { branding, loading: brandingLoading } = useBranding();
-const { customer, loading: authLoading } = useCustomerAuth();
-
-if (brandingLoading || authLoading) {
-  return <div className="p-6">Loading...</div>;
-}
-
-if (!branding || !customer) {
-  return <div className="p-6 text-red-500">Missing context</div>;
-}
 
 'use client';
 export const dynamic = 'force-dynamic';
+
+import { useEffect, useMemo, useState } from 'react';
+import { Sparkles, ArrowRight, Plus, Calendar } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { supabase } from '@/lib/supabase/client';
+import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
+import { useBranding } from '@/lib/contexts/branding-context';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { toast } from 'sonner';
+
+export default function CustomerSchemesPage() {
+  const { branding, loading: brandingLoading } = useBranding();
+  const { customer, loading: authLoading } = useCustomerAuth();
+  const router = useRouter();
+
+  if (brandingLoading || authLoading) {
+    return <div className="p-6">Loading...</div>;
+  }
+  if (!branding || !customer) {
+    return <div className="p-6 text-red-500">Missing context</div>;
+  }
+
+  // ...existing code...
 
 import { useEffect, useMemo, useState } from 'react';
 import { Sparkles, ArrowRight, Plus, Calendar } from 'lucide-react';
