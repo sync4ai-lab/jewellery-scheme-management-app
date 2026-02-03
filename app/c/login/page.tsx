@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 type Retailer = {
   id: string;
   name: string;
+  logo_url?: string | null;
 };
 
 export default function CustomerLoginPage() {
@@ -18,10 +19,11 @@ export default function CustomerLoginPage() {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedRetailer, setSelectedRetailer] = useState<Retailer | null>(null);
 
   useEffect(() => {
     async function fetchRetailers() {
-      const { data, error } = await supabase.from('retailers').select('id, name').order('name');
+      const { data, error } = await supabase.from('retailers').select('id, name, logo_url').order('name');
       if (error) {
         setError('Failed to load retailers');
         return;
@@ -31,6 +33,15 @@ export default function CustomerLoginPage() {
     fetchRetailers();
   }, []);
 
+  useEffect(() => {
+    if (!retailerId) {
+      setSelectedRetailer(null);
+      return;
+    }
+    const retailer = retailers.find(r => r.id === retailerId) || null;
+    setSelectedRetailer(retailer);
+  }, [retailerId, retailers]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -38,7 +49,7 @@ export default function CustomerLoginPage() {
     // Try to find customer by retailer and phone
     const { data, error } = await supabase
       .from('customers')
-      .select('id')
+      .select('id, retailer_id, phone, full_name')
       .eq('retailer_id', retailerId)
       .eq('phone', phone)
       .maybeSingle();
@@ -62,10 +73,18 @@ export default function CustomerLoginPage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gold-50 px-4">
       <div className="w-full max-w-sm bg-white rounded-xl shadow-lg p-6">
-        {/* Branding logo and name */}
+        {/* Branding logo and name for selected retailer */}
         <div className="flex flex-col items-center mb-4">
-          <img src="/logo.png" alt="GoldSaver Logo" className="h-12 mb-2" />
-          <h1 className="text-2xl font-bold text-center text-gold-700">GoldSaver Login</h1>
+          {selectedRetailer && selectedRetailer.logo_url ? (
+            <img src={selectedRetailer.logo_url} alt={selectedRetailer.name + ' Logo'} className="h-12 mb-2" />
+          ) : (
+            <div className="h-12 mb-2 flex items-center justify-center">
+              <span className="text-gold-700 font-bold text-xl">{selectedRetailer ? selectedRetailer.name : 'Select Retailer'}</span>
+            </div>
+          )}
+          <h1 className="text-2xl font-bold text-center text-gold-700">
+            {selectedRetailer ? selectedRetailer.name : 'Login'}
+          </h1>
         </div>
         {error && (
           <div className="mb-3 text-red-600 text-center font-medium bg-red-50 rounded p-2">{error}</div>

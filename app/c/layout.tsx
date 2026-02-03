@@ -43,7 +43,6 @@ function CustomerGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-import { usePathname } from 'next/navigation';
 
 export default function CustomerLayout({ children }: { children: React.ReactNode }) {
   const CustomerTopBar = require('@/components/customer/top-bar').CustomerTopBar;
