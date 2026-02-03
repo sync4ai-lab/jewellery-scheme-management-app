@@ -22,8 +22,14 @@ export default function CustomerLoginPage() {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     async function fetchRetailers() {
       const { data, error } = await supabase.from('retailers').select('id, business_name').order('business_name');
       if (error) {
@@ -34,7 +40,7 @@ export default function CustomerLoginPage() {
       setRetailers(data || []);
     }
     fetchRetailers();
-  }, []);
+  }, [mounted]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,8 +70,8 @@ export default function CustomerLoginPage() {
     router.replace('/c/schemes');
   };
 
-  // Show loading state until retailers are loaded
-  if (retailers === null) {
+  // Hydration guard: only render on client
+  if (!mounted || retailers === null) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-gold-50/20 to-background">
         <div className="w-full max-w-md flex flex-col items-center justify-center">
