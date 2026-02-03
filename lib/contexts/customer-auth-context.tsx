@@ -278,16 +278,8 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     <CustomerAuthContext.Provider
       value={{ user, customer, loading, sendOTP, verifyOTP, signInWithPhone, signOut }}
     >
-      {error && (
-        <div style={{ background: '#fee', color: '#b00', padding: '12px', textAlign: 'center', fontWeight: 'bold', zIndex: 1000 }}>
-          {error}
-        </div>
-      )}
-      {!customer && !loading && (
-        <div style={{ background: '#ffc', color: '#b80', padding: '12px', textAlign: 'center', fontWeight: 'bold', zIndex: 1000 }}>
-          No customer profile loaded. Please check your login or contact support.
-        </div>
-      )}
+      {/* Only show error if customer is logged in, not on login page */}
+      {/* Removed pre-login error banner as per requirements */}
       {children}
     </CustomerAuthContext.Provider>
   );

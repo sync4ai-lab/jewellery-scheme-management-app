@@ -43,18 +43,24 @@ function CustomerGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+import { usePathname } from 'next/navigation';
+
 export default function CustomerLayout({ children }: { children: React.ReactNode }) {
   const CustomerTopBar = require('@/components/customer/top-bar').CustomerTopBar;
+  const CustomerMobileNav = require('@/components/customer/mobile-nav').CustomerMobileNav;
   const BrandingProvider = require('@/lib/contexts/branding-context').BrandingProvider;
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+  // Only show nav/topbar if not on login page
+  const isLoginPage = pathname === '/c/login';
   return (
     <CustomerAuthProvider>
       <AbortErrorBoundary>
         <CustomerGuard>
           <BrandingProvider>
             <div className="min-h-screen pb-20 md:pb-0">
-              <CustomerTopBar />
+              {!isLoginPage && <CustomerTopBar />}
               {children}
-              <CustomerMobileNav />
+              {!isLoginPage && <CustomerMobileNav />}
             </div>
           </BrandingProvider>
         </CustomerGuard>

@@ -62,7 +62,11 @@ export default function CustomerLoginPage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gold-50 px-4">
       <div className="w-full max-w-sm bg-white rounded-xl shadow-lg p-6">
-        <h1 className="text-2xl font-bold mb-4 text-center text-gold-700">GoldSaver Login</h1>
+        {/* Branding logo and name */}
+        <div className="flex flex-col items-center mb-4">
+          <img src="/logo.png" alt="GoldSaver Logo" className="h-12 mb-2" />
+          <h1 className="text-2xl font-bold text-center text-gold-700">GoldSaver Login</h1>
+        </div>
         {error && (
           <div className="mb-3 text-red-600 text-center font-medium bg-red-50 rounded p-2">{error}</div>
         )}
