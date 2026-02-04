@@ -27,7 +27,7 @@ export function CustomerMobileNav() {
 
             return (
               <Link
-                key={item.href}
+                key={`${item.href}-${item.label}`}
                 href={item.href}
                 className={cn(
                   'flex flex-col items-center justify-center gap-1 transition-colors',
