@@ -1,13 +1,10 @@
 "use client";
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sparkles, ArrowRight, Plus, Calendar } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useBranding } from '@/lib/contexts/branding-context';
@@ -57,7 +54,10 @@ type EnrollmentCard = {
   planCreatedAt?: string | null;
   paidMonths?: Set<string>;
   planId?: string;
+  calendarYear?: number;
 };
+
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function CustomerSchemesPage() {
   const { branding, loading: brandingLoading } = useBranding();
@@ -69,17 +69,6 @@ export default function CustomerSchemesPage() {
   const [enrollments, setEnrollments] = useState<EnrollmentCard[]>([]);
   const [availablePlans, setAvailablePlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [enrollDialogOpen, setEnrollDialogOpen] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
-  const [commitmentAmount, setCommitmentAmount] = useState('');
-  const [enrolling, setEnrolling] = useState(false);
-  const currentMonthStr = useMemo(() => {
-    const today = new Date();
-    const m = new Date(today.getFullYear(), today.getMonth(), 1);
-    m.setHours(0, 0, 0, 0);
-    return m.toISOString().split('T')[0];
-  }, []);
-
   useEffect(() => {
     if (!customer) {
       router.push('/c/login');
@@ -96,8 +85,7 @@ export default function CustomerSchemesPage() {
   }
 
   function openEnrollDialog(plan: Plan) {
-    setSelectedPlan(plan);
-    setEnrollDialogOpen(true);
+    router.push(`/c/enroll?planId=${plan.id}`);
   }
 
   async function loadData() {
@@ -105,15 +93,15 @@ export default function CustomerSchemesPage() {
     setLoading(true);
 
     try {
-      // Fetch ALL plans for mapping (active/inactive, self-enroll or not)
+      // Fetch ALL plans for mapping (active/inactive)
       const allPlansResult = await supabase
         .from('scheme_templates')
         .select('id, retailer_id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll')
         .eq('retailer_id', customer.retailer_id);
       const allPlans: Plan[] = allPlansResult.data || [];
 
-      // Only show available plans for enrollment (active + self-enroll)
-      setAvailablePlans(allPlans.filter(p => p.is_active && p.allow_self_enroll));
+      // Show all active plans as available in the list
+      setAvailablePlans(allPlans.filter(p => p.is_active));
 
       // Fetch enrollments
       const enrollmentsResult = await supabase
@@ -178,6 +166,7 @@ export default function CustomerSchemesPage() {
         // For calendar, use plan created_at if available, else enrollment created_at
         const planCreatedAt = plan?.created_at || e.created_at || null;
         const planId = plan?.id || e.plan_id;
+        const calendarYear = planCreatedAt ? new Date(planCreatedAt).getFullYear() : new Date().getFullYear();
 
         // No 'month' field, so use paid_at for current month logic
         const now = new Date();
@@ -207,6 +196,7 @@ export default function CustomerSchemesPage() {
           planCreatedAt,
           paidMonths,
           planId,
+          calendarYear,
         };
       });
 
@@ -215,35 +205,6 @@ export default function CustomerSchemesPage() {
       console.error('DEBUG loadData error:', err);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function handleEnroll() {
-    if (!selectedPlan || !commitmentAmount || !customer) return;
-    const amount = parseFloat(commitmentAmount);
-    if (Number.isNaN(amount) || amount < selectedPlan.installment_amount) {
-      toast.error(`Commitment must be at least ₹${selectedPlan.installment_amount}`);
-      return;
-    }
-    setEnrolling(true);
-
-    try {
-      const { data, error } = await supabase.rpc('customer_self_enroll', {
-        p_plan_id: selectedPlan.id,
-        p_commitment_amount: amount,
-        p_source: 'CUSTOMER_PORTAL',
-      });
-      if (error) throw error;
-      toast.success(data?.message || 'Enrolled successfully!');
-      setEnrollDialogOpen(false);
-      setSelectedPlan(null);
-      setCommitmentAmount('');
-      void loadData();
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err?.message || 'Enrollment failed');
-    } finally {
-      setEnrolling(false);
     }
   }
 
@@ -274,52 +235,6 @@ export default function CustomerSchemesPage() {
           </h1>
           <p className="text-lg text-gold-600/70">Welcome, {customer?.full_name}</p>
         </div>
-
-        {/* Available Plans */}
-        {(() => {
-          // Filter out plans the customer is already enrolled in
-          const enrolledPlanIds = new Set(enrollments.map(e => e.planId));
-          const displayPlans = availablePlans.filter(plan => !enrolledPlanIds.has(plan.id));
-          if (displayPlans.length > 0) {
-            return (
-              <div className="space-y-6">
-                <h2 className="text-3xl font-bold bg-gradient-to-r from-gold-600 to-rose-600 bg-clip-text text-transparent">Available Plans</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {displayPlans.map(plan => (
-                    <Card key={plan.id} className="group overflow-hidden shadow-xl border-gold-100 hover:scale-[1.02] transition-transform">
-                      <div className="h-28 bg-gradient-to-br from-rose-400 via-gold-400 to-amber-600 relative overflow-hidden">
-                        <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-white"></div>
-                      </div>
-                      <CardHeader className="pt-6">
-                        <CardTitle className="text-2xl font-bold text-gold-700">{plan.name}</CardTitle>
-                        <CardDescription className="text-base text-gold-600">
-                          <span className="font-semibold">{plan.duration_months} months</span> • <span className="font-semibold">₹{plan.installment_amount.toLocaleString()}</span>
-                          {plan.bonus_percentage ? <span> • <span className="text-rose-600 font-semibold">Bonus: {plan.bonus_percentage}%</span></span> : ''}
-                          {plan.description ? <><br /><span className="text-sm text-gray-500">{plan.description}</span></> : null}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <Button className="w-full luxury-gold-gradient text-white hover:opacity-95 rounded-2xl font-semibold py-2 shadow-md" onClick={() => openEnrollDialog(plan)}>
-                          <Plus className="w-5 h-5 mr-2" /> Enroll Now
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-            );
-          } else {
-            return (
-              <div className="flex flex-col items-center justify-center py-16">
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-gold-200 via-gold-100 to-rose-100 flex items-center justify-center mb-6">
-                  <Sparkles className="w-12 h-12 text-gold-400" />
-                </div>
-                <div className="text-2xl font-bold text-gold-700 mb-2">All Plans Enrolled!</div>
-                <div className="text-md text-muted-foreground">You have already enrolled in all available plans. Check back later for new offers.</div>
-              </div>
-            );
-          }
-        })()}
 
         {/* Active Enrollments */}
         {enrollments.length > 0 ? (
@@ -367,27 +282,22 @@ export default function CustomerSchemesPage() {
                         </div>
                       )}
 
-                      {/* Mini Calendar with month labels and paid status */}
+                      {/* Mini Calendar with month labels and paid status (Jan-Dec) */}
                       <div className="flex flex-col items-center mt-2">
-                        <div className="grid grid-cols-6 gap-1">
-                          {Array.from({ length: enrollment.durationMonths }, (_, i) => {
-                            // Calculate the month for this dot
-                            const start = enrollment.planCreatedAt ? new Date(enrollment.planCreatedAt) : (enrollment.startDateLabel ? new Date(enrollment.startDateLabel) : new Date());
-                            const monthDate = new Date(start.getFullYear(), start.getMonth() + i, 1);
-                            const monthKey = `${monthDate.getFullYear()}-${monthDate.getMonth()}`;
+                        <div className="grid grid-cols-6 md:grid-cols-12 gap-2">
+                          {Array.from({ length: 12 }, (_, i) => {
+                            const year = enrollment.calendarYear || new Date().getFullYear();
+                            const monthKey = `${year}-${i}`;
                             const paid = enrollment.paidMonths && enrollment.paidMonths.has(monthKey);
                             return (
-                              <div key={i} className={`w-4 h-4 rounded-full border ${paid ? 'bg-green-500 border-green-700' : 'bg-muted-foreground/40 border-gold-200'}`} title={`${monthDate.toLocaleString('en-IN', { month: 'short', year: '2-digit' })}: ${paid ? 'Paid' : 'Due'}`}></div>
-                            );
-                          })}
-                        </div>
-                        <div className="grid grid-cols-6 gap-1 mt-1">
-                          {Array.from({ length: enrollment.durationMonths }, (_, i) => {
-                            const start = enrollment.planCreatedAt ? new Date(enrollment.planCreatedAt) : (enrollment.startDateLabel ? new Date(enrollment.startDateLabel) : new Date());
-                            const monthDate = new Date(start.getFullYear(), start.getMonth() + i, 1);
-                            return (
-                              <div key={i} className="w-8 text-xs text-center text-muted-foreground">
-                                {monthDate.toLocaleString('en-IN', { month: 'short' })}
+                              <div key={i} className="flex flex-col items-center">
+                                <div
+                                  className={`w-4 h-4 rounded-full border ${paid ? 'bg-green-500 border-green-700' : 'bg-muted-foreground/40 border-gold-200'}`}
+                                  title={`${MONTHS_SHORT[i]} ${String(year).slice(-2)}: ${paid ? 'Paid' : 'Due'}`}
+                                />
+                                <div className="mt-1 text-[10px] text-center text-muted-foreground">
+                                  {MONTHS_SHORT[i]}
+                                </div>
                               </div>
                             );
                           })}
@@ -413,6 +323,55 @@ export default function CustomerSchemesPage() {
         ) : (
           <div className="text-center text-muted-foreground py-8">No active plans or enrollments found.</div>
         )}
+
+        {/* Available Plans */}
+        {(() => {
+          const enrolledPlanIds = new Set(enrollments.map(e => e.planId).filter(Boolean));
+          const displayPlans = availablePlans.filter(plan => !enrolledPlanIds.has(plan.id));
+          if (displayPlans.length > 0) {
+            return (
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <h2 className="text-3xl font-bold bg-gradient-to-r from-gold-600 to-rose-600 bg-clip-text text-transparent">Other Available Plans</h2>
+                  <p className="text-sm text-muted-foreground">Grow more wealth with our other schemes.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {displayPlans.map(plan => (
+                    <Card key={plan.id} className="group overflow-hidden shadow-xl border-gold-100 hover:scale-[1.02] transition-transform">
+                      <div className="h-28 bg-gradient-to-br from-rose-400 via-gold-400 to-amber-600 relative overflow-hidden flex items-center px-5">
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-white"></div>
+                        <div className="relative z-10 text-white text-xl font-bold drop-shadow-lg truncate">
+                          {plan.name}
+                        </div>
+                      </div>
+                      <CardHeader className="pt-6">
+                        <CardDescription className="text-base text-gold-600">
+                          <span className="font-semibold">{plan.duration_months} months</span> • <span className="font-semibold">₹{plan.installment_amount.toLocaleString()}</span>
+                          {plan.bonus_percentage ? <span> • <span className="text-rose-600 font-semibold">Bonus: {plan.bonus_percentage}%</span></span> : ''}
+                          {plan.description ? <><br /><span className="text-sm text-gray-500">{plan.description}</span></> : null}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <Button className="w-full luxury-gold-gradient text-white hover:opacity-95 rounded-2xl font-semibold py-2 shadow-md" onClick={() => openEnrollDialog(plan)}>
+                          <Plus className="w-5 h-5 mr-2" /> Enroll Now
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-gold-200 via-gold-100 to-rose-100 flex items-center justify-center mb-6">
+                <Sparkles className="w-12 h-12 text-gold-400" />
+              </div>
+              <div className="text-2xl font-bold text-gold-700 mb-2">All Plans Enrolled!</div>
+              <div className="text-md text-muted-foreground">You have already enrolled in all available plans. Check back later for new offers.</div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
