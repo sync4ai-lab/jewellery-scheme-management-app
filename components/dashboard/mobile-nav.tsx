@@ -26,8 +26,8 @@ export function MobileNav() {
   );
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-gold-200/60 dark:border-gold-800/50 bg-gradient-to-r from-gold-50/95 via-white/90 to-gold-50/95 dark:from-gold-900/40 dark:via-zinc-900/90 dark:to-gold-900/40 backdrop-blur-lg md:hidden shadow-luxury">
-      <div className="flex items-center justify-around gap-1 px-2 py-3 w-full">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-gold-200/70 dark:border-gold-800/60 bg-gradient-to-r from-gold-50/95 via-white/95 to-gold-50/95 dark:from-gold-900/50 dark:via-zinc-900/95 dark:to-gold-900/50 backdrop-blur-xl md:hidden shadow-luxury">
+      <div className="flex items-center justify-around gap-2 px-4 py-4 w-full">
         {navItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname?.startsWith(item.href));
           const Icon = item.icon;
@@ -37,14 +37,14 @@ export function MobileNav() {
               key={item.name}
               href={item.href}
               className={cn(
-                'flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all flex-1 min-w-0',
+                'flex flex-col items-center gap-1 px-3 py-2.5 rounded-2xl transition-all flex-1 min-w-0',
                 isActive
-                  ? 'text-gold-700 bg-gold-100/70 dark:text-gold-300 dark:bg-gold-900/40 shadow-[0_8px_24px_rgba(212,175,55,0.25)]'
-                  : 'text-muted-foreground hover:text-gold-600'
+                  ? 'text-gold-700 bg-gold-100/80 dark:text-gold-300 dark:bg-gold-900/50 shadow-[0_10px_30px_rgba(212,175,55,0.28)]'
+                  : 'text-gray-600 hover:text-gold-600'
               )}
             >
-              <Icon className={cn('h-5 w-5 flex-shrink-0', isActive && 'animate-pulse-gold')} />
-              <span className="text-[10px] font-medium truncate w-full text-center">{item.name}</span>
+              <Icon className={cn('h-6 w-6 flex-shrink-0', isActive && 'animate-pulse-gold')} />
+              <span className="text-[11px] font-semibold tracking-wide truncate w-full text-center">{item.name}</span>
             </Link>
           );
         })}

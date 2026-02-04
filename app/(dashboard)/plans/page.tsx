@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -25,6 +26,8 @@ type SchemeTemplate = {
   duration_months: number;
   bonus_percentage: number;
   description?: string | null;
+  metal_type?: string | null;
+  benefits?: string | null;
   is_active: boolean;
   allow_self_enroll?: boolean;
 };
@@ -70,6 +73,8 @@ export default function PlansPage() {
     duration_months: '',
     bonus_percentage: '',
     description: '',
+    metal_type: 'GOLD',
+    benefits: '',
   });
 
   useEffect(() => {
@@ -85,7 +90,7 @@ export default function PlansPage() {
     try {
       const { data, error } = await supabase
         .from('scheme_templates')
-        .select('id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll')
+        .select('id, name, installment_amount, duration_months, bonus_percentage, description, metal_type, benefits, is_active, allow_self_enroll')
         .eq('retailer_id', profile.retailer_id)
         .order('created_at', { ascending: false });
 
@@ -104,6 +109,18 @@ export default function PlansPage() {
   }
 
   async function loadStores() {
+
+  function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${label} timed out. Please try again.`));
+      }, ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timeoutId) clearTimeout(timeoutId);
+    });
+  }
     if (!profile?.retailer_id) return;
 
     try {
@@ -155,11 +172,15 @@ export default function PlansPage() {
     } catch (error) {
       console.error('Error loading scheme statistics:', error);
     }
-  }
-
-  async function createOrUpdateScheme() {
-    console.log('createOrUpdateScheme called', { profile, newScheme });
-    
+        const { error } = await withTimeout(
+          supabase
+            .from('scheme_templates')
+            .update(schemeData)
+            .eq('id', editingId)
+            .eq('retailer_id', profile.retailer_id),
+          12000,
+          'Update plan'
+        );
     if (!profile?.retailer_id) {
       console.error('No retailer_id');
       toast.error('Missing retailer context');
@@ -167,11 +188,15 @@ export default function PlansPage() {
     }
     
     if (!newScheme.name || !newScheme.installment_amount || !newScheme.duration_months) {
-      console.error('Missing required fields', { newScheme });
-      toast.error('Please fill in all required fields (Name, Amount, Duration)');
-      return;
-    }
-
+        await withTimeout(
+          supabase
+            .from('scheme_store_assignments')
+            .delete()
+            .eq('scheme_id', editingId)
+            .eq('retailer_id', profile.retailer_id),
+          12000,
+          'Update store assignments'
+        );
     if (selectedStoreIds.length === 0) {
       toast.error('Please select at least one store for this plan');
       return;
@@ -179,35 +204,71 @@ export default function PlansPage() {
 
     const installmentAmount = parseFloat(newScheme.installment_amount);
     const durationMonths = parseInt(newScheme.duration_months);
-    const bonusPercentage = newScheme.bonus_percentage ? parseFloat(newScheme.bonus_percentage) : 0;
-
-    console.log('Parsed values:', { installmentAmount, durationMonths, bonusPercentage });
+        const { error: assignError } = await withTimeout(
+          supabase
+            .from('scheme_store_assignments')
+            .insert(storeAssignments),
+          12000,
+          'Create store assignments'
+        );
 
     if (!Number.isFinite(installmentAmount) || installmentAmount <= 0 || !Number.isFinite(durationMonths) || durationMonths <= 0) {
       console.error('Invalid numbers');
       toast.error('Please enter valid positive numbers');
       return;
     }
-
-    setSaving(true);
-    try {
-      const schemeData = {
-        retailer_id: profile.retailer_id,
+        const { data, error } = await withTimeout(
+          supabase
+            .from('scheme_templates')
+            .insert([schemeData])
+            .select('id'),
+          12000,
+          'Create plan'
+        );
         name: newScheme.name,
         installment_amount: installmentAmount,
         duration_months: durationMonths,
         bonus_percentage: bonusPercentage,
         description: newScheme.description || null,
+        const created = Array.isArray(data) ? data[0] : data;
+
+        let createdId = created?.id;
+        if (!createdId) {
+          const fallback = await withTimeout(
+            supabase
+              .from('scheme_templates')
+              .select('id')
+              .eq('retailer_id', profile.retailer_id)
+              .eq('name', newScheme.name)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            12000,
+            'Fetch created plan'
+          );
+          if (fallback.error) throw fallback.error;
+          createdId = fallback.data?.id;
+        }
+
+        if (!createdId) {
+          throw new Error('Plan created but ID could not be retrieved. Please refresh and try again.');
+        }
+        console.log('Plan created successfully:', createdId);
+        benefits: newScheme.benefits || null,
         is_active: true,
       };
 
-      console.log('Submitting scheme data:', schemeData);
+          scheme_id: createdId,
 
       if (editingId) {
         console.log('Updating existing plan:', editingId);
-        const { error } = await supabase
-          .from('scheme_templates')
-          .update(schemeData)
+        const { error: assignError } = await withTimeout(
+          supabase
+            .from('scheme_store_assignments')
+            .insert(storeAssignments),
+          12000,
+          'Create store assignments'
+        );
           .eq('id', editingId)
           .eq('retailer_id', profile.retailer_id);
 
@@ -269,12 +330,12 @@ export default function PlansPage() {
         toast.success(`✅ Plan created: ${newScheme.name}`);
       }
 
-      setNewScheme({ name: '', installment_amount: '', duration_months: '', bonus_percentage: '', description: '' });
+      setNewScheme({ name: '', installment_amount: '', duration_months: '', bonus_percentage: '', description: '', metal_type: 'GOLD', benefits: '' });
       setSelectedStoreIds([]);
       setEditingId(null);
       setDialogOpen(false);
       console.log('Reloading schemes after save...');
-      await loadSchemes();
+      void loadSchemes();
       console.log('Schemes reloaded');
     } catch (error: any) {
       console.error('Error saving scheme:', error);
@@ -313,6 +374,8 @@ export default function PlansPage() {
       duration_months: scheme.duration_months.toString(),
       bonus_percentage: scheme.bonus_percentage.toString(),
       description: scheme.description || '',
+      metal_type: scheme.metal_type || 'GOLD',
+      benefits: scheme.benefits || '',
     });
 
     // Load existing store assignments for this scheme
@@ -338,7 +401,7 @@ export default function PlansPage() {
   function resetForm() {
     setEditingId(null);
     setSelectedStoreIds([]);
-    setNewScheme({ name: '', installment_amount: '', duration_months: '', bonus_percentage: '', description: '' });
+    setNewScheme({ name: '', installment_amount: '', duration_months: '', bonus_percentage: '', description: '', metal_type: 'GOLD', benefits: '' });
   }
 
   return (
@@ -400,6 +463,22 @@ export default function PlansPage() {
               </div>
 
               <div className="space-y-2">
+                <Label>Metal Type *</Label>
+                <Select
+                  value={newScheme.metal_type}
+                  onValueChange={(value) => setNewScheme({ ...newScheme, metal_type: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select metal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GOLD">Gold</SelectItem>
+                    <SelectItem value="SILVER">Silver</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label>Bonus Percentage (%) (Optional)</Label>
                 <Input
                   type="number"
@@ -416,6 +495,16 @@ export default function PlansPage() {
                   placeholder="Add plan details or terms"
                   value={newScheme.description}
                   onChange={(e) => setNewScheme({ ...newScheme, description: e.target.value })}
+                  rows={3}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Benefits (Optional)</Label>
+                <Textarea
+                  placeholder="Add benefits (e.g., bonus gold, discounts, gifts)"
+                  value={newScheme.benefits}
+                  onChange={(e) => setNewScheme({ ...newScheme, benefits: e.target.value })}
                   rows={3}
                 />
               </div>
@@ -566,6 +655,11 @@ export default function PlansPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <h3 className="text-lg font-bold">{scheme.name}</h3>
+                        {scheme.metal_type && (
+                          <Badge variant="outline" className="text-xs">
+                            {scheme.metal_type === 'SILVER' ? 'Silver' : 'Gold'}
+                          </Badge>
+                        )}
                         {scheme.is_active ? (
                           <Badge className="status-active">Active</Badge>
                         ) : (
@@ -592,6 +686,11 @@ export default function PlansPage() {
                       </div>
                       {scheme.description && (
                         <p className="text-sm text-muted-foreground mt-2">{scheme.description}</p>
+                      )}
+                      {scheme.benefits && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          <span className="font-medium text-foreground">Benefits:</span> {scheme.benefits}
+                        </p>
                       )}
                     </div>
                     <div className="flex gap-2">
