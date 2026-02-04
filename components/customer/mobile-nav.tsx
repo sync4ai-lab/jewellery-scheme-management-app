@@ -1,7 +1,6 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
-import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { Activity, ScrollText, Wallet, Gift, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -16,6 +15,7 @@ const navItems = [
 
 export function CustomerMobileNav() {
   const pathname = usePathname();
+  const router = useRouter();
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gold-200">
@@ -26,11 +26,13 @@ export function CustomerMobileNav() {
             const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
 
             return (
-              <Link
+              <button
                 key={`${item.href}-${item.label}`}
-                href={item.href}
+                type="button"
+                onClick={() => router.push(item.href)}
+                aria-current={isActive ? 'page' : undefined}
                 className={cn(
-                  'flex flex-col items-center justify-center gap-1 transition-colors',
+                  'flex flex-col items-center justify-center gap-1 transition-colors bg-transparent border-0',
                   isActive
                     ? 'text-gold-600'
                     : 'text-gray-500 hover:text-gold-500'
@@ -38,7 +40,7 @@ export function CustomerMobileNav() {
               >
                 <Icon className={cn('w-5 h-5', isActive && 'fill-gold-100')} />
                 <span className="text-xs font-medium">{item.label}</span>
-              </Link>
+              </button>
             );
           })}
         </div>
