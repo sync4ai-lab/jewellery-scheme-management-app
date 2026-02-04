@@ -15,19 +15,6 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
 
-export default function CustomerSchemesPage() {
-  const { branding, loading: brandingLoading } = useBranding();
-  const { customer, loading: authLoading } = useCustomerAuth();
-  const router = useRouter();
-
-  if (brandingLoading || authLoading) {
-    return <div className="p-6">Loading...</div>;
-  }
-  if (!branding || !customer) {
-    return <div className="p-6 text-red-500">Missing context</div>;
-  }
-
-  // ...existing code...
 
 type Plan = {
   id: string;
@@ -71,6 +58,18 @@ type EnrollmentCard = {
   paidMonths?: Set<string>;
   planId?: string;
 };
+
+export default function CustomerSchemesPage() {
+  const { branding, loading: brandingLoading } = useBranding();
+  const { customer, loading: authLoading } = useCustomerAuth();
+  const router = useRouter();
+
+  if (brandingLoading || authLoading) {
+    return <div className="p-6">Loading...</div>;
+  }
+  if (!branding || !customer) {
+    return <div className="p-6 text-red-500">Missing context</div>;
+  }
 
 export default function CustomerSchemesPage() {
   const { customer } = useCustomerAuth();
