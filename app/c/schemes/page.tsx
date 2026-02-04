@@ -287,23 +287,23 @@ export default function CustomerSchemesPage() {
                       <div className="flex flex-col items-center mt-2">
                         <div className="grid grid-cols-6 gap-1">
                           {Array.from({ length: enrollment.durationMonths }, (_, i) => {
-                            // Calculate the month for this dot
-                            const start = enrollment.planCreatedAt ? new Date(enrollment.planCreatedAt) : (enrollment.startDateLabel ? new Date(enrollment.startDateLabel) : new Date());
+                            const start = enrollment.planCreatedAt
+                              ? new Date(enrollment.planCreatedAt)
+                              : (enrollment.startDateLabel ? new Date(enrollment.startDateLabel) : new Date());
                             const monthDate = new Date(start.getFullYear(), start.getMonth() + i, 1);
                             const monthKey = `${monthDate.getFullYear()}-${monthDate.getMonth()}`;
                             const paid = enrollment.paidMonths && enrollment.paidMonths.has(monthKey);
                             return (
-                              <div key={i} className={`w-4 h-4 rounded-full border ${paid ? 'bg-green-500 border-green-700' : 'bg-muted-foreground/40 border-gold-200'}`} title={`${monthDate.toLocaleString('en-IN', { month: 'short', year: '2-digit' })}: ${paid ? 'Paid' : 'Due'}`}></div>
-                            );
-                          })}
-                        </div>
-                        <div className="grid grid-cols-6 gap-1 mt-1">
-                          {Array.from({ length: enrollment.durationMonths }, (_, i) => {
-                            const start = enrollment.planCreatedAt ? new Date(enrollment.planCreatedAt) : (enrollment.startDateLabel ? new Date(enrollment.startDateLabel) : new Date());
-                            const monthDate = new Date(start.getFullYear(), start.getMonth() + i, 1);
-                            return (
-                              <div key={i} className="w-8 text-xs text-center text-muted-foreground">
-                                {monthDate.toLocaleString('en-IN', { month: 'short' })}
+                              <div key={i} className="flex flex-col items-center w-8">
+                                <div
+                                  className={`w-4 h-4 rounded-full border ${
+                                    paid ? 'bg-green-500 border-green-700' : 'bg-muted-foreground/40 border-gold-200'
+                                  }`}
+                                  title={`${monthDate.toLocaleString('en-IN', { month: 'short', year: '2-digit' })}: ${paid ? 'Paid' : 'Due'}`}
+                                ></div>
+                                <div className="text-xs text-center text-muted-foreground mt-1">
+                                  {monthDate.toLocaleString('en-IN', { month: 'short' })}
+                                </div>
                               </div>
                             );
                           })}

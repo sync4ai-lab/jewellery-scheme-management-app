@@ -38,6 +38,10 @@ function toISODate(d: Date): string {
   return d.toISOString().split('T')[0];
 }
 
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('en-IN').format(value);
+}
+
 export default function CustomerEnrollmentPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -270,14 +274,10 @@ export default function CustomerEnrollmentPage() {
       
       toast({
         title: 'Enrollment Successful!',
-        description: 'You can make your first payment now.',
+        description: 'You can make your payment now.',
       });
 
-      if (payNow) {
-        router.push(`/c/pay/${enrollmentData.id}`);
-      } else {
-        router.push('/c/schemes');
-      }
+      router.push('/c/schemes');
     } catch (error: any) {
       console.error('Error enrolling:', error);
       toast({
@@ -308,11 +308,11 @@ export default function CustomerEnrollmentPage() {
   }
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gold-50 via-white to-gold-100 p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-gold-25 via-background to-gold-50/30 sparkle-bg p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
-          <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-gold-600 to-gold-800 bg-clip-text text-transparent">
+          <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
             Choose Your Gold Savings Plan
           </h1>
           <p className="text-gray-600">
@@ -327,30 +327,30 @@ export default function CustomerEnrollmentPage() {
               key={plan.id}
               className={`cursor-pointer transition-all hover:shadow-lg ${
                 selectedPlan === plan.id
-                  ? 'ring-2 ring-gold-600 shadow-lg bg-gold-50'
-                  : 'hover:ring-2 hover:ring-gold-300'
+                  ? 'ring-2 ring-gold-600 shadow-xl bg-white/80'
+                  : 'hover:ring-2 hover:ring-gold-300 bg-white/70'
               }`}
               onClick={() => {
                 setSelectedPlan(plan.id);
                 setCommitmentAmount(String(plan.installment_amount));
               }}
             >
-              <CardHeader>
+              <CardHeader className="bg-gradient-to-br from-rose-400 via-gold-400 to-amber-600 text-white rounded-t-xl">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <CardTitle className="text-lg flex items-center gap-2">
-                      <Package className="h-5 w-5 text-gold-600" />
+                      <Package className="h-5 w-5 text-white" />
                       {plan.name}
                     </CardTitle>
                     {plan.bonus_percentage > 0 && (
-                      <Badge className="mt-2 bg-gradient-to-r from-gold-600 to-gold-700">
+                      <Badge className="mt-2 bg-white/20 text-white">
                         <Sparkles className="h-3 w-3 mr-1" />
                         {plan.bonus_percentage}% Bonus
                       </Badge>
                     )}
                   </div>
                   {selectedPlan === plan.id && (
-                    <CheckCircle className="h-6 w-6 text-gold-600 flex-shrink-0" />
+                    <CheckCircle className="h-6 w-6 text-white flex-shrink-0" />
                   )}
                 </div>
               </CardHeader>
@@ -359,7 +359,7 @@ export default function CustomerEnrollmentPage() {
                   <IndianRupee className="h-4 w-4 text-gray-500" />
                   <span className="text-gray-600">Min. Monthly:</span>
                   <span className="font-semibold text-gray-900">
-                    ₹{plan.installment_amount.toLocaleString()}
+                    ₹{formatCurrency(plan.installment_amount)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
@@ -417,7 +417,7 @@ export default function CustomerEnrollmentPage() {
                 </div>
                 {commitmentAmount && !isCommitmentValid && (
                   <p className="text-sm text-red-600">
-                    Minimum amount is ₹{minAmount}
+                    Minimum amount is ₹{formatCurrency(minAmount)}
                   </p>
                 )}
                 <p className="text-xs text-gray-500">
@@ -434,7 +434,7 @@ export default function CustomerEnrollmentPage() {
                         onClick={() => setCommitmentAmount(preset.toString())}
                         className="rounded-lg"
                       >
-                        ₹{preset.toLocaleString()}
+                        ₹{formatCurrency(preset)}
                       </Button>
                     ))}
                   </div>
