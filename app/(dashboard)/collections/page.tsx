@@ -140,12 +140,15 @@ export default function CollectionsPage() {
     }
   }, [selectedCustomerId, goldRate?.id]);
 
+  const selectedEnrollment = useMemo(() => {
+    if (!selectedEnrollmentId) return null;
+    return enrollments.find(e => e.id === selectedEnrollmentId) || null;
+  }, [selectedEnrollmentId, enrollments]);
+
   // Get the karat for the selected enrollment
   const selectedEnrollmentKarat = useMemo(() => {
-    if (!selectedEnrollmentId) return null;
-    const enrollment = enrollments.find(e => e.id === selectedEnrollmentId);
-    return enrollment?.karat || null;
-  }, [selectedEnrollmentId, enrollments]);
+    return selectedEnrollment?.karat || null;
+  }, [selectedEnrollment]);
 
   // Get the metal name for display (gold vs silver)
   const metalName = useMemo(() => 
@@ -161,12 +164,19 @@ export default function CollectionsPage() {
   }, [selectedEnrollmentKarat, profile?.retailer_id]);
 
   useEffect(() => {
-    if (selectedEnrollmentId) {
-      void loadMonthlyPaymentInfo(selectedEnrollmentId);
+    if (selectedEnrollment) {
+      if (selectedEnrollment.store_id) {
+        setSelectedStore(selectedEnrollment.store_id);
+      } else if (stores.length === 1) {
+        setSelectedStore(stores[0].id);
+      } else if (!selectedStore) {
+        setSelectedStore('');
+      }
+      void loadMonthlyPaymentInfo(selectedEnrollment.id);
     } else {
       setMonthlyPaymentInfo(null);
     }
-  }, [selectedEnrollmentId]);
+  }, [selectedEnrollment, stores, selectedStore]);
 
   const calculatedGrams = useMemo(() => {
     const amountNum = parseFloat(amount);
@@ -397,6 +407,12 @@ export default function CollectionsPage() {
       return;
     }
 
+    const resolvedStoreId = selectedEnrollment?.store_id || selectedStore;
+    if (!resolvedStoreId) {
+      toast.error('Select a store for this payment');
+      return;
+    }
+
     const amountNum = parseFloat(amount);
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       toast.error('Enter a valid amount');
@@ -441,7 +457,7 @@ export default function CollectionsPage() {
         paid_at: now,
         recorded_at: now,
         source: 'STAFF_OFFLINE',
-        store_id: selectedStore || null,
+        store_id: resolvedStoreId,
       });
 
       if (txnError) throw txnError;

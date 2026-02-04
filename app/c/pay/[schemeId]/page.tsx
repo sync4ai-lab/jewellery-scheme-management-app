@@ -214,6 +214,10 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
     e.preventDefault();
 
     if (!enrollment || !goldRate || !customer || !paymentType) return;
+    if (!enrollment.store_id) {
+      setError('Store not set for this plan. Please contact the store for assistance.');
+      return;
+    }
 
     setError('');
     setProcessing(true);
@@ -257,7 +261,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
       // - paid_at, source, payment_ref, receipt_number
       const { error: insertError } = await supabase.from('transactions').insert({
         retailer_id: enrollment.retailer_id,
-        store_id: enrollment.store_id, // if your DB later enforces NOT NULL, ensure enrollments.store_id is populated
+        store_id: enrollment.store_id,
         enrollment_id: enrollment.id,
         customer_id: customer.id,
 

@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Package, Sparkles, CheckCircle, IndianRupee, Calendar, TrendingUp } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
@@ -23,28 +23,8 @@ type Plan = {
   is_active: boolean;
 };
 
-type Store = {
-  id: string;
-  name: string;
-  code: string | null;
-};
-
-function safeNumber(v: any): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function toISODate(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-IN').format(value);
-}
-
 export default function CustomerEnrollmentPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { customer, loading: authLoading } = useCustomerAuth();
   
@@ -54,9 +34,6 @@ export default function CustomerEnrollmentPage() {
   const [selectedKarat, setSelectedKarat] = useState<string>('22K');
   const [initialPayment, setInitialPayment] = useState('');
   const [payNow, setPayNow] = useState(false);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [selectedStore, setSelectedStore] = useState<string>('');
-  const [adminStaffId, setAdminStaffId] = useState<string | null>(null);
   
   const [isLoading, setIsLoading] = useState(true);
   const [isEnrolling, setIsEnrolling] = useState(false);
@@ -73,12 +50,10 @@ export default function CustomerEnrollmentPage() {
     }
   }, [authLoading, customer, router, toast]);
   
-  // Load available plans + stores + admin staff
+  // Load available plans
   useEffect(() => {
     if (customer?.retailer_id) {
       loadPlans();
-      loadStores();
-      loadAdminStaff();
     }
   }, [customer?.retailer_id]);
   
@@ -104,17 +79,7 @@ export default function CustomerEnrollmentPage() {
       
       if (error) throw error;
       
-      const normalized = (data || []) as Plan[];
-      setPlans(normalized);
-
-      const preselectedId = searchParams.get('planId');
-      if (preselectedId) {
-        const preselected = normalized.find((p) => p.id === preselectedId);
-        if (preselected) {
-          setSelectedPlan(preselected.id);
-          setCommitmentAmount(String(preselected.installment_amount));
-        }
-      }
+      setPlans((data || []) as Plan[]);
     } catch (error: any) {
       console.error('Error loading plans:', error);
       toast({
@@ -126,63 +91,13 @@ export default function CustomerEnrollmentPage() {
       setIsLoading(false);
     }
   }
-
-  async function loadStores() {
-    if (!customer?.retailer_id) return;
-    try {
-      const { data, error } = await supabase
-        .from('stores')
-        .select('id, name, code, is_active')
-        .eq('retailer_id', customer.retailer_id)
-        .eq('is_active', true)
-        .order('name', { ascending: true });
-
-      if (error) throw error;
-      const storeList = (data || []) as Store[];
-      setStores(storeList);
-      if (storeList.length === 1) {
-        setSelectedStore(storeList[0].id);
-      }
-    } catch (error) {
-      console.error('Error loading stores:', error);
-    }
-  }
-
-  async function loadAdminStaff() {
-    if (!customer?.retailer_id) return;
-    try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .eq('retailer_id', customer.retailer_id)
-        .eq('role', 'ADMIN')
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
-      setAdminStaffId(data?.id ?? null);
-    } catch (error) {
-      console.error('Error loading admin staff:', error);
-    }
-  }
   
   // Get selected plan details
   const selectedPlanDetails = plans.find((p) => p.id === selectedPlan);
-
-  function getMinCommitment(plan: Plan): number {
-    return safeNumber(plan.installment_amount);
-  }
-
-  function getPresets(plan: Plan): number[] {
-    const min = getMinCommitment(plan);
-    const p1 = Math.ceil(min / 1000) * 1000;
-    return [p1, p1 + 2000, p1 + 5000, p1 + 10000];
-  }
   
   // Validate commitment amount
   const commitmentAmountNum = parseFloat(commitmentAmount) || 0;
-  const minAmount = selectedPlanDetails ? getMinCommitment(selectedPlanDetails) : 0;
+  const minAmount = selectedPlanDetails?.installment_amount || 0;
   const isCommitmentValid = commitmentAmountNum >= minAmount;
   
   // Validate initial payment
@@ -203,15 +118,6 @@ export default function CustomerEnrollmentPage() {
       toast({
         title: 'Error',
         description: 'Please select a plan',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!selectedStore) {
-      toast({
-        title: 'Error',
-        description: 'Please select a store location',
         variant: 'destructive',
       });
       return;
@@ -238,15 +144,9 @@ export default function CustomerEnrollmentPage() {
     setIsEnrolling(true);
     
     try {
-      const plan = selectedPlanDetails;
-      if (!plan) throw new Error('Selected plan not found');
-
       const startDate = new Date();
-      const billingDay = startDate.getDate();
-      const durationMonths = safeNumber(plan.duration_months);
-      const maturity = new Date(startDate);
-      maturity.setMonth(maturity.getMonth() + durationMonths);
-      maturity.setHours(0, 0, 0, 0);
+      const firstBillingMonth = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+      const dueDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 5); // 5th of next month
       
       // Create enrollment
       const { data: enrollmentData, error: enrollmentError } = await supabase
@@ -255,29 +155,59 @@ export default function CustomerEnrollmentPage() {
           retailer_id: customer.retailer_id,
           customer_id: customer.id,
           plan_id: selectedPlan,
-          start_date: toISODate(startDate),
-          billing_day_of_month: billingDay,
-          commitment_amount: commitmentAmountNum,
+          monthly_amount: commitmentAmountNum,
+          start_date: startDate.toISOString().split('T')[0],
+          first_billing_month: firstBillingMonth.toISOString().split('T')[0],
+          first_due_date: dueDate.toISOString().split('T')[0],
+          billing_day_of_month: 5,
           karat: selectedKarat,
           status: 'ACTIVE',
-          timezone: 'Asia/Kolkata',
-          source: 'CUSTOMER_PORTAL',
-          maturity_date: toISODate(maturity),
-          store_id: selectedStore,
-          assigned_staff_id: adminStaffId,
-          created_by: adminStaffId,
         })
         .select()
         .single();
       
       if (enrollmentError) throw enrollmentError;
       
-      toast({
-        title: 'Enrollment Successful!',
-        description: 'You can make your payment now.',
-      });
-
-      router.push('/c/schemes');
+      // If customer wants to pay now, create transaction
+      if (payNow && initialPaymentNum >= commitmentAmountNum) {
+        const { error: transactionError } = await supabase
+          .from('transactions')
+          .insert({
+            retailer_id: customer.retailer_id,
+            enrollment_id: enrollmentData.id,
+            customer_id: customer.id,
+            txn_type: 'PRIMARY_INSTALLMENT',
+            amount_paid: initialPaymentNum,
+            billing_month: firstBillingMonth.toISOString().split('T')[0],
+            payment_mode: 'ONLINE', // Or whatever mode customer used
+            payment_status: 'SUCCESS',
+            paid_at: new Date().toISOString(),
+          });
+        
+        if (transactionError) {
+          console.error('Error creating transaction:', transactionError);
+          // Don't throw - enrollment succeeded
+          toast({
+            title: 'Enrollment Successful',
+            description: 'Enrollment created but payment failed. Please pay separately.',
+          });
+        } else {
+          toast({
+            title: 'Success!',
+            description: `Enrolled successfully and paid ₹${initialPaymentNum}`,
+          });
+        }
+      } else {
+        toast({
+          title: 'Enrollment Successful!',
+          description: 'You can make your first payment from the Collections page',
+        });
+      }
+      
+      // Redirect to customer dashboard
+      setTimeout(() => {
+        router.push('/c/schemes');
+      }, 1500);
     } catch (error: any) {
       console.error('Error enrolling:', error);
       toast({
@@ -308,11 +238,11 @@ export default function CustomerEnrollmentPage() {
   }
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gold-25 via-background to-gold-50/30 sparkle-bg p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-gold-50 via-white to-gold-100 p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
-          <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
+          <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-gold-600 to-gold-800 bg-clip-text text-transparent">
             Choose Your Gold Savings Plan
           </h1>
           <p className="text-gray-600">
@@ -327,30 +257,27 @@ export default function CustomerEnrollmentPage() {
               key={plan.id}
               className={`cursor-pointer transition-all hover:shadow-lg ${
                 selectedPlan === plan.id
-                  ? 'ring-2 ring-gold-600 shadow-xl bg-white/80'
-                  : 'hover:ring-2 hover:ring-gold-300 bg-white/70'
+                  ? 'ring-2 ring-gold-600 shadow-lg'
+                  : 'hover:ring-2 hover:ring-gold-300'
               }`}
-              onClick={() => {
-                setSelectedPlan(plan.id);
-                setCommitmentAmount(String(plan.installment_amount));
-              }}
+              onClick={() => setSelectedPlan(plan.id)}
             >
-              <CardHeader className="bg-gradient-to-br from-rose-400 via-gold-400 to-amber-600 text-white rounded-t-xl">
+              <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <CardTitle className="text-lg flex items-center gap-2">
-                      <Package className="h-5 w-5 text-white" />
+                      <Package className="h-5 w-5 text-gold-600" />
                       {plan.name}
                     </CardTitle>
                     {plan.bonus_percentage > 0 && (
-                      <Badge className="mt-2 bg-white/20 text-white">
+                      <Badge className="mt-2 bg-gradient-to-r from-gold-600 to-gold-700">
                         <Sparkles className="h-3 w-3 mr-1" />
                         {plan.bonus_percentage}% Bonus
                       </Badge>
                     )}
                   </div>
                   {selectedPlan === plan.id && (
-                    <CheckCircle className="h-6 w-6 text-white flex-shrink-0" />
+                    <CheckCircle className="h-6 w-6 text-gold-600 flex-shrink-0" />
                   )}
                 </div>
               </CardHeader>
@@ -359,7 +286,7 @@ export default function CustomerEnrollmentPage() {
                   <IndianRupee className="h-4 w-4 text-gray-500" />
                   <span className="text-gray-600">Min. Monthly:</span>
                   <span className="font-semibold text-gray-900">
-                    ₹{formatCurrency(plan.installment_amount)}
+                    ₹{plan.installment_amount.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
@@ -417,67 +344,27 @@ export default function CustomerEnrollmentPage() {
                 </div>
                 {commitmentAmount && !isCommitmentValid && (
                   <p className="text-sm text-red-600">
-                    Minimum amount is ₹{formatCurrency(minAmount)}
+                    Minimum amount is ₹{minAmount}
                   </p>
                 )}
                 <p className="text-xs text-gray-500">
                   You must pay at least this amount once per month. You can top up anytime!
                 </p>
-                {selectedPlanDetails && (
-                  <div className="flex gap-2 mt-3 flex-wrap">
-                    {getPresets(selectedPlanDetails).map((preset) => (
-                      <Button
-                        key={preset}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCommitmentAmount(preset.toString())}
-                        className="rounded-lg"
-                      >
-                        ₹{formatCurrency(preset)}
-                      </Button>
-                    ))}
-                  </div>
-                )}
               </div>
               
-              {/* Metal Type */}
+              {/* Karat Selection */}
               <div className="space-y-2">
-                <Label htmlFor="karat">Metal Type *</Label>
-                <Select value={selectedKarat} onValueChange={setSelectedKarat}>
-                  <SelectTrigger id="karat">
-                    <SelectValue placeholder="Select metal type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="18K">18K Gold</SelectItem>
-                    <SelectItem value="22K">22K Gold</SelectItem>
-                    <SelectItem value="24K">24K Gold</SelectItem>
-                    <SelectItem value="SILVER">Silver</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  This metal type will be used for all payments in this enrollment. <strong>Cannot be changed after enrollment is created.</strong>
-                </p>
-              </div>
-
-              {/* Store Selection */}
-              <div className="space-y-2">
-                <Label htmlFor="store">Store Location *</Label>
-                <Select value={selectedStore || undefined} onValueChange={setSelectedStore}>
-                  <SelectTrigger id="store">
-                    <SelectValue placeholder="Select store" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {stores.map((store) => (
-                      <SelectItem key={store.id} value={store.id}>
-                        {store.name} {store.code && `(${store.code})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {stores.length === 0 && (
-                  <p className="text-xs text-muted-foreground">No stores available. Please contact administrator.</p>
-                )}
+                <Label>Gold Karat</Label>
+                <RadioGroup value={selectedKarat} onValueChange={setSelectedKarat}>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="22K" id="22k" />
+                    <Label htmlFor="22k" className="cursor-pointer">22 Karat (Most Popular)</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="24K" id="24k" />
+                    <Label htmlFor="24k" className="cursor-pointer">24 Karat (Pure Gold)</Label>
+                  </div>
+                </RadioGroup>
               </div>
               
               {/* Pay Now Option */}
@@ -530,7 +417,7 @@ export default function CustomerEnrollmentPage() {
                 </Button>
                 <Button
                   onClick={handleEnrollment}
-                  disabled={isEnrolling || !isCommitmentValid || !selectedStore || (payNow && !isInitialPaymentValid)}
+                  disabled={isEnrolling || !isCommitmentValid || (payNow && !isInitialPaymentValid)}
                   className="flex-1 bg-gradient-to-r from-gold-600 to-gold-700 hover:from-gold-700 hover:to-gold-800"
                 >
                   {isEnrolling ? (

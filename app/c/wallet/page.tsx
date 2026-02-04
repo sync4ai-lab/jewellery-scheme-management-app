@@ -39,7 +39,7 @@ type EnrollmentRow = {
   commitment_amount?: number | null;
   total_paid?: number | null;
   total_grams_allocated?: number | null;
-  scheme_templates?: Plan | null;
+  plans?: Plan | null;
 };
 
 type BillingRow = {
@@ -76,7 +76,7 @@ export default function CustomerWalletPage() {
     try {
       const { data: enrollmentsData, error: enrollmentsError } = await supabase
         .from('enrollments')
-        .select('id, status, customer_id, retailer_id, commitment_amount, total_paid, total_grams_allocated, scheme_templates(id, name, installment_amount, duration_months)')
+        .select('id, status, customer_id, retailer_id, commitment_amount, total_paid, total_grams_allocated, plans(id, name, installment_amount, duration_months)')
         .eq('customer_id', customer.id)
         .eq('status', 'ACTIVE');
 
@@ -131,7 +131,7 @@ export default function CustomerWalletPage() {
             const dueDate = new Date(row.due_date as string);
 
             const enrollment = enrollments.find((e) => e.id === row.enrollment_id);
-            const plan = enrollment?.scheme_templates;
+            const plan = enrollment?.plans;
 
             const amount =
               (typeof enrollment?.commitment_amount === 'number' && enrollment.commitment_amount > 0
