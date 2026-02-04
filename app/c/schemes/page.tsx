@@ -276,40 +276,50 @@ export default function CustomerSchemesPage() {
         </div>
 
         {/* Available Plans */}
-        {availablePlans.length > 0 ? (
-          <div className="space-y-6">
-            <h2 className="text-3xl font-bold bg-gradient-to-r from-gold-600 to-rose-600 bg-clip-text text-transparent">Available Plans</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {availablePlans
-                .filter(plan => !enrollments.some(e => e.planId === plan.id))
-                .map(plan => (
-                  <Card key={plan.id} className="group overflow-hidden">
-                    <div className="h-28 bg-gradient-to-br from-rose-400 via-gold-400 to-amber-600 relative overflow-hidden">
-                      <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-white"></div>
-                    </div>
-                    <CardHeader className="pt-6">
-                      <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                      <CardDescription>
-                        {plan.duration_months} months • ₹{plan.installment_amount.toLocaleString()}
-                        {plan.bonus_percentage ? ` • Bonus: ${plan.bonus_percentage}%` : ''}
-                        {plan.description ? <><br />{plan.description}</> : null}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Button className="w-full luxury-gold-gradient text-white hover:opacity-95 rounded-2xl font-semibold py-2" onClick={() => openEnrollDialog(plan)}>
-                        <Plus className="w-5 h-5 mr-2" /> Enroll Now
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              {availablePlans.filter(plan => !enrollments.some(e => e.planId === plan.id)).length === 0 && (
-                <div className="col-span-full text-center text-muted-foreground py-8">All available plans are already enrolled.</div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="text-center text-muted-foreground py-8">No available plans at this time.</div>
-        )}
+        {(() => {
+          // Filter out plans the customer is already enrolled in
+          const enrolledPlanIds = new Set(enrollments.map(e => e.planId));
+          const displayPlans = availablePlans.filter(plan => !enrolledPlanIds.has(plan.id));
+          if (displayPlans.length > 0) {
+            return (
+              <div className="space-y-6">
+                <h2 className="text-3xl font-bold bg-gradient-to-r from-gold-600 to-rose-600 bg-clip-text text-transparent">Available Plans</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {displayPlans.map(plan => (
+                    <Card key={plan.id} className="group overflow-hidden shadow-xl border-gold-100 hover:scale-[1.02] transition-transform">
+                      <div className="h-28 bg-gradient-to-br from-rose-400 via-gold-400 to-amber-600 relative overflow-hidden">
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-300 bg-white"></div>
+                      </div>
+                      <CardHeader className="pt-6">
+                        <CardTitle className="text-2xl font-bold text-gold-700">{plan.name}</CardTitle>
+                        <CardDescription className="text-base text-gold-600">
+                          <span className="font-semibold">{plan.duration_months} months</span> • <span className="font-semibold">₹{plan.installment_amount.toLocaleString()}</span>
+                          {plan.bonus_percentage ? <span> • <span className="text-rose-600 font-semibold">Bonus: {plan.bonus_percentage}%</span></span> : ''}
+                          {plan.description ? <><br /><span className="text-sm text-gray-500">{plan.description}</span></> : null}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <Button className="w-full luxury-gold-gradient text-white hover:opacity-95 rounded-2xl font-semibold py-2 shadow-md" onClick={() => openEnrollDialog(plan)}>
+                          <Plus className="w-5 h-5 mr-2" /> Enroll Now
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            );
+          } else {
+            return (
+              <div className="flex flex-col items-center justify-center py-16">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-gold-200 via-gold-100 to-rose-100 flex items-center justify-center mb-6">
+                  <Sparkles className="w-12 h-12 text-gold-400" />
+                </div>
+                <div className="text-2xl font-bold text-gold-700 mb-2">All Plans Enrolled!</div>
+                <div className="text-md text-muted-foreground">You have already enrolled in all available plans. Check back later for new offers.</div>
+              </div>
+            );
+          }
+        })()}
 
         {/* Active Enrollments */}
         {enrollments.length > 0 ? (
