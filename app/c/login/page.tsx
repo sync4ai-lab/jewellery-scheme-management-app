@@ -40,6 +40,7 @@ export default function CustomerLoginPage() {
     // Clear any customer bypass values on login page mount
     localStorage.removeItem('customer_phone_bypass');
     localStorage.removeItem('customer_retailer_bypass');
+    localStorage.removeItem('customer_id_bypass');
     setMounted(true);
   }, []);
 

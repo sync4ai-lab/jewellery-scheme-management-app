@@ -84,7 +84,24 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
 
       if (session?.user) {
         try {
-          await hydrateCustomer(session.user.id);
+          const { data: profile, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('id, role, customer_id')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (profileError) {
+            setError('Customer auth profile error: ' + formatSupabaseError(profileError, 'Unknown error'));
+          }
+
+          if (profile && profile.role !== 'CUSTOMER') {
+            setError('You are logged in as ' + profile.role + '. Please sign out and use customer login.');
+            setCustomer(null);
+            setLoading(false);
+            return;
+          }
+
+          await hydrateCustomer(session.user.id, profile?.customer_id || null);
         } catch (err: any) {
           setError('Customer hydration error: ' + (err?.message || 'Unknown error'));
         }
@@ -197,7 +214,23 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
 
         if (session?.user) {
           try {
-            await hydrateCustomer(session.user.id);
+            const { data: profile, error: profileError } = await supabase
+              .from('user_profiles')
+              .select('id, role, customer_id')
+              .eq('id', session.user.id)
+              .maybeSingle();
+
+            if (profileError) {
+              setError('Customer auth profile error: ' + formatSupabaseError(profileError, 'Unknown error'));
+            }
+
+            if (profile && profile.role !== 'CUSTOMER') {
+              setError('You are logged in as ' + profile.role + '. Please sign out and use customer login.');
+              setCustomer(null);
+              return;
+            }
+
+            await hydrateCustomer(session.user.id, profile?.customer_id || null);
           } catch (err: any) {
             setError('Customer hydration error: ' + (err?.message || 'Unknown error'));
           }
@@ -215,7 +248,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
   /**
    * Centralized customer hydration
    */
-  const hydrateCustomer = async (userId: string) => {
+  const hydrateCustomer = async (userId: string, profileCustomerId?: string | null) => {
     // Get the current user session to access phone/email
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -228,7 +261,9 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       .select('id, retailer_id, full_name, phone, email, user_id')
       .maybeSingle();
 
-    if (user.id) {
+    if (profileCustomerId) {
+      query = query.eq('id', profileCustomerId) as any;
+    } else if (user.id) {
       query = query.or(`user_id.eq.${user.id},id.eq.${user.id}`) as any;
     } else if (user.phone) {
       const normalizedPhone = user.phone.replace(/\D/g, '');
