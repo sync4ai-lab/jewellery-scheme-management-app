@@ -113,7 +113,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
                 .select('id, retailer_id, full_name, phone, email')
                 .or(
                   phoneCandidates
-                    .flatMap(candidate => [`phone.eq.${candidate}`, `phone_number.eq.${candidate}`])
+                    .map(candidate => `phone.eq.${candidate}`)
                     .join(',')
                 );
               if (retailerId) {
@@ -133,7 +133,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
                 let fallbackQuery = supabase
                   .from('customers')
                   .select('id, retailer_id, full_name, phone, email')
-                  .or(`phone.ilike.%${normalizedPhone},phone_number.ilike.%${normalizedPhone}`);
+                  .or(`phone.ilike.%${normalizedPhone}`);
                 if (retailerId) {
                   fallbackQuery = fallbackQuery.eq('retailer_id', retailerId);
                 }
@@ -215,7 +215,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       ].filter(Boolean);
       query = query.or(
         phoneCandidates
-          .flatMap(candidate => [`phone.eq.${candidate}`, `phone_number.eq.${candidate}`])
+          .map(candidate => `phone.eq.${candidate}`)
           .join(',')
       ) as any;
     } else if (user.email) {
