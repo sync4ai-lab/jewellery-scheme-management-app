@@ -67,26 +67,43 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     if (typeof window !== 'undefined' && window.location.pathname !== '/c/login') {
       const phoneBypass = localStorage.getItem('customer_phone_bypass');
       const retailerBypass = localStorage.getItem('customer_retailer_bypass');
-      if (phoneBypass) {
+      const customerIdBypass = localStorage.getItem('customer_id_bypass');
+      if (phoneBypass || customerIdBypass) {
         (async () => {
           setLoading(true);
           try {
-            const normalizedPhone = phoneBypass.replace(/\D/g, '');
-            const phoneCandidates = [
-              normalizedPhone,
-              `+91${normalizedPhone}`,
-              `91${normalizedPhone}`,
-            ].filter(Boolean);
             const retailerId = retailerBypass || null;
-            let query = supabase
-              .from('customers')
-              .select('id, retailer_id, full_name, phone, email')
-              .in('phone', phoneCandidates);
-            if (retailerId) {
-              query = query.eq('retailer_id', retailerId);
+            let result = { data: null as any, error: null as any };
+
+            if (customerIdBypass) {
+              let idQuery = supabase
+                .from('customers')
+                .select('id, retailer_id, full_name, phone, email')
+                .eq('id', customerIdBypass);
+              if (retailerId) {
+                idQuery = idQuery.eq('retailer_id', retailerId);
+              }
+              console.log('[CustomerAuth] Running customer bypass by id:', { customerIdBypass, retailerId });
+              result = await idQuery.maybeSingle();
             }
-            console.log('[CustomerAuth] Running customer bypass query:', { phoneBypass, retailerId });
-            const result = await query.maybeSingle();
+
+            if (!result.data && phoneBypass) {
+              const normalizedPhone = phoneBypass.replace(/\D/g, '');
+              const phoneCandidates = [
+                normalizedPhone,
+                `+91${normalizedPhone}`,
+                `91${normalizedPhone}`,
+              ].filter(Boolean);
+              let query = supabase
+                .from('customers')
+                .select('id, retailer_id, full_name, phone, email')
+                .in('phone', phoneCandidates);
+              if (retailerId) {
+                query = query.eq('retailer_id', retailerId);
+              }
+              console.log('[CustomerAuth] Running customer bypass query:', { phoneBypass, retailerId });
+              result = await query.maybeSingle();
+            }
             console.log('[CustomerAuth] Customer bypass result:', result);
             if (isMounted) {
               if (result.data) {

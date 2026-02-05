@@ -99,6 +99,7 @@ export default function CustomerLoginPage() {
     // Save bypass info and reload
     localStorage.setItem('customer_phone_bypass', normalizedPhone);
     localStorage.setItem('customer_retailer_bypass', retailerId);
+    localStorage.setItem('customer_id_bypass', customer.id);
     setLoading(false);
     router.replace('/c/schemes');
   };
