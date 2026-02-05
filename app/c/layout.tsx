@@ -25,6 +25,12 @@ function CustomerGuard({ children }: { children: React.ReactNode }) {
     if (isPublicRoute) return;
 
     if (!loading && !user && !customer) {
+      console.warn('[CustomerGuard] Redirecting to /c/login', {
+        pathname,
+        loading,
+        userId: user?.id || null,
+        customerId: customer?.id || null,
+      });
       router.push('/c/login');
     }
   }, [user, customer, loading, router, isPublicRoute]);

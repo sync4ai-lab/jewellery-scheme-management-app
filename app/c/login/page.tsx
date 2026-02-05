@@ -62,7 +62,11 @@ export default function CustomerLoginPage() {
       .from('customers')
       .select('id, retailer_id, phone, full_name')
       .eq('retailer_id', retailerId)
-      .in('phone', phoneCandidates)
+      .or(
+        phoneCandidates
+          .flatMap(candidate => [`phone.eq.${candidate}`, `phone_number.eq.${candidate}`])
+          .join(',')
+      )
       .limit(1)
       .maybeSingle();
 
@@ -79,7 +83,7 @@ export default function CustomerLoginPage() {
         .from('customers')
         .select('id, retailer_id, phone, full_name')
         .eq('retailer_id', retailerId)
-        .ilike('phone', `%${normalizedPhone}`)
+        .or(`phone.ilike.%${normalizedPhone},phone_number.ilike.%${normalizedPhone}`)
         .limit(1)
         .maybeSingle();
 

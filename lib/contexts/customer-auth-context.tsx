@@ -33,6 +33,20 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    (window as any).__customerAuthDebug = {
+      userId: user?.id || null,
+      customerId: customer?.id || null,
+      loading,
+      error,
+      pathname: window.location.pathname,
+      phoneBypass: localStorage.getItem('customer_phone_bypass'),
+      retailerBypass: localStorage.getItem('customer_retailer_bypass'),
+      customerIdBypass: localStorage.getItem('customer_id_bypass'),
+    };
+  }, [user, customer, loading, error]);
+
   // Track hydration - only access browser APIs after mount
   useEffect(() => {
     setMounted(true);
@@ -97,7 +111,11 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
               let query = supabase
                 .from('customers')
                 .select('id, retailer_id, full_name, phone, email')
-                .in('phone', phoneCandidates);
+                .or(
+                  phoneCandidates
+                    .flatMap(candidate => [`phone.eq.${candidate}`, `phone_number.eq.${candidate}`])
+                    .join(',')
+                );
               if (retailerId) {
                 query = query.eq('retailer_id', retailerId);
               }
@@ -115,7 +133,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
                 let fallbackQuery = supabase
                   .from('customers')
                   .select('id, retailer_id, full_name, phone, email')
-                  .ilike('phone', `%${normalizedPhone}`);
+                  .or(`phone.ilike.%${normalizedPhone},phone_number.ilike.%${normalizedPhone}`);
                 if (retailerId) {
                   fallbackQuery = fallbackQuery.eq('retailer_id', retailerId);
                 }
@@ -189,7 +207,17 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       .select('id, retailer_id, full_name, phone, email')
       .maybeSingle();
     if (user.phone) {
-      (query as any).eq('phone', user.phone);
+      const normalizedPhone = user.phone.replace(/\D/g, '');
+      const phoneCandidates = [
+        normalizedPhone,
+        `+91${normalizedPhone}`,
+        `91${normalizedPhone}`,
+      ].filter(Boolean);
+      query = query.or(
+        phoneCandidates
+          .flatMap(candidate => [`phone.eq.${candidate}`, `phone_number.eq.${candidate}`])
+          .join(',')
+      ) as any;
     } else if (user.email) {
       (query as any).eq('email', user.email);
     } else {
@@ -318,6 +346,12 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     </CustomerAuthContext.Provider>
   );
 }
+
+// Debug surface for customer auth state
+if (typeof window !== 'undefined') {
+  (window as any).__customerAuthDebug = (window as any).__customerAuthDebug || {};
+}
+
 
 /**
  * Safe JSON parser (prevents abort cascades)
