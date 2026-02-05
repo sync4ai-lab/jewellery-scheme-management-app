@@ -17,6 +17,7 @@ type CustomerAuthContextType = {
   user: User | null;
   customer: CustomerProfile | null;
   loading: boolean;
+  error: string | null;
   sendOTP: (phone: string) => Promise<{ success: boolean; error?: string }>;
   verifyOTP: (phone: string, otp: string) => Promise<{ success: boolean; error?: string }>;
   signInWithPhone: (phone: string, pin: string) => Promise<{ success: boolean; error?: string }>;
@@ -121,6 +122,9 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
               }
               console.log('[CustomerAuth] Running customer bypass query:', { phoneBypass, retailerId });
               result = await query.maybeSingle();
+              if (result.error) {
+                setError('Customer bypass error: ' + formatSupabaseError(result.error, 'Unknown error'));
+              }
             }
             console.log('[CustomerAuth] Customer bypass result:', result);
             if (isMounted) {
@@ -138,6 +142,9 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
                   fallbackQuery = fallbackQuery.eq('retailer_id', retailerId);
                 }
                 const fallback = await fallbackQuery.maybeSingle();
+                if (fallback.error) {
+                  setError('Customer bypass error: ' + formatSupabaseError(fallback.error, 'Unknown error'));
+                }
 
                 if (fallback.data) {
                   setCustomer(fallback.data);
@@ -227,7 +234,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     const { data, error } = await query;
     if (error) {
       console.error('Customer hydrate error:', error);
-      setError('Customer hydrate error: ' + error.message);
+      setError('Customer hydrate error: ' + formatSupabaseError(error, 'Unknown error'));
       setCustomer(null);
       return;
     }
@@ -338,7 +345,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
 
   return (
     <CustomerAuthContext.Provider
-      value={{ user, customer, loading, sendOTP, verifyOTP, signInWithPhone, signOut }}
+      value={{ user, customer, loading, error, sendOTP, verifyOTP, signInWithPhone, signOut }}
     >
       {/* Only show error if customer is logged in, not on login page */}
       {/* Removed pre-login error banner as per requirements */}
@@ -350,6 +357,12 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
 // Debug surface for customer auth state
 if (typeof window !== 'undefined') {
   (window as any).__customerAuthDebug = (window as any).__customerAuthDebug || {};
+}
+
+function formatSupabaseError(err: any, fallback: string) {
+  if (!err) return fallback;
+  const details = [err.message, err.details, err.hint, err.code].filter(Boolean).join(' | ');
+  return details || fallback;
 }
 
 

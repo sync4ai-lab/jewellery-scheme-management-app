@@ -18,6 +18,7 @@ type AuthContextType = {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -60,7 +61,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (mounted) {
             if (error) {
               console.error('Error fetching user profile:', error);
-              setError('Error fetching user profile: ' + error.message);
+              setError(
+                'Error fetching user profile: ' +
+                  [error.message, error.details, error.hint, error.code].filter(Boolean).join(' | ')
+              );
             }
             setProfile(data);
             setLoading(false);
@@ -138,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return <div className="flex items-center justify-center min-h-screen text-red-600">{error}</div>;
   }
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, error, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -15,6 +15,12 @@ type Retailer = {
   business_name: string;
 };
 
+function formatSupabaseError(err: any, fallback: string) {
+  if (!err) return fallback;
+  const details = [err.message, err.details, err.hint, err.code].filter(Boolean).join(' | ');
+  return details || fallback;
+}
+
 export default function CustomerLoginPage() {
   const router = useRouter();
   const [retailers, setRetailers] = useState<Retailer[] | null>(null);
@@ -36,7 +42,7 @@ export default function CustomerLoginPage() {
     async function fetchRetailers() {
       const { data, error } = await supabase.from('retailers').select('id, business_name').order('business_name');
       if (error) {
-        setError('Failed to load retailers');
+        setError('Failed to load retailers: ' + formatSupabaseError(error, 'Unknown error'));
         setRetailers([]);
         return;
       }
@@ -71,7 +77,7 @@ export default function CustomerLoginPage() {
       .maybeSingle();
 
     if (error) {
-      setError('Login failed. Please try again.');
+      setError('Login failed: ' + formatSupabaseError(error, 'Unknown error'));
       setLoading(false);
       return;
     }
@@ -88,7 +94,7 @@ export default function CustomerLoginPage() {
         .maybeSingle();
 
       if (fallback.error) {
-        setError('Login failed. Please try again.');
+        setError('Login failed: ' + formatSupabaseError(fallback.error, 'Unknown error'));
         setLoading(false);
         return;
       }

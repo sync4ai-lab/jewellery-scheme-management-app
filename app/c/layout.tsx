@@ -13,7 +13,7 @@ import { useEffect } from 'react';
 const PUBLIC_ROUTES = ['/c/login', '/c/register', '/c/forgot-pin'];
 
 function CustomerGuard({ children }: { children: React.ReactNode }) {
-  const { user, customer, loading } = useCustomerAuth();
+  const { user, customer, loading, error } = useCustomerAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -37,7 +37,16 @@ function CustomerGuard({ children }: { children: React.ReactNode }) {
 
   // Public routes render immediately without auth check
   if (isPublicRoute) {
-    return <>{children}</>;
+    return (
+      <>
+        {error && (
+          <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <strong>Customer auth error:</strong> {error}
+          </div>
+        )}
+        {children}
+      </>
+    );
   }
 
   if (loading) {
@@ -49,7 +58,16 @@ function CustomerGuard({ children }: { children: React.ReactNode }) {
     return null;
   }
   
-  return <>{children}</>;
+  return (
+    <>
+      {error && (
+        <div className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <strong>Customer auth error:</strong> {error}
+        </div>
+      )}
+      {children}
+    </>
+  );
 }
 
 
