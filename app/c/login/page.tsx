@@ -29,6 +29,10 @@ export default function CustomerLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<Record<string, any>>({
+    lastAction: 'init',
+    lastError: null,
+  });
 
   useEffect(() => {
     // Clear any customer bypass values on login page mount
@@ -40,13 +44,25 @@ export default function CustomerLoginPage() {
   useEffect(() => {
     if (!mounted) return;
     async function fetchRetailers() {
+      setDebugInfo(prev => ({ ...prev, lastAction: 'fetchRetailers:start', lastError: null }));
       const { data, error } = await supabase.from('retailers').select('id, business_name').order('business_name');
       if (error) {
         setError('Failed to load retailers: ' + formatSupabaseError(error, 'Unknown error'));
         setRetailers([]);
+        setDebugInfo(prev => ({
+          ...prev,
+          lastAction: 'fetchRetailers:error',
+          lastError: formatSupabaseError(error, 'Unknown error'),
+        }));
         return;
       }
       setRetailers(data || []);
+      setDebugInfo(prev => ({
+        ...prev,
+        lastAction: 'fetchRetailers:success',
+        retailerCount: data?.length ?? 0,
+        lastError: null,
+      }));
     }
     fetchRetailers();
   }, [mounted]);
@@ -56,6 +72,13 @@ export default function CustomerLoginPage() {
     setError(null);
     setLoading(true);
     const normalizedPhone = phone.replace(/\D/g, '');
+    setDebugInfo(prev => ({
+      ...prev,
+      lastAction: 'login:start',
+      retailerId,
+      phone: normalizedPhone,
+      lastError: null,
+    }));
     const phoneCandidates = [
       normalizedPhone,
       `+91${normalizedPhone}`,
@@ -77,8 +100,10 @@ export default function CustomerLoginPage() {
       .maybeSingle();
 
     if (error) {
-      setError('Login failed: ' + formatSupabaseError(error, 'Unknown error'));
+      const errMsg = formatSupabaseError(error, 'Unknown error');
+      setError('Login failed: ' + errMsg);
       setLoading(false);
+      setDebugInfo(prev => ({ ...prev, lastAction: 'login:error', lastError: errMsg }));
       return;
     }
     customer = data || null;
@@ -94,8 +119,10 @@ export default function CustomerLoginPage() {
         .maybeSingle();
 
       if (fallback.error) {
-        setError('Login failed: ' + formatSupabaseError(fallback.error, 'Unknown error'));
+        const errMsg = formatSupabaseError(fallback.error, 'Unknown error');
+        setError('Login failed: ' + errMsg);
         setLoading(false);
+        setDebugInfo(prev => ({ ...prev, lastAction: 'login:fallback-error', lastError: errMsg }));
         return;
       }
       customer = fallback.data || null;
@@ -104,6 +131,7 @@ export default function CustomerLoginPage() {
     if (!customer) {
       setError('No customer found for this retailer and phone number.');
       setLoading(false);
+      setDebugInfo(prev => ({ ...prev, lastAction: 'login:not-found', lastError: 'No customer found' }));
       return;
     }
     // Save bypass info and reload
@@ -111,6 +139,7 @@ export default function CustomerLoginPage() {
     localStorage.setItem('customer_retailer_bypass', retailerId);
     localStorage.setItem('customer_id_bypass', customer.id);
     setLoading(false);
+    setDebugInfo(prev => ({ ...prev, lastAction: 'login:success', customerId: customer.id, lastError: null }));
     router.replace('/c/schemes');
   };
 
@@ -157,6 +186,12 @@ export default function CustomerLoginPage() {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
+              <details className="rounded-md border border-gold-100 bg-gold-50/40 px-3 py-2 text-xs text-muted-foreground">
+                <summary className="cursor-pointer text-xs font-medium text-gold-700">Diagnostics</summary>
+                <pre className="mt-2 whitespace-pre-wrap text-[11px] text-gray-700">
+                  {JSON.stringify(debugInfo, null, 2)}
+                </pre>
+              </details>
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">Select Retailer</label>
                 <select
