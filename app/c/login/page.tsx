@@ -123,19 +123,13 @@ export default function CustomerLoginPage() {
         `91${normalizedPhone}`,
       ].filter(Boolean);
 
-      // Try exact matches against common stored formats
+      // Try exact matches against common stored formats (via RPC to avoid RLS blocks)
       let customer = null as any;
       let { data, error } = await supabase
-        .from('customers')
-        .select('id, retailer_id, phone, full_name')
-        .eq('retailer_id', retailerId)
-        .or(
-          phoneCandidates
-            .map(candidate => `phone.eq.${candidate}`)
-            .join(',')
-        )
-        .limit(1)
-        .maybeSingle();
+        .rpc('lookup_customer_by_phone', {
+          p_phone_candidates: phoneCandidates,
+          p_retailer_id: retailerId || null,
+        });
 
       if (error) {
         const errMsg = formatSupabaseError(error, 'Unknown error');
@@ -149,7 +143,7 @@ export default function CustomerLoginPage() {
         }));
         return;
       }
-      customer = data || null;
+      customer = Array.isArray(data) ? data[0] : null;
       setDebugInfo(prev => ({
         ...prev,
         firstQueryFound: Boolean(customer),
@@ -158,13 +152,10 @@ export default function CustomerLoginPage() {
 
       // Fallback: match any phone ending with the 10-digit number (handles spaces or formatting)
       if (!customer) {
-        const fallback = await supabase
-          .from('customers')
-          .select('id, retailer_id, phone, full_name')
-          .eq('retailer_id', retailerId)
-          .or(`phone.ilike.%${normalizedPhone}`)
-          .limit(1)
-          .maybeSingle();
+        const fallback = await supabase.rpc('lookup_customer_by_phone', {
+          p_phone_candidates: [normalizedPhone],
+          p_retailer_id: retailerId || null,
+        });
 
         if (fallback.error) {
           const errMsg = formatSupabaseError(fallback.error, 'Unknown error');
@@ -178,12 +169,32 @@ export default function CustomerLoginPage() {
           }));
           return;
         }
-        customer = fallback.data || null;
+        customer = Array.isArray(fallback.data) ? fallback.data[0] : null;
         setDebugInfo(prev => ({
           ...prev,
           fallbackQueryFound: Boolean(customer),
           fallbackQueryCustomerId: customer?.id || null,
         }));
+      }
+
+      // Diagnostic: try without retailer filter to detect mismatched retailer
+      if (!customer) {
+        const anyRetailer = await supabase.rpc('lookup_customer_by_phone', {
+          p_phone_candidates: phoneCandidates,
+          p_retailer_id: null,
+        });
+        const anyCustomer = Array.isArray(anyRetailer.data) ? anyRetailer.data[0] : null;
+        if (anyCustomer?.retailer_id) {
+          setError('Customer found, but linked to a different retailer. Please select the correct retailer.');
+          setLoading(false);
+          setDebugInfo(prev => ({
+            ...prev,
+            lastAction: 'login:retailer-mismatch',
+            lastError: 'Retailer mismatch',
+            mismatchRetailerId: anyCustomer.retailer_id,
+          }));
+          return;
+        }
       }
 
       // Fallback 2: try user_profiles (CUSTOMER) and map via customer_id

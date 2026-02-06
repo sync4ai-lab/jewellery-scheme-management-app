@@ -95,6 +95,18 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
           }
 
           if (profile && profile.role !== 'CUSTOMER') {
+            const isLoginPage = typeof window !== 'undefined' && window.location.pathname === '/c/login';
+            if (isLoginPage) {
+              try {
+                await supabase.auth.signOut();
+              } catch {
+                // ignore signout errors on login page
+              }
+              setCustomer(null);
+              setUser(null);
+              setLoading(false);
+              return;
+            }
             setError('You are logged in as ' + profile.role + '. Please sign out and use customer login.');
             setCustomer(null);
             setLoading(false);
@@ -140,47 +152,35 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
                 `+91${normalizedPhone}`,
                 `91${normalizedPhone}`,
               ].filter(Boolean);
-              let query = supabase
-                .from('customers')
-                .select('id, retailer_id, full_name, phone, email')
-                .or(
-                  phoneCandidates
-                    .map(candidate => `phone.eq.${candidate}`)
-                    .join(',')
-                );
-              if (retailerId) {
-                query = query.eq('retailer_id', retailerId);
-              }
               console.log('[CustomerAuth] Running customer bypass query:', { phoneBypass, retailerId });
-              result = await query.maybeSingle();
+              result = await supabase.rpc('lookup_customer_by_phone', {
+                p_phone_candidates: phoneCandidates,
+                p_retailer_id: retailerId || null,
+              });
               if (result.error) {
                 setError('Customer bypass error: ' + formatSupabaseError(result.error, 'Unknown error'));
               }
             }
             console.log('[CustomerAuth] Customer bypass result:', result);
             if (isMounted) {
-              if (result.data) {
-                setCustomer(result.data);
+              if (Array.isArray(result.data) ? result.data[0] : result.data) {
+                setCustomer(Array.isArray(result.data) ? result.data[0] : result.data);
                 setUser(null); // No supabase user session
-                console.log('[CustomerAuth] Customer set from bypass:', result.data);
+                console.log('[CustomerAuth] Customer set from bypass:', Array.isArray(result.data) ? result.data[0] : result.data);
               } else {
                 // Fallback: match any phone ending with the 10-digit number
-                let fallbackQuery = supabase
-                  .from('customers')
-                  .select('id, retailer_id, full_name, phone, email')
-                  .or(`phone.ilike.%${normalizedPhone}`);
-                if (retailerId) {
-                  fallbackQuery = fallbackQuery.eq('retailer_id', retailerId);
-                }
-                const fallback = await fallbackQuery.maybeSingle();
+                const fallback = await supabase.rpc('lookup_customer_by_phone', {
+                  p_phone_candidates: [normalizedPhone],
+                  p_retailer_id: retailerId || null,
+                });
                 if (fallback.error) {
                   setError('Customer bypass error: ' + formatSupabaseError(fallback.error, 'Unknown error'));
                 }
 
-                if (fallback.data) {
-                  setCustomer(fallback.data);
+                if (Array.isArray(fallback.data) ? fallback.data[0] : fallback.data) {
+                  setCustomer(Array.isArray(fallback.data) ? fallback.data[0] : fallback.data);
                   setUser(null);
-                  console.log('[CustomerAuth] Customer set from bypass fallback:', fallback.data);
+                  console.log('[CustomerAuth] Customer set from bypass fallback:', Array.isArray(fallback.data) ? fallback.data[0] : fallback.data);
                 } else {
                   setCustomer(null);
                   setError('No customer found for phone: ' + phoneBypass + (retailerId ? ' and retailer: ' + retailerId : ''));
