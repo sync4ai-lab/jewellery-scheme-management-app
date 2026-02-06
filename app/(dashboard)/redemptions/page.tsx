@@ -246,6 +246,7 @@ export default function RedemptionsPage() {
           customer_id, 
           plan_id, 
           karat, 
+          start_date,
           created_at, 
           maturity_date,
           customers(full_name, phone),
@@ -281,20 +282,28 @@ export default function RedemptionsPage() {
         });
       });
 
-      // Filter to only mature/eligible enrollments
-      // Eligibility: maturity_date has passed or is today
+      // Filter to only eligible enrollments
+      // Eligibility: completed plan duration AND has accumulated grams
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
       const eligible: EligibleEnrollment[] = enrollmentsData
-        .filter((e: any) => {
-          if (!e.maturity_date) return false;
-          const maturityDate = new Date(e.maturity_date);
-          maturityDate.setHours(0, 0, 0, 0);
-          return maturityDate <= today;
-        })
         .map((e: any) => {
           const totals = gramsMap.get(e.id) || { grams: 0, paid: 0 };
+          const durationMonths = e.scheme_templates?.duration_months;
+          const baseDate = e.start_date || e.maturity_date || e.created_at;
+          let eligibleDate: Date | null = null;
+
+          if (e.maturity_date) {
+            eligibleDate = new Date(e.maturity_date);
+          } else if (baseDate && Number.isFinite(durationMonths)) {
+            const start = new Date(baseDate);
+            eligibleDate = new Date(start.getFullYear(), start.getMonth() + Number(durationMonths), start.getDate());
+          }
+
+          if (eligibleDate) {
+            eligibleDate.setHours(0, 0, 0, 0);
+          }
 
           return {
             id: e.id,
@@ -304,10 +313,20 @@ export default function RedemptionsPage() {
             plan_name: e.scheme_templates?.name || 'Unknown Plan',
             karat: e.karat || '22K',
             created_at: e.created_at,
-            eligible_date: e.maturity_date,
+            eligible_date: eligibleDate ? eligibleDate.toISOString() : '',
             total_grams: totals.grams,
             total_paid: totals.paid,
-          };
+            _eligible_date_obj: eligibleDate,
+          } as EligibleEnrollment & { _eligible_date_obj?: Date | null };
+        })
+        .filter((e: any) => {
+          if (!e._eligible_date_obj) return false;
+          if (!e.total_grams || e.total_grams <= 0) return false;
+          return e._eligible_date_obj <= today;
+        })
+        .map((e: any) => {
+          const { _eligible_date_obj, ...rest } = e;
+          return rest as EligibleEnrollment;
         });
 
       setEligibleEnrollments(eligible);

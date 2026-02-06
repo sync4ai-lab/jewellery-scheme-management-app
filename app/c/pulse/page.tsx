@@ -377,7 +377,7 @@ export default function CustomerPulsePage() {
                 <Wallet className="w-5 h-5 text-green-600" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Total Collections</p>
+                <p className="text-xs text-muted-foreground">Total Payments</p>
                 <p className="text-xl font-bold">₹{metrics?.totalCollections.toLocaleString() || 0}</p>
               </div>
             </div>

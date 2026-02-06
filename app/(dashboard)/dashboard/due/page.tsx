@@ -8,10 +8,18 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { CustomerDetailModal } from '@/components/customer-detail-modal';
 
 type OverdueEnrollment = {
   enrollment_id: string;
@@ -41,8 +49,19 @@ export default function DuePage() {
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
   const [loading, setLoading] = useState(true);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [reminderTarget, setReminderTarget] = useState<{
+    enrollmentId: string;
+    customerName: string;
+    customerPhone: string;
+  } | null>(null);
   const loadSeqRef = useRef(0);
   const router = useRouter();
+
+  const reminderMessage =
+    'Dear Customer, This is a gentle reminder as your payments are now due. Kindly make the payment to enjoy the benefits from your enrolled Schemes. Contact us if you need any assistance';
 
   useEffect(() => {
     if (authLoading) return;
@@ -234,29 +253,22 @@ export default function DuePage() {
   const totalDueAmount = overdues.reduce((sum, s) => sum + Number(s.monthly_amount || 0), 0);
   const criticalOverdue = overdues.filter((s) => Number(s.days_overdue || 0) > 14).length;
 
-  async function sendReminder(enrollmentId?: string) {
-    try {
-      // Safer RPC patterns:
-      // 1) enqueue_due_reminders(p_retailer uuid, p_enrollment uuid default null)
-      // OR
-      // 2) enqueue_due_reminders_for_enrollment(p_enrollment uuid)
-      //
-      // Choose ONE and implement in DB.
-      const retailerId = (user as any)?.retailer_id;
+  function openCustomerDetails(customerId: string) {
+    setSelectedCustomerId(customerId);
+    setDetailModalOpen(true);
+  }
 
-      const { error } = await supabase.rpc('enqueue_due_reminders', {
-        p_retailer: retailerId ?? null,
-        p_enrollment: enrollmentId ?? null,
-      });
+  function openReminderDialog(row: OverdueEnrollment) {
+    setReminderTarget({
+      enrollmentId: row.enrollment_id,
+      customerName: row.customer_name,
+      customerPhone: row.customer_phone,
+    });
+    setReminderOpen(true);
+  }
 
-      if (error) throw error;
-
-      alert('Reminder queued!');
-      await loadOverdues();
-    } catch (error) {
-      console.error('Error sending reminder:', error);
-      alert('Failed to send reminder');
-    }
+  function handleSendReminder() {
+    setReminderOpen(false);
   }
 
   if (authLoading || loading) {
@@ -379,13 +391,14 @@ export default function DuePage() {
             {filtered.map((row) => (
               <div
                 key={`${row.enrollment_id}-${row.billing_month}`}
-                className={`p-4 rounded-lg border-2 transition-all hover:shadow-md ${
+                className={`p-4 rounded-lg border-2 transition-all hover:shadow-md cursor-pointer ${
                   row.days_overdue > 14
                     ? 'border-red-200 bg-red-50 dark:bg-red-900/10'
                     : row.days_overdue > 7
                     ? 'border-orange-200 bg-orange-50 dark:bg-orange-900/10'
                     : 'border-yellow-200 bg-yellow-50 dark:bg-yellow-900/10'
                 }`}
+                onClick={() => openCustomerDetails(row.customer_id)}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 space-y-2">
@@ -446,21 +459,26 @@ export default function DuePage() {
                 </div>
 
                 <div className="flex gap-2 mt-4 pt-4 border-t border-border">
-                  <Link href={`tel:${row.customer_phone}`} className="flex-1">
-                    <Button variant="outline" className="w-full" size="sm">
+                  <Link
+                    href={`tel:${row.customer_phone}`}
+                    className="flex-1"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <Button variant="outline" className="w-full" size="sm" onClick={(event) => event.stopPropagation()}>
                       <Phone className="w-4 h-4 mr-2" />
                       Call Customer
                     </Button>
                   </Link>
 
-                  {/* Adjust to your actual admin route for viewing an enrollment */}
-                  <Link href={`/dashboard/passbook/${row.enrollment_id}`} className="flex-1">
-                    <Button variant="outline" className="w-full" size="sm">
-                      View Plan
-                    </Button>
-                  </Link>
-
-                  <Button variant="default" className="flex-1" size="sm" onClick={() => sendReminder(row.enrollment_id)}>
+                  <Button
+                    variant="default"
+                    className="flex-1"
+                    size="sm"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openReminderDialog(row);
+                    }}
+                  >
                     Send Reminder
                   </Button>
                 </div>
@@ -496,6 +514,38 @@ export default function DuePage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={reminderOpen} onOpenChange={setReminderOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send Reminder</DialogTitle>
+            <DialogDescription>
+              {reminderTarget?.customerName ? `To: ${reminderTarget.customerName} (${reminderTarget.customerPhone})` : 'Customer reminder'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Message preview</p>
+            <div className="rounded-lg border border-gold-200 bg-gold-50/40 p-3 text-sm">
+              {reminderMessage}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setReminderOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={handleSendReminder}>Send</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <CustomerDetailModal
+        customerId={selectedCustomerId}
+        open={detailModalOpen}
+        onClose={() => {
+          setDetailModalOpen(false);
+          setSelectedCustomerId(null);
+        }}
+      />
     </div>
   );
 }

@@ -200,7 +200,7 @@ export default function CustomerEnrollmentPage() {
       } else {
         toast({
           title: 'Enrollment Successful!',
-          description: 'You can make your first payment from the Collections page',
+          description: 'You can make your first payment from the Payments page',
         });
       }
       

@@ -860,10 +860,10 @@ export default function PulseDashboard() {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={() => router.push('/collections')}>
+        <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={() => router.push('/payments')}>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium">Collections</CardTitle>
+              <CardTitle className="text-sm font-medium">Payments</CardTitle>
               <Coins className="w-5 h-5 text-green-600" />
             </div>
           </CardHeader>
@@ -1087,14 +1087,14 @@ export default function PulseDashboard() {
           </CardContent>
         </Card>
 
-        {/* Chart 1: Revenue & Collection Trends by Metal Type */}
+        {/* Chart 1: Revenue & Payment Trends by Metal Type */}
         <Card className="jewel-card border-2 border-primary/20">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-green-600" />
-              Revenue & Collection Trends
+              Revenue & Payment Trends
             </CardTitle>
-            <CardDescription>Daily collections broken down by metal type</CardDescription>
+            <CardDescription>Daily payments broken down by metal type</CardDescription>
           </CardHeader>
           <CardContent>
             {revenueByMetal.length > 0 ? (
@@ -1118,7 +1118,7 @@ export default function PulseDashboard() {
                     <Line type="monotone" dataKey="silver" stroke="#64748B" strokeWidth={2} name="Silver" dot={{ fill: '#64748B' }} />
                   )}
                   {metalTypeFilter === 'ALL' && (
-                    <Line type="monotone" dataKey="total" stroke="#10B981" strokeWidth={3} name="Total Collections" dot={{ fill: '#10B981' }} />
+                    <Line type="monotone" dataKey="total" stroke="#10B981" strokeWidth={3} name="Total Payments" dot={{ fill: '#10B981' }} />
                   )}
                 </LineChart>
               </ResponsiveContainer>
@@ -1126,7 +1126,7 @@ export default function PulseDashboard() {
               <div className="h-96 flex items-center justify-center text-muted-foreground">
                 <div className="text-center">
                   <TrendingUp className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>No collection data available for selected period</p>
+                  <p>No payment data available for selected period</p>
                 </div>
               </div>
             )}
@@ -1285,7 +1285,7 @@ export default function PulseDashboard() {
               <Trophy className="w-5 h-5 text-gold-600" />
               Staff Performance Trends
             </CardTitle>
-            <CardDescription>Track team member collections over time</CardDescription>
+            <CardDescription>Track team member payments over time</CardDescription>
           </CardHeader>
           <CardContent>
             {staffPerformance.length > 0 ? (
@@ -1296,7 +1296,7 @@ export default function PulseDashboard() {
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip formatter={(value) => `₹${Number(value).toLocaleString()}`} />
                   <Legend />
-                  <Line type="monotone" dataKey="total" stroke="#D97706" strokeWidth={2} name="Total Collections" dot={{ fill: '#D97706' }} />
+                  <Line type="monotone" dataKey="total" stroke="#D97706" strokeWidth={2} name="Total Payments" dot={{ fill: '#D97706' }} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (

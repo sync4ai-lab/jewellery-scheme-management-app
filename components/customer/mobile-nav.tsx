@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { href: '/c/pulse', icon: Activity, label: 'Pulse' },
   { href: '/c/schemes', icon: ScrollText, label: 'Plans' },
-  { href: '/c/wallet', icon: Wallet, label: 'Collections' },
+  { href: '/c/payments', icon: Wallet, label: 'Payments' },
   { href: '/c/redemptions', icon: Gift, label: 'Redemptions' },
   { href: '/c/dues', icon: AlertCircle, label: 'Dues' },
 ];

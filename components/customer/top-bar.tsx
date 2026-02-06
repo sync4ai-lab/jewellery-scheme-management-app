@@ -1,9 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Search, User, Settings } from 'lucide-react';
+import { User, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useBranding } from '@/lib/contexts/branding-context';
 import { AnimatedLogo } from '@/components/ui/animated-logo';
@@ -11,8 +9,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export function CustomerTopBar() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const { customer, signOut } = useCustomerAuth();
+  const { signOut } = useCustomerAuth();
   const { branding } = useBranding();
   const router = useRouter();
 
@@ -32,17 +29,6 @@ export function CustomerTopBar() {
             <p className="text-xs font-medium text-gold-600">Premium Suite</p>
           </div>
         </Link>
-
-        {/* Search Bar */}
-        <div className="relative flex-1 max-w-md hidden md:block">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gold-400" />
-          <Input
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-12 rounded-2xl border-gold-300/50 bg-gold-50/50 focus:border-gold-500 focus:ring-gold-400/20 text-sm font-medium"
-          />
-        </div>
 
         {/* Action Buttons */}
         <div className="flex items-center gap-3 flex-shrink-0">
