@@ -95,9 +95,10 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
               result = fallback.data || null;
             }
 
-            console.log('[CustomerAuth] Customer bypass result:', { data: result, error });
+            const effectiveError = result ? null : error;
+            console.log('[CustomerAuth] Customer bypass result:', { data: result, error: effectiveError });
             if (isMounted) {
-              if (result && !error) {
+              if (result) {
                 setCustomer(result as any);
                 setUser(null); // No supabase user session
                 console.log('[CustomerAuth] Customer set from bypass:', result);
