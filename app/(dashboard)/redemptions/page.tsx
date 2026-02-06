@@ -275,7 +275,7 @@ export default function RedemptionsPage() {
         p_bank_details: null,
       };
 
-      const rpcPromise = supabase.rpc('process_redemption', redemptionPayload);
+      const rpcPromise = supabase.rpc('process_redemption_v2', redemptionPayload);
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('Redemption is taking too long. Please try again.')), 15000);
       });

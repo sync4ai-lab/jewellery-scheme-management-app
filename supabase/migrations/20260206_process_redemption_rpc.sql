@@ -25,7 +25,33 @@ DROP FUNCTION IF EXISTS public.process_redemption(
   text,
   jsonb
 );
-CREATE OR REPLACE FUNCTION public.process_redemption(
+DROP FUNCTION IF EXISTS public.process_redemption_v2(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  redemption_status,
+  text,
+  text,
+  uuid,
+  timestamptz,
+  numeric,
+  numeric,
+  numeric,
+  numeric,
+  numeric,
+  numeric,
+  numeric,
+  numeric,
+  numeric,
+  numeric,
+  numeric,
+  numeric,
+  numeric,
+  text,
+  jsonb
+);
+CREATE OR REPLACE FUNCTION public.process_redemption_v2(
   p_retailer_id uuid,
   p_customer_id uuid,
   p_enrollment_id uuid,
@@ -170,7 +196,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.process_redemption(
+GRANT EXECUTE ON FUNCTION public.process_redemption_v2(
   uuid,
   uuid,
   uuid,
