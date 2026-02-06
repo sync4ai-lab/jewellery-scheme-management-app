@@ -139,7 +139,7 @@ export default function DuePage() {
         return;
       }
 
-      const enrollmentIds = billingData.map(b => b.enrollment_id);
+      const enrollmentIds = Array.from(new Set(billingData.map(b => b.enrollment_id)));
       const { data: enrollments, error: enrollError } = await supabase
         .from('enrollments')
         .select(`

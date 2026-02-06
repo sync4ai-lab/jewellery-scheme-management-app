@@ -75,7 +75,7 @@ export default function RedemptionsPage() {
       void loadEligibleEnrollments();
       void loadCurrentRates();
     }
-  }, [profile?.retailer_id]);
+  }, [profile?.retailer_id, dateFilter, fromDate, toDate]);
 
   async function loadCurrentRates() {
     if (!profile?.retailer_id) return;
@@ -126,8 +126,30 @@ export default function RedemptionsPage() {
   async function loadRedemptions() {
     if (!profile?.retailer_id) return;
 
+    const now = new Date();
+    let start: Date | null = null;
+    let end: Date | null = null;
+
+    if (dateFilter === 'TODAY') {
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    } else if (dateFilter === 'WEEK') {
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+    } else if (dateFilter === 'MONTH') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    } else if (dateFilter === 'YEAR') {
+      start = new Date(now.getFullYear(), 0, 1);
+      end = new Date(now.getFullYear() + 1, 0, 1);
+    } else if (dateFilter === 'RANGE' && fromDate && toDate) {
+      start = new Date(fromDate);
+      end = new Date(toDate);
+      end.setDate(end.getDate() + 1);
+    }
+
     try {
-      const { data: redemptionsData, error: redemptionsError } = await supabase
+      let query = supabase
         .from('redemptions')
         .select(
           `
@@ -146,6 +168,12 @@ export default function RedemptionsPage() {
         )
         .eq('retailer_id', profile.retailer_id)
         .order('redemption_date', { ascending: false });
+
+      if (start && end) {
+        query = query.gte('processed_at', start.toISOString()).lt('processed_at', end.toISOString());
+      }
+
+      const { data: redemptionsData, error: redemptionsError } = await query;
 
       if (redemptionsError) throw redemptionsError;
 

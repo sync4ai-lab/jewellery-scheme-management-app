@@ -51,8 +51,6 @@ type DashboardMetrics = {
   enrollmentsActivePeriod: number;
   redemptionsReadyPeriod: number;
   redemptionsCompletedPeriod: number;
-  planAmountTotal: number;
-  totalEnrollmentsAllTime: number;
   currentRates: {
     k18: { rate: number; validFrom: string } | null;
     k22: { rate: number; validFrom: string } | null;
@@ -230,8 +228,6 @@ export default function PulseDashboard() {
         customersActivePeriodResult,
         redemptionsCompletedResult,
         redemptionsReadyResult,
-        allEnrollmentsAll,
-        schemesAll,
       ] = await Promise.all([
         supabase
           .from('gold_rates')
@@ -324,14 +320,6 @@ export default function PulseDashboard() {
           .eq('status', 'ACTIVE')
           .gte('maturity_date', startISO)
           .lt('maturity_date', endISO),
-        supabase
-          .from('enrollments')
-          .select('id, plan_id, status')
-          .eq('retailer_id', retailerId),
-        supabase
-          .from('scheme_templates')
-          .select('id, installment_amount, duration_months')
-          .eq('retailer_id', retailerId),
       ]);
 
       // Log any errors from the parallel queries
@@ -348,8 +336,6 @@ export default function PulseDashboard() {
       if (customersActivePeriodResult.error) console.error('Customers active error:', customersActivePeriodResult.error);
       if (redemptionsCompletedResult.error) console.error('Redemptions completed error:', redemptionsCompletedResult.error);
       if (redemptionsReadyResult.error) console.error('Redemptions ready error:', redemptionsReadyResult.error);
-      if (allEnrollmentsAll.error) console.error('Enrollments error:', allEnrollmentsAll.error);
-      if (schemesAll.error) console.error('Schemes error:', schemesAll.error);
 
       const currentRates = {
         k18: rate18Result.data
@@ -482,23 +468,6 @@ export default function PulseDashboard() {
         });
       }
 
-
-      // Compute plan total = sum(installment_amount * duration_months) for each active enrollment
-      const schemesMap = new Map<string, { installment_amount: number; duration_months: number }>();
-      (schemesAll.data || []).forEach((s: any) => {
-        schemesMap.set(String(s.id), {
-          installment_amount: safeNumber(s.installment_amount),
-          duration_months: safeNumber(s.duration_months),
-        });
-      });
-      const planAmountTotal = (allEnrollmentsAll.data || []).reduce((sum: number, e: any) => {
-        const s = schemesMap.get(String(e.plan_id));
-        if (!s) return sum;
-        return sum + s.installment_amount * s.duration_months;
-      }, 0);
-
-      const totalEnrollmentsAllTime = (allEnrollmentsAll.data || []).length;
-
       const redemptionStart = new Date(startISO);
       const redemptionEnd = new Date(endISO);
       const completedRedemptionsPeriod = (redemptionsCompletedResult.data || []).filter((r: any) => {
@@ -531,8 +500,6 @@ export default function PulseDashboard() {
         enrollmentsActivePeriod: enrollmentsActivePeriodResult.count || 0,
         redemptionsReadyPeriod: redemptionsReadyResult.count || 0,
         redemptionsCompletedPeriod: completedRedemptionsPeriod,
-        planAmountTotal,
-        totalEnrollmentsAllTime,
         currentRates,
       });
     } catch (error) {
@@ -1114,35 +1081,11 @@ export default function PulseDashboard() {
         </Card>
       </div>
 
-      {/* Plan Amount Overview */}
-      <Card className="jewel-card border-2 border-primary/20">
-        <CardHeader>
-          <CardTitle>Total Scheme Value</CardTitle>
-          <CardDescription>Active enrollment commitments across all plans</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-gold-100 to-gold-50 dark:from-gold-900/30 dark:to-gold-800/20">
-              <p className="text-xs text-muted-foreground mb-1">Total Plan Value</p>
-              <p className="text-2xl font-bold gold-text">₹{(metrics?.planAmountTotal ?? 0).toLocaleString()}</p>
-            </div>
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/20">
-              <p className="text-xs text-muted-foreground mb-1">Total Enrollments</p>
-              <p className="text-2xl font-bold text-blue-600">{metrics?.totalEnrollmentsAllTime ?? 0}</p>
-            </div>
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-100 to-orange-50 dark:from-orange-900/30 dark:to-orange-800/20">
-              <p className="text-xs text-muted-foreground mb-1">Total Dues & Overdue</p>
-              <p className="text-2xl font-bold text-orange-600">{(metrics?.duesOutstanding ?? 0).toLocaleString()}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="jewel-card">
           <CardHeader>
             <CardTitle>Customers</CardTitle>
-            <CardDescription>{periodLabel} overview</CardDescription>
+            <CardDescription>Our Customer Aquisitions</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1161,7 +1104,7 @@ export default function PulseDashboard() {
         <Card className="jewel-card">
           <CardHeader>
             <CardTitle>Enrollments</CardTitle>
-            <CardDescription>Our Customer Aquisitions</CardDescription>
+            <CardDescription>Our Successful Enrollments</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1180,15 +1123,12 @@ export default function PulseDashboard() {
             </Button>
           </CardContent>
         </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="jewel-card">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Redemptions</CardTitle>
-                <CardDescription>{periodLabel} summary</CardDescription>
+                <CardDescription>cUSTOMER wITHDRAWALS</CardDescription>
               </div>
               <Trophy className="w-6 h-6 text-gold-600" />
             </div>
