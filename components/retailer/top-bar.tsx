@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus, Bell, User, Settings } from 'lucide-react';
+import { Plus, Bell, User, Settings, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -16,16 +16,49 @@ import { useBranding } from '@/lib/contexts/branding-context';
 import { AnimatedLogo } from '@/components/ui/animated-logo';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase/client';
+import { useEffect, useState } from 'react';
 
 export function TopBar() {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const { branding } = useBranding();
   const router = useRouter();
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const unreadCount = notifications.filter((n) => n.status === 'PENDING').length;
 
   async function handleSignOut() {
     await signOut();
     router.push('/login');
   }
+
+  async function loadNotifications() {
+    if (!profile?.retailer_id) return;
+    const { data, error } = await supabase
+      .from('notification_queue')
+      .select('id, notification_type, message, status, created_at, metadata, payload')
+      .eq('retailer_id', profile.retailer_id)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (!error && data) {
+      setNotifications(data);
+    }
+  }
+
+  async function markNotificationSeen(id: string) {
+    await supabase
+      .from('notification_queue')
+      .update({ status: 'SENT', sent_at: new Date().toISOString() })
+      .eq('id', id);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }
+
+  useEffect(() => {
+    if (notificationsOpen) {
+      void loadNotifications();
+    }
+  }, [notificationsOpen, profile?.retailer_id]);
 
   return (
     <div className="sticky top-0 z-50 w-full backdrop-blur-2xl bg-white/85 dark:bg-zinc-900/85 border-b border-gold-300/40 dark:border-gold-500/30">
@@ -61,16 +94,72 @@ export function TopBar() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button 
-            variant="outline" 
-            size="icon" 
-            className="rounded-2xl border-gold-300/50 hover:bg-gold-50 dark:hover:bg-gold-900/30 relative group"
-          >
-            <Bell className="w-5 h-5 text-gold-600 group-hover:text-gold-700 transition-colors" />
-            <Badge className="absolute -top-2 -right-2 w-6 h-6 p-0 flex items-center justify-center bg-rose-500 text-white text-xs font-bold shadow-lg">
-              3
-            </Badge>
-          </Button>
+          <DropdownMenu open={notificationsOpen} onOpenChange={setNotificationsOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="rounded-2xl border-gold-300/50 hover:bg-gold-50 dark:hover:bg-gold-900/30 relative group"
+                onMouseEnter={() => setNotificationsOpen(true)}
+              >
+                <Bell className="w-5 h-5 text-gold-600 group-hover:text-gold-700 transition-colors" />
+                {unreadCount > 0 && (
+                  <Badge className="absolute -top-2 -right-2 w-6 h-6 p-0 flex items-center justify-center bg-rose-500 text-white text-xs font-bold shadow-lg">
+                    {unreadCount}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-96"
+              onMouseLeave={() => setNotificationsOpen(false)}
+            >
+              <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {notifications.length === 0 ? (
+                <div className="px-4 py-6 text-sm text-muted-foreground text-center">No notifications</div>
+              ) : (
+                <div className="max-h-96 overflow-y-auto">
+                  {notifications.map((notif) => (
+                    <div key={notif.id} className="px-4 py-3 border-b last:border-b-0">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">
+                              {(notif.notification_type || 'GENERAL').replace(/_/g, ' ')}
+                            </Badge>
+                            {notif.status === 'PENDING' && (
+                              <Badge className="bg-rose-100 text-rose-700 text-xs">New</Badge>
+                            )}
+                          </div>
+                          <p className="text-sm mt-1">
+                            {notif.message || 'Notification'}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(notif.created_at).toLocaleString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => markNotificationSeen(notif.id)}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Button 
             variant="outline" 

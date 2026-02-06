@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Award, CheckCircle, Clock, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { createNotification } from '@/lib/utils/notifications';
 
 type Redemption = {
   id: string;
@@ -401,6 +402,19 @@ export default function RedemptionsPage() {
         toast.error('Redemption already exists for this enrollment');
         return;
       }
+
+      void createNotification({
+        retailerId: profile.retailer_id,
+        customerId: selectedEnrollment.customer_id,
+        enrollmentId: selectedEnrollment.id,
+        type: 'GENERAL',
+        message: `Redemption processed: ${selectedEnrollment.customer_name} - ${grams.toFixed(4)}g ${karat}`,
+        metadata: {
+          type: 'REDEMPTION',
+          grams,
+          karat,
+        },
+      });
 
       toast.success('Redemption processed successfully');
       setProcessDialog(false);

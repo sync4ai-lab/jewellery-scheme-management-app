@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase/client';
+import { createNotification } from '@/lib/utils/notifications';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -280,6 +281,18 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
       });
 
       if (insertError) throw insertError;
+
+      void createNotification({
+        retailerId: enrollment.retailer_id,
+        customerId: customer.id,
+        enrollmentId: enrollment.id,
+        type: 'PAYMENT_SUCCESS',
+        message: `Payment received: ${customer.full_name || customer.phone} - ₹${paymentAmount.toLocaleString()}`,
+        metadata: {
+          type: 'PAYMENT',
+          amount: paymentAmount,
+        },
+      });
 
       setSuccess(true);
       setTimeout(() => router.push(`/c/passbook/${enrollment.id}`), 1200);

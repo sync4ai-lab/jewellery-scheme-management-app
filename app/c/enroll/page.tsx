@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Package, Sparkles, CheckCircle, IndianRupee, Calendar, TrendingUp } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
+import { createNotification } from '@/lib/utils/notifications';
 
 type Plan = {
   id: string;
@@ -168,6 +169,20 @@ export default function CustomerEnrollmentPage() {
       
       if (enrollmentError) throw enrollmentError;
       
+      const enrolledPlanName = plans.find((p) => p.id === selectedPlan)?.name || 'Scheme';
+
+      void createNotification({
+        retailerId: customer.retailer_id,
+        customerId: customer.id,
+        enrollmentId: enrollmentData.id,
+        type: 'GENERAL',
+        message: `New enrollment: ${customer.full_name} enrolled in ${enrolledPlanName}`,
+        metadata: {
+          type: 'ENROLLMENT',
+          plan_id: selectedPlan,
+        },
+      });
+
       // If customer wants to pay now, create transaction
       if (payNow && initialPaymentNum >= commitmentAmountNum) {
         const { error: transactionError } = await supabase
@@ -192,6 +207,17 @@ export default function CustomerEnrollmentPage() {
             description: 'Enrollment created but payment failed. Please pay separately.',
           });
         } else {
+          void createNotification({
+            retailerId: customer.retailer_id,
+            customerId: customer.id,
+            enrollmentId: enrollmentData.id,
+            type: 'PAYMENT_SUCCESS',
+            message: `Payment received: ${customer.full_name} - ₹${initialPaymentNum.toLocaleString()}`,
+            metadata: {
+              type: 'PAYMENT',
+              amount: initialPaymentNum,
+            },
+          });
           toast({
             title: 'Success!',
             description: `Enrolled successfully and paid ₹${initialPaymentNum}`,

@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { TrendingUp, Plus, Coins, Search, Download, Calendar } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useDebounce } from '@/lib/hooks/use-debounce';
+import { createNotification } from '@/lib/utils/notifications';
 import {
   Dialog,
   DialogContent,
@@ -460,6 +461,19 @@ export default function CollectionsPage() {
       });
 
       if (txnError) throw txnError;
+
+      const customerName = customers.find((c) => c.id === selectedCustomerId)?.full_name || 'Customer';
+      void createNotification({
+        retailerId: profile.retailer_id,
+        customerId: selectedCustomerId,
+        enrollmentId: selectedEnrollmentId,
+        type: 'PAYMENT_SUCCESS',
+        message: `Payment received: ${customerName} - ₹${amountNum.toLocaleString()}`,
+        metadata: {
+          type: 'PAYMENT',
+          amount: amountNum,
+        },
+      });
 
       toast.success(
         `✅ Payment recorded: ₹${amountNum.toLocaleString()} = ${gramsAllocated.toFixed(4)}g ${metalName}`

@@ -274,13 +274,6 @@ export default function CustomersPage() {
         </div>
         <div className="flex gap-2">
           <Button 
-            onClick={() => window.location.href = '/enroll'}
-            className="luxury-gold-gradient text-white gap-2"
-          >
-            <Users className="w-4 h-4" />
-            Add Customer / Enrollment
-          </Button>
-          <Button 
             onClick={() => loadCustomers()} 
             variant="outline"
             className="gap-2"

@@ -140,6 +140,24 @@ export async function POST(request: Request) {
       );
     }
 
+    try {
+      await supabaseAdmin.from('notification_queue').insert({
+        retailer_id: effectiveRetailerId,
+        customer_id: newCustomer.id,
+        notification_type: 'GENERAL',
+        message: `New customer registered: ${phone}`,
+        status: 'PENDING',
+        scheduled_for: new Date().toISOString(),
+        channel: 'IN_APP',
+        metadata: {
+          type: 'CUSTOMER',
+          phone,
+        },
+      });
+    } catch (notificationError) {
+      console.warn('Notification creation failed:', notificationError);
+    }
+
     // Create auth user
     const customerEmail = `${phone.replace(/\+/g, '')}@customer.goldsaver.com`;
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
