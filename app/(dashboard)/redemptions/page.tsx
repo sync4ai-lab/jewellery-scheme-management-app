@@ -127,11 +127,13 @@ export default function RedemptionsPage() {
     if (!profile?.retailer_id) return;
 
     try {
-      const { data, error } = await supabase
+      const { data: redemptionsData, error: redemptionsError } = await supabase
         .from('redemptions')
         .select(
           `
           id,
+          customer_id,
+          enrollment_id,
           redemption_status,
           redemption_date,
           total_redemption_value,
@@ -139,32 +141,60 @@ export default function RedemptionsPage() {
           gold_22k_grams,
           gold_24k_grams,
           silver_grams,
-          processed_at,
-          customers(full_name, phone),
-          enrollments(karat, scheme_templates(name))
+          processed_at
         `
         )
         .eq('retailer_id', profile.retailer_id)
         .order('redemption_date', { ascending: false });
 
-      if (error) throw error;
+      if (redemptionsError) throw redemptionsError;
 
-      const mapped = (data || []).map((row: any) => ({
-        id: row.id,
-        customer_name: row.customers?.full_name || 'Unknown',
-        customer_phone: row.customers?.phone || '',
-        enrollment_karat: row.enrollments?.karat || '—',
-        scheme_name: row.enrollments?.scheme_templates?.name || '—',
-        gold_18k_grams: row.gold_18k_grams || 0,
-        gold_22k_grams: row.gold_22k_grams || 0,
-        gold_24k_grams: row.gold_24k_grams || 0,
-        silver_grams: row.silver_grams || 0,
-        total_redemption_value: row.total_redemption_value || 0,
-        redemption_status: row.redemption_status || 'PENDING',
-        redemption_date: row.redemption_date,
-        processed_by_name: null,
-        processed_at: row.processed_at,
-      })) as Redemption[];
+      const customerIds = Array.from(new Set((redemptionsData || []).map((r: any) => r.customer_id)));
+      const enrollmentIds = Array.from(new Set((redemptionsData || []).map((r: any) => r.enrollment_id)));
+
+      const [customersResult, enrollmentsResult] = await Promise.all([
+        customerIds.length
+          ? supabase
+              .from('customers')
+              .select('id, full_name, phone')
+              .in('id', customerIds)
+          : Promise.resolve({ data: [] }),
+        enrollmentIds.length
+          ? supabase
+              .from('enrollments')
+              .select('id, karat, scheme_templates(name)')
+              .in('id', enrollmentIds)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      const customersMap = new Map(
+        (customersResult.data || []).map((c: any) => [c.id, c])
+      );
+      const enrollmentsMap = new Map(
+        (enrollmentsResult.data || []).map((e: any) => [e.id, e])
+      );
+
+      const mapped = (redemptionsData || []).map((row: any) => {
+        const customer = customersMap.get(row.customer_id);
+        const enrollment = enrollmentsMap.get(row.enrollment_id);
+
+        return {
+          id: row.id,
+          customer_name: customer?.full_name || 'Unknown',
+          customer_phone: customer?.phone || '',
+          enrollment_karat: enrollment?.karat || '—',
+          scheme_name: enrollment?.scheme_templates?.name || '—',
+          gold_18k_grams: row.gold_18k_grams || 0,
+          gold_22k_grams: row.gold_22k_grams || 0,
+          gold_24k_grams: row.gold_24k_grams || 0,
+          silver_grams: row.silver_grams || 0,
+          total_redemption_value: row.total_redemption_value || 0,
+          redemption_status: row.redemption_status || 'PENDING',
+          redemption_date: row.redemption_date,
+          processed_by_name: null,
+          processed_at: row.processed_at,
+        } as Redemption;
+      });
 
       setRedemptions(mapped);
     } catch (error) {
