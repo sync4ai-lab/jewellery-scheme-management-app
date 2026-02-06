@@ -56,8 +56,7 @@ export default function RedemptionsPage() {
   const [processing, setProcessing] = useState(false);
   
   // Form state for redemption
-  const [paymentMethod, setPaymentMethod] = useState<string>('BANK_TRANSFER');
-  const [bankDetails, setBankDetails] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<string>('GOLD_DELIVERY');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [currentRates, setCurrentRates] = useState<{
@@ -247,7 +246,7 @@ export default function RedemptionsPage() {
         customer_id: selectedEnrollment.customer_id,
         enrollment_id: selectedEnrollment.id,
         redemption_type: 'FULL',
-        redemption_status: 'PENDING',
+        redemption_status: 'COMPLETED',
         payment_method: paymentMethod,
         notes,
         processed_by: profile.id,
@@ -274,13 +273,7 @@ export default function RedemptionsPage() {
         redemptionData.total_value_silver = value;
       }
 
-      if (paymentMethod === 'BANK_TRANSFER' && bankDetails) {
-        redemptionData.bank_details = { details: bankDetails };
-      }
-
-      if (paymentMethod === 'GOLD_DELIVERY' || paymentMethod === 'SILVER_DELIVERY') {
-        redemptionData.delivery_address = deliveryAddress;
-      }
+      redemptionData.delivery_address = deliveryAddress;
 
       // Insert redemption record
       const { error: redemptionError } = await supabase
@@ -293,12 +286,19 @@ export default function RedemptionsPage() {
       const { error: updateError } = await supabase
         .from('enrollments')
         .update({
-          redemption_status: 'PENDING',
+          redemption_status: 'COMPLETED',
           status: 'COMPLETED',
         })
         .eq('id', selectedEnrollment.id);
 
       if (updateError) throw updateError;
+
+      const { error: customerUpdateError } = await supabase
+        .from('customers')
+        .update({ status: 'INACTIVE' })
+        .eq('id', selectedEnrollment.customer_id);
+
+      if (customerUpdateError) throw customerUpdateError;
 
       toast.success('Redemption processed successfully');
       setProcessDialog(false);
@@ -315,8 +315,7 @@ export default function RedemptionsPage() {
   }
 
   function resetForm() {
-    setPaymentMethod('BANK_TRANSFER');
-    setBankDetails('');
+    setPaymentMethod('GOLD_DELIVERY');
     setDeliveryAddress('');
     setNotes('');
   }
@@ -480,13 +479,14 @@ export default function RedemptionsPage() {
                                     className="jewel-gradient text-white"
                                     onClick={() => {
                                       setSelectedEnrollment(enrollment);
+                                      setPaymentMethod(enrollment.karat === 'SILVER' ? 'SILVER_DELIVERY' : 'GOLD_DELIVERY');
                                       setProcessDialog(true);
                                     }}
                                   >
                                     Process
                                   </Button>
                                 </DialogTrigger>
-                                <DialogContent className="max-w-md">
+                                <DialogContent className="max-w-md w-[92vw] max-h-[90vh] overflow-y-auto">
                                   <DialogHeader>
                                     <DialogTitle>Process Redemption</DialogTitle>
                                     <DialogDescription>
@@ -532,36 +532,20 @@ export default function RedemptionsPage() {
                                           <SelectValue />
                                         </SelectTrigger>
                                         <SelectContent>
-                                          <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
-                                          <SelectItem value="CASH">Cash</SelectItem>
-                                          <SelectItem value="CHEQUE">Cheque</SelectItem>
                                           <SelectItem value="GOLD_DELIVERY">Gold Delivery</SelectItem>
                                           <SelectItem value="SILVER_DELIVERY">Silver Delivery</SelectItem>
                                         </SelectContent>
                                       </Select>
                                     </div>
 
-                                    {paymentMethod === 'BANK_TRANSFER' && (
-                                      <div>
-                                        <Label>Bank Details</Label>
-                                        <Textarea
-                                          placeholder="Account number, IFSC, etc."
-                                          value={bankDetails}
-                                          onChange={(e) => setBankDetails(e.target.value)}
-                                        />
-                                      </div>
-                                    )}
-
-                                    {(paymentMethod === 'GOLD_DELIVERY' || paymentMethod === 'SILVER_DELIVERY') && (
-                                      <div>
-                                        <Label>Delivery Address</Label>
-                                        <Textarea
-                                          placeholder="Enter delivery address"
-                                          value={deliveryAddress}
-                                          onChange={(e) => setDeliveryAddress(e.target.value)}
-                                        />
-                                      </div>
-                                    )}
+                                    <div>
+                                      <Label>Delivery Address</Label>
+                                      <Textarea
+                                        placeholder="Enter delivery address"
+                                        value={deliveryAddress}
+                                        onChange={(e) => setDeliveryAddress(e.target.value)}
+                                      />
+                                    </div>
 
                                     <div>
                                       <Label>Notes</Label>
@@ -578,7 +562,7 @@ export default function RedemptionsPage() {
                                         disabled={processing}
                                         className="flex-1 jewel-gradient text-white"
                                       >
-                                        {processing ? 'Processing...' : 'Confirm Redemption'}
+                                        {processing ? 'Processing...' : 'Proceed Redemption'}
                                       </Button>
                                       <Button
                                         variant="outline"

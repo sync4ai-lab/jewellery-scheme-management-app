@@ -225,6 +225,7 @@ export default function PulseDashboard() {
         rate24Result,
         rateSilverResult,
         txnsResult,
+        redemptionsResult,
         duesResult,
         overdueResult,
         enrollmentsResult,
@@ -273,6 +274,16 @@ export default function PulseDashboard() {
           .lt('paid_at', endISO)
           .limit(1000), // Lower limit for faster dashboard
         supabase
+          .from('redemptions')
+          .select(
+            'redemption_date, redemption_status, gold_18k_grams, gold_22k_grams, gold_24k_grams, silver_grams, total_value_18k, total_value_22k, total_value_24k, total_value_silver'
+          )
+          .eq('retailer_id', retailerId)
+          .eq('redemption_status', 'COMPLETED')
+          .gte('redemption_date', startISO)
+          .lt('redemption_date', endISO)
+          .limit(1000),
+        supabase
           .from('enrollment_billing_months')
           .select('enrollment_id')
           .eq('retailer_id', retailerId)
@@ -305,6 +316,7 @@ export default function PulseDashboard() {
       if (rate24Result.error) console.error('Gold rate 24K error:', rate24Result.error);
       if (rateSilverResult.error) console.error('Silver rate error:', rateSilverResult.error);
       if (txnsResult.error) console.error('Transactions error:', txnsResult.error);
+      if (redemptionsResult.error) console.error('Redemptions error:', redemptionsResult.error);
       if (duesResult.error) console.error('Dues error:', duesResult.error);
       if (overdueResult.error) console.error('Overdue error:', overdueResult.error);
       if (enrollmentsResult.error) console.error('Enrollments count error:', enrollmentsResult.error);
@@ -381,6 +393,32 @@ export default function PulseDashboard() {
           silverAllocated += grams;
         }
       });
+
+      // Subtract completed redemptions in the same period
+      let redeemed18KValue = 0, redeemed22KValue = 0, redeemed24KValue = 0, redeemedSilverValue = 0;
+      let redeemed18KGrams = 0, redeemed22KGrams = 0, redeemed24KGrams = 0, redeemedSilverGrams = 0;
+
+      (redemptionsResult.data || []).forEach((r: any) => {
+        redeemed18KGrams += safeNumber(r.gold_18k_grams);
+        redeemed22KGrams += safeNumber(r.gold_22k_grams);
+        redeemed24KGrams += safeNumber(r.gold_24k_grams);
+        redeemedSilverGrams += safeNumber(r.silver_grams);
+
+        redeemed18KValue += safeNumber(r.total_value_18k);
+        redeemed22KValue += safeNumber(r.total_value_22k);
+        redeemed24KValue += safeNumber(r.total_value_24k);
+        redeemedSilverValue += safeNumber(r.total_value_silver);
+      });
+
+      collections18K = Math.max(0, collections18K - redeemed18KValue);
+      collections22K = Math.max(0, collections22K - redeemed22KValue);
+      collections24K = Math.max(0, collections24K - redeemed24KValue);
+      collectionsSilver = Math.max(0, collectionsSilver - redeemedSilverValue);
+
+      gold18KAllocated = Math.max(0, gold18KAllocated - redeemed18KGrams);
+      gold22KAllocated = Math.max(0, gold22KAllocated - redeemed22KGrams);
+      gold24KAllocated = Math.max(0, gold24KAllocated - redeemed24KGrams);
+      silverAllocated = Math.max(0, silverAllocated - redeemedSilverGrams);
 
       const periodCollections = collections18K + collections22K + collections24K + collectionsSilver;
       const goldAllocatedPeriod = gold18KAllocated + gold22KAllocated + gold24KAllocated;
