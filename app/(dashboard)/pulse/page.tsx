@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,7 +44,6 @@ type DashboardMetrics = {
   dues22K: number;
   dues24K: number;
   duesSilver: number;
-  overdueAmount: number;
   customersTotalPeriod: number;
   customersActivePeriod: number;
   enrollmentsTotalPeriod: number;
@@ -67,6 +66,7 @@ function safeNumber(v: unknown): number {
 export default function PulseDashboard() {
   const { profile } = useAuth();
   const router = useRouter();
+  const enrollmentKaratCache = useRef<Map<string, string> | null>(null);
   
   // Only ADMIN and STAFF can access Pulse
   useEffect(() => {
@@ -77,9 +77,7 @@ export default function PulseDashboard() {
 
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
-  const [collectionsTrend, setCollectionsTrend] = useState<Array<{ date: string; collections: number }>>([]);
-  const [overdueTrend, setOverdueTrend] = useState<Array<{ date: string; overdue: number }>>([]);
-  const [enrollmentTrend, setEnrollmentTrend] = useState<Array<{ date: string; enrollments: number }>>([]);
+  const [refreshing, setRefreshing] = useState(false);
   
   // New analytics state
   const [analyticsFilter, setAnalyticsFilter] = useState<'7D' | '30D' | '3M' | '6M' | '1Y' | 'CUSTOM'>('30D');
@@ -113,22 +111,9 @@ export default function PulseDashboard() {
     }
   }, [timeFilter]);
 
-  const todayRange = useMemo(() => {
-    // Use UTC day boundaries to avoid "today" drifting due to server timezone comparisons
-    const now = new Date();
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
-    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
-    return {
-      startISO: start.toISOString(),
-      endISO: end.toISOString(),
-      todayDateISO: start.toISOString().split('T')[0], // YYYY-MM-DD (UTC)
-    };
-  }, []);
-
   useEffect(() => {
     if (!profile?.retailer_id) return;
     void loadDashboard();
-    void loadChartTrends();
     void loadAdvancedAnalytics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.retailer_id]);
@@ -147,14 +132,16 @@ export default function PulseDashboard() {
 
   async function loadDashboard() {
     if (!profile?.retailer_id) return;
-
-    setLoading(true);
+    if (metrics) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
 
     try {
       const retailerId = profile.retailer_id;
       let startISO: string;
       let endISO: string;
-      let todayDateISO: string;
 
       const now = new Date();
       const startOfDayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
@@ -212,7 +199,6 @@ export default function PulseDashboard() {
         endISO = toISO(safeEnd);
       }
 
-      todayDateISO = startOfDayUTC.toISOString().split('T')[0];
 
       const [
         rate18Result,
@@ -221,7 +207,6 @@ export default function PulseDashboard() {
         rateSilverResult,
         txnsResult,
         duesResult,
-        overdueResult,
         enrollmentsTotalPeriodResult,
         enrollmentsActivePeriodResult,
         customersTotalPeriodResult,
@@ -277,12 +262,6 @@ export default function PulseDashboard() {
           .lt('due_date', endISO.split('T')[0])
           .eq('primary_paid', false),
         supabase
-          .from('enrollment_billing_months')
-          .select('enrollment_id')
-          .eq('retailer_id', retailerId)
-          .lt('due_date', todayDateISO)
-          .eq('primary_paid', false),
-        supabase
           .from('enrollments')
           .select('id', { count: 'exact', head: true })
           .eq('retailer_id', retailerId)
@@ -329,7 +308,6 @@ export default function PulseDashboard() {
       if (rateSilverResult.error) console.error('Silver rate error:', rateSilverResult.error);
       if (txnsResult.error) console.error('Transactions error:', txnsResult.error);
       if (duesResult.error) console.error('Dues error:', duesResult.error);
-      if (overdueResult.error) console.error('Overdue error:', overdueResult.error);
       if (enrollmentsTotalPeriodResult.error) console.error('Enrollments total error:', enrollmentsTotalPeriodResult.error);
       if (enrollmentsActivePeriodResult.error) console.error('Enrollments active error:', enrollmentsActivePeriodResult.error);
       if (customersTotalPeriodResult.error) console.error('Customers total error:', customersTotalPeriodResult.error);
@@ -364,22 +342,24 @@ export default function PulseDashboard() {
           : null,
       };
 
-      // Fetch all enrollments to get karat information
-      // Fetch ALL enrollments for the retailer (not just ACTIVE)
-      const enrollmentsKaratResult = await supabase
-        .from('enrollments')
-        .select('id, karat, customer_id, status')
-        .eq('retailer_id', retailerId);
+      // Fetch all enrollments to get karat information (cached per retailer)
+      let enrollmentKaratMap = enrollmentKaratCache.current;
+      if (!enrollmentKaratMap) {
+        const enrollmentsKaratResult = await supabase
+          .from('enrollments')
+          .select('id, karat')
+          .eq('retailer_id', retailerId);
 
-      if (enrollmentsKaratResult.error) {
-        console.error('Error fetching enrollments karat data:', enrollmentsKaratResult.error);
+        if (enrollmentsKaratResult.error) {
+          console.error('Error fetching enrollments karat data:', enrollmentsKaratResult.error);
+        }
+
+        enrollmentKaratMap = new Map<string, string>();
+        (enrollmentsKaratResult.data || []).forEach((e: any) => {
+          enrollmentKaratMap!.set(e.id, e.karat);
+        });
+        enrollmentKaratCache.current = enrollmentKaratMap;
       }
-
-      // Create a map of enrollment_id -> karat
-      const enrollmentKaratMap = new Map<string, string>();
-      (enrollmentsKaratResult.data || []).forEach((e: any) => {
-        enrollmentKaratMap.set(e.id, e.karat);
-      });
 
       // Calculate collections and grams allocated broken down by metal type
       let collections18K = 0, collections22K = 0, collections24K = 0, collectionsSilver = 0;
@@ -449,25 +429,6 @@ export default function PulseDashboard() {
 
       const duesOutstanding = dues18K + dues22K + dues24K + duesSilver;
 
-      let overdueAmount = 0;
-      const overdueCounts = new Map<string, number>();
-      (overdueResult.data || []).forEach((d: any) => {
-        overdueCounts.set(d.enrollment_id, (overdueCounts.get(d.enrollment_id) || 0) + 1);
-      });
-
-      if (overdueCounts.size > 0) {
-        const overdueEnrollmentIds = Array.from(overdueCounts.keys());
-        const { data: overdueEnrollments } = await supabase
-          .from('enrollments')
-          .select('id, commitment_amount')
-          .eq('retailer_id', retailerId)
-          .in('id', overdueEnrollmentIds);
-
-        (overdueEnrollments || []).forEach((e: any) => {
-          overdueAmount += safeNumber(e.commitment_amount) * (overdueCounts.get(e.id) || 0);
-        });
-      }
-
       const redemptionStart = new Date(startISO);
       const redemptionEnd = new Date(endISO);
       const completedRedemptionsPeriod = (redemptionsCompletedResult.data || []).filter((r: any) => {
@@ -493,7 +454,6 @@ export default function PulseDashboard() {
         dues22K,
         dues24K,
         duesSilver,
-        overdueAmount,
         customersTotalPeriod: customersTotalPeriodResult.count || 0,
         customersActivePeriod: customersActivePeriodResult.count || 0,
         enrollmentsTotalPeriod: enrollmentsTotalPeriodResult.count || 0,
@@ -507,79 +467,7 @@ export default function PulseDashboard() {
       toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadChartTrends() {
-    if (!profile?.retailer_id) return;
-
-    try {
-      // Load last 7 days of collections, overdue, and enrollment data
-      const now = new Date();
-      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-      // Collections trend (last 7 days)
-      const { data: txnData } = await supabase
-        .from('transactions')
-        .select('paid_at, amount_paid, txn_type')
-        .eq('retailer_id', profile.retailer_id)
-        .eq('payment_status', 'SUCCESS')
-        .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
-        .gte('paid_at', sevenDaysAgo.toISOString());
-
-      const collectionsMap = new Map<string, number>();
-      (txnData || []).forEach((txn: any) => {
-        const date = new Date(txn.paid_at).toISOString().split('T')[0];
-        collectionsMap.set(date, (collectionsMap.get(date) || 0) + (txn.amount_paid || 0));
-      });
-
-      const collectionsTrendData = Array.from(collectionsMap).map(([date, amount]) => ({
-        date,
-        collections: Math.round(amount),
-      })).sort((a, b) => a.date.localeCompare(b.date));
-      setCollectionsTrend(collectionsTrendData);
-
-      // Overdue trend (last 7 days)
-      const { data: billingData } = await supabase
-        .from('enrollment_billing_months')
-        .select('due_date, primary_paid')
-        .eq('retailer_id', profile.retailer_id);
-
-      const overdueMap = new Map<string, number>();
-      (billingData || []).forEach((billing: any) => {
-        if (!billing.primary_paid && billing.due_date <= now.toISOString().split('T')[0]) {
-          const date = billing.due_date;
-          overdueMap.set(date, (overdueMap.get(date) || 0) + 1);
-        }
-      });
-
-      const overdueTrendData = Array.from(overdueMap).map(([date, count]) => ({
-        date,
-        overdue: count,
-      })).sort((a, b) => a.date.localeCompare(b.date));
-      setOverdueTrend(overdueTrendData);
-
-      // Enrollment trend (last 7 days)
-      const { data: enrollData } = await supabase
-        .from('enrollments')
-        .select('created_at, status')
-        .eq('retailer_id', profile.retailer_id)
-        .eq('status', 'ACTIVE')
-        .gte('created_at', sevenDaysAgo.toISOString());
-
-      const enrollmentMap = new Map<string, number>();
-      (enrollData || []).forEach((enroll: any) => {
-        const date = new Date(enroll.created_at).toISOString().split('T')[0];
-        enrollmentMap.set(date, (enrollmentMap.get(date) || 0) + 1);
-      });
-
-      const enrollmentTrendData = Array.from(enrollmentMap).map(([date, count]) => ({
-        date,
-        enrollments: count,
-      })).sort((a, b) => a.date.localeCompare(b.date));
-      setEnrollmentTrend(enrollmentTrendData);
-    } catch (error) {
-      console.error('Error loading chart trends:', error);
+      setRefreshing(false);
     }
   }
 
@@ -852,6 +740,7 @@ export default function PulseDashboard() {
                 <SelectItem value="RANGE">Range</SelectItem>
               </SelectContent>
             </Select>
+            {refreshing && <span className="text-xs text-muted-foreground">Updating…</span>}
           </div>
           {timeFilter === 'RANGE' && (
             <div className="flex items-center gap-2">
@@ -1117,10 +1006,6 @@ export default function PulseDashboard() {
                 <p className="text-3xl font-bold text-purple-600">{metrics?.enrollmentsActivePeriod ?? 0}</p>
               </div>
             </div>
-            <Button onClick={() => router.push('/enroll')} className="w-full mt-4 jewel-gradient text-white hover:opacity-90">
-              Enroll New Customer
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
           </CardContent>
         </Card>
         <Card className="jewel-card">
@@ -1128,7 +1013,7 @@ export default function PulseDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Redemptions</CardTitle>
-                <CardDescription>cUSTOMER wITHDRAWALS</CardDescription>
+                <CardDescription>Customer Withdrawals</CardDescription>
               </div>
               <Trophy className="w-6 h-6 text-gold-600" />
             </div>
