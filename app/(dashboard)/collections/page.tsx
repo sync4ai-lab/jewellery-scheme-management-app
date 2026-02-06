@@ -168,6 +168,14 @@ export default function CollectionsPage() {
     }
   }, [selectedEnrollmentId]);
 
+  useEffect(() => {
+    if (!selectedEnrollmentId) return;
+    const enrollment = enrollments.find((e) => e.id === selectedEnrollmentId);
+    if (enrollment?.store_id) {
+      setSelectedStore(enrollment.store_id);
+    }
+  }, [selectedEnrollmentId, enrollments]);
+
   const calculatedGrams = useMemo(() => {
     const amountNum = parseFloat(amount);
     if (!goldRate || !Number.isFinite(amountNum) || amountNum <= 0) return 0;
@@ -424,6 +432,13 @@ export default function CollectionsPage() {
 
     setSubmitting(true);
     try {
+      const enrollment = enrollments.find((e) => e.id === selectedEnrollmentId);
+      const resolvedStoreId = selectedStore || enrollment?.store_id || (stores.length === 1 ? stores[0].id : '');
+      if (!resolvedStoreId) {
+        toast.error('Select a store before recording payment');
+        return;
+      }
+
       const gramsAllocated = amountNum / goldRate.rate_per_gram;
       const now = new Date().toISOString();
 
@@ -441,7 +456,7 @@ export default function CollectionsPage() {
         paid_at: now,
         recorded_at: now,
         source: 'STAFF_OFFLINE',
-        store_id: selectedStore || null,
+        store_id: resolvedStoreId,
       });
 
       if (txnError) throw txnError;
