@@ -90,6 +90,9 @@ DECLARE
   v_has_redemption_status boolean;
   v_updated integer;
 BEGIN
+  PERFORM set_config('lock_timeout', '3s', true);
+  PERFORM set_config('statement_timeout', '10s', true);
+
   IF NOT pg_try_advisory_xact_lock(hashtext(p_enrollment_id::text)) THEN
     RAISE EXCEPTION 'Redemption is already being processed';
   END IF;

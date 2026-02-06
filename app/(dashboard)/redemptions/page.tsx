@@ -54,6 +54,9 @@ export default function RedemptionsPage() {
   const [processDialog, setProcessDialog] = useState(false);
   const [selectedEnrollment, setSelectedEnrollment] = useState<EligibleEnrollment | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'RANGE'>('MONTH');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   
   // Form state for redemption
   const [paymentMethod, setPaymentMethod] = useState<string>('GOLD_DELIVERY');
@@ -124,18 +127,46 @@ export default function RedemptionsPage() {
     if (!profile?.retailer_id) return;
 
     try {
-      // Note: redemption_summary view/table doesn't exist yet
-      // For now, return empty array until migration is created
-      setRedemptions([]);
-      
-      // TODO: Create redemptions table and summary view
-      // const { data, error } = await supabase
-      //   .from('redemption_summary')
-      //   .select('*')
-      //   .eq('retailer_id', profile.retailer_id)
-      //   .order('redemption_date', { ascending: false });
-      // if (error) throw error;
-      // setRedemptions((data || []) as Redemption[]);
+      const { data, error } = await supabase
+        .from('redemptions')
+        .select(
+          `
+          id,
+          redemption_status,
+          redemption_date,
+          total_redemption_value,
+          gold_18k_grams,
+          gold_22k_grams,
+          gold_24k_grams,
+          silver_grams,
+          processed_at,
+          customers(full_name, phone),
+          enrollments(karat, scheme_templates(name))
+        `
+        )
+        .eq('retailer_id', profile.retailer_id)
+        .order('redemption_date', { ascending: false });
+
+      if (error) throw error;
+
+      const mapped = (data || []).map((row: any) => ({
+        id: row.id,
+        customer_name: row.customers?.full_name || 'Unknown',
+        customer_phone: row.customers?.phone || '',
+        enrollment_karat: row.enrollments?.karat || '—',
+        scheme_name: row.enrollments?.scheme_templates?.name || '—',
+        gold_18k_grams: row.gold_18k_grams || 0,
+        gold_22k_grams: row.gold_22k_grams || 0,
+        gold_24k_grams: row.gold_24k_grams || 0,
+        silver_grams: row.silver_grams || 0,
+        total_redemption_value: row.total_redemption_value || 0,
+        redemption_status: row.redemption_status || 'PENDING',
+        redemption_date: row.redemption_date,
+        processed_by_name: null,
+        processed_at: row.processed_at,
+      })) as Redemption[];
+
+      setRedemptions(mapped);
     } catch (error) {
       console.error('Error loading redemptions:', error);
       toast.error('Failed to load redemptions');
@@ -314,14 +345,48 @@ export default function RedemptionsPage() {
     setNotes('');
   }
 
+  const filteredRedemptions = useMemo(() => {
+    if (dateFilter === 'ALL') return redemptions;
+
+    const now = new Date();
+    let start: Date | null = null;
+    let end: Date | null = null;
+
+    if (dateFilter === 'TODAY') {
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    } else if (dateFilter === 'WEEK') {
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+    } else if (dateFilter === 'MONTH') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    } else if (dateFilter === 'YEAR') {
+      start = new Date(now.getFullYear(), 0, 1);
+      end = new Date(now.getFullYear() + 1, 0, 1);
+    } else if (dateFilter === 'RANGE' && fromDate && toDate) {
+      start = new Date(fromDate);
+      end = new Date(toDate);
+      end.setDate(end.getDate() + 1);
+    }
+
+    if (!start || !end) return redemptions;
+
+    return redemptions.filter((r) => {
+      const date = r.redemption_date ? new Date(r.redemption_date) : null;
+      if (!date) return false;
+      return date >= start && date < end;
+    });
+  }, [redemptions, dateFilter, fromDate, toDate]);
+
   const pendingRedemptions = useMemo(
-    () => redemptions.filter(r => r.redemption_status === 'PENDING' || r.redemption_status === 'PROCESSING'),
-    [redemptions]
+    () => filteredRedemptions.filter(r => r.redemption_status === 'PENDING' || r.redemption_status === 'PROCESSING'),
+    [filteredRedemptions]
   );
 
   const completedRedemptions = useMemo(
-    () => redemptions.filter(r => r.redemption_status === 'COMPLETED'),
-    [redemptions]
+    () => filteredRedemptions.filter(r => r.redemption_status === 'COMPLETED'),
+    [filteredRedemptions]
   );
 
   if (loading) {
@@ -333,7 +398,7 @@ export default function RedemptionsPage() {
     );
   }
 
-  const totalRedemptionValue = redemptions.reduce((sum, r) => sum + r.total_redemption_value, 0);
+  const totalRedemptionValue = completedRedemptions.reduce((sum, r) => sum + r.total_redemption_value, 0);
   const completedCount = completedRedemptions.length;
 
   return (
@@ -345,6 +410,38 @@ export default function RedemptionsPage() {
           </h1>
           <p className="text-muted-foreground">Manage customer redemptions and withdrawals</p>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="space-y-1">
+          <Label>Period</Label>
+          <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as typeof dateFilter)}>
+            <SelectTrigger className="w-[170px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="TODAY">Today</SelectItem>
+              <SelectItem value="WEEK">Last 7 Days</SelectItem>
+              <SelectItem value="MONTH">This Month</SelectItem>
+              <SelectItem value="YEAR">This Year</SelectItem>
+              <SelectItem value="RANGE">Custom Range</SelectItem>
+              <SelectItem value="ALL">All Time</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {dateFilter === 'RANGE' && (
+          <div className="flex items-end gap-2">
+            <div className="space-y-1">
+              <Label>From</Label>
+              <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>To</Label>
+              <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Stats Cards */}
@@ -375,7 +472,7 @@ export default function RedemptionsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{completedCount}</div>
-            <p className="text-xs text-muted-foreground">All time</p>
+            <p className="text-xs text-muted-foreground">Selected period</p>
           </CardContent>
         </Card>
 
@@ -385,7 +482,7 @@ export default function RedemptionsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">₹{totalRedemptionValue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Redeemed value</p>
+            <p className="text-xs text-muted-foreground">Selected period</p>
           </CardContent>
         </Card>
       </div>
