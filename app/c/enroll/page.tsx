@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Package, Sparkles, CheckCircle, IndianRupee, Calendar, TrendingUp } from 'lucide-react';
+import { Loader2, Package, Sparkles, IndianRupee, Calendar, TrendingUp } from 'lucide-react';
 import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { createNotification } from '@/lib/utils/notifications';
@@ -155,11 +155,18 @@ export default function CustomerEnrollmentPage() {
     setIsEnrolling(true);
     
     try {
-      const { data: enrollResult, error: enrollError } = await supabase.rpc('customer_self_enroll', {
-        p_plan_id: selectedPlan,
-        p_commitment_amount: commitmentAmountNum,
-        p_source: 'CUSTOMER_PORTAL',
-      });
+      const enrollResponse = (await Promise.race([
+        supabase.rpc('customer_self_enroll', {
+          p_plan_id: selectedPlan,
+          p_commitment_amount: commitmentAmountNum,
+          p_source: 'CUSTOMER_PORTAL',
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Enrollment is taking longer than expected. Please try again.')), 15000)
+        ),
+      ])) as { data: any; error: any };
+
+      const { data: enrollResult, error: enrollError } = enrollResponse;
 
       if (enrollError) throw enrollError;
 
@@ -256,7 +263,7 @@ export default function CustomerEnrollmentPage() {
               key={plan.id}
               className={`cursor-pointer transition-all hover:shadow-lg ${
                 selectedPlan === plan.id
-                  ? 'ring-2 ring-gold-600 shadow-xl bg-gradient-to-br from-gold-500 via-amber-500 to-orange-500 text-white'
+                  ? 'ring-2 ring-gold-500 shadow-lg bg-white'
                   : 'hover:ring-2 hover:ring-gold-300'
               }`}
               onClick={() => setSelectedPlan(plan.id)}
@@ -264,47 +271,42 @@ export default function CustomerEnrollmentPage() {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <CardTitle className={`text-lg flex items-center gap-2 ${
-                      selectedPlan === plan.id ? 'gold-text drop-shadow-sm' : ''
-                    }`}>
-                      <Package className={`h-5 w-5 ${
-                        selectedPlan === plan.id ? 'text-white' : 'text-gold-600'
-                      }`} />
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Package className="h-5 w-5 text-gold-600" />
                       {plan.name}
                     </CardTitle>
                     {plan.bonus_percentage > 0 && (
-                      <Badge className={`mt-2 ${
-                        selectedPlan === plan.id
-                          ? 'bg-white/20 text-white border border-white/30'
-                          : 'bg-gradient-to-r from-gold-600 to-gold-700'
-                      }`}>
+                      <Badge className="mt-2 bg-gradient-to-r from-gold-600 to-gold-700">
                         <Sparkles className="h-3 w-3 mr-1" />
                         {plan.bonus_percentage}% Bonus
                       </Badge>
                     )}
                   </div>
                   {selectedPlan === plan.id && (
-                    <CheckCircle className="h-6 w-6 text-white flex-shrink-0" />
+                    <Badge className="bg-gold-50 text-gold-800 border border-gold-200">
+                      <span className="mr-1 inline-block h-2 w-2 rounded-full bg-gold-600" />
+                      Selected
+                    </Badge>
                   )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center gap-2 text-sm">
-                  <IndianRupee className={`h-4 w-4 ${selectedPlan === plan.id ? 'text-white/90' : 'text-gray-500'}`} />
-                  <span className={selectedPlan === plan.id ? 'text-white/90' : 'text-gray-600'}>Min. Monthly:</span>
-                  <span className={`font-semibold ${selectedPlan === plan.id ? 'text-white' : 'text-gray-900'}`}>
-                    ₹{plan.installment_amount.toLocaleString()}
+                  <IndianRupee className="h-4 w-4 text-gray-500" />
+                  <span className="text-gray-600">Min. Monthly:</span>
+                  <span className="font-semibold text-gray-900">
+                    ₹{(plan.installment_amount ?? 0).toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <Calendar className={`h-4 w-4 ${selectedPlan === plan.id ? 'text-white/90' : 'text-gray-500'}`} />
-                  <span className={selectedPlan === plan.id ? 'text-white/90' : 'text-gray-600'}>Duration:</span>
-                  <span className={`font-semibold ${selectedPlan === plan.id ? 'text-white' : 'text-gray-900'}`}>
+                  <Calendar className="h-4 w-4 text-gray-500" />
+                  <span className="text-gray-600">Duration:</span>
+                  <span className="font-semibold text-gray-900">
                     {plan.duration_months} months
                   </span>
                 </div>
                 {plan.description && (
-                  <p className={`text-xs mt-2 ${selectedPlan === plan.id ? 'text-white/80' : 'text-gray-500'}`}>
+                  <p className="text-xs mt-2 text-gray-500">
                     {plan.description}
                   </p>
                 )}

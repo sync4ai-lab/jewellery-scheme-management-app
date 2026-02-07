@@ -36,7 +36,7 @@ BEGIN
   -- Get plan details
   SELECT * INTO v_plan
   FROM scheme_templates
-  WHERE id = p_plan_id AND is_active = true AND allow_self_enroll = true;
+  WHERE id = p_plan_id AND is_active = true;
 
   IF NOT FOUND THEN
     RETURN json_build_object(
@@ -97,21 +97,23 @@ BEGIN
     customer_id,
     plan_id,
     commitment_amount,
-    plan_duration_months,
     start_date,
+    maturity_date,
     billing_day_of_month,
     status,
-    created_by
+    created_by,
+    source
   ) VALUES (
     v_retailer_id,
     v_customer.id,
     v_plan.id,
     p_commitment_amount,
-    v_plan.duration_months,
     v_start_date,
+    v_end_date,
     v_billing_day,
     'ACTIVE',
-    v_user_id
+    v_user_id,
+    p_source
   )
   RETURNING id INTO v_scheme_id;
 
