@@ -66,6 +66,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     // BYPASS: If phone in localStorage, fetch customer by phone, but NOT on /c/login
     if (typeof window !== 'undefined' && window.location.pathname !== '/c/login') {
       const phoneBypass = localStorage.getItem('customer_phone_bypass');
+      const retailerBypass = localStorage.getItem('customer_retailer_bypass');
       if (phoneBypass) {
         (async () => {
           setLoading(true);
@@ -79,14 +80,24 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
             } catch (e) {
               console.warn('[CustomerAuth] Branding context not available:', e);
             }
+            if (!retailerId && retailerBypass) {
+              retailerId = retailerBypass;
+            }
+            const normalizedPhone = phoneBypass.replace(/\D/g, '');
+            const phoneCandidates = [
+              phoneBypass,
+              normalizedPhone,
+              `+91${normalizedPhone}`,
+              `91${normalizedPhone}`,
+            ].filter(Boolean);
             let query = supabase
               .from('customers')
               .select('id, retailer_id, full_name, phone, email')
-              .eq('phone', phoneBypass);
+              .in('phone', phoneCandidates);
             if (retailerId) {
               query = query.eq('retailer_id', retailerId);
             }
-            console.log('[CustomerAuth] Running customer bypass query:', { phoneBypass, retailerId });
+            console.log('[CustomerAuth] Running customer bypass query:', { phoneCandidates, retailerId });
             const result = await query.maybeSingle();
             console.log('[CustomerAuth] Customer bypass result:', result);
             if (isMounted) {
