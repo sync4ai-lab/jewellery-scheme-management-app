@@ -586,9 +586,9 @@ export default function CollectionsPage() {
     <div className="space-y-6 pb-32">
       <div className="space-y-2">
         <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
-          Collections
+          Payments
         </h1>
-        <p className="text-muted-foreground">Record customer precious metal savings with live rate tracking</p>
+        <p className="text-muted-foreground">Record customer payments with live rate tracking</p>
       </div>
 
       {/* Payment Recording Card */}
@@ -596,7 +596,7 @@ export default function CollectionsPage() {
         <Card className="glass-card border-2 border-primary/15">
           <CardHeader>
             <CardTitle>Record Payment</CardTitle>
-            <CardDescription>Add a customer payment collection</CardDescription>
+            <CardDescription>Add a customer payment</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Customer Selection */}
@@ -857,7 +857,7 @@ export default function CollectionsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All Transactions</SelectItem>
-                <SelectItem value="COLLECTIONS">Payment Collections</SelectItem>
+                <SelectItem value="COLLECTIONS">Payments</SelectItem>
                 <SelectItem value="REDEMPTIONS">Redemptions</SelectItem>
               </SelectContent>
             </Select>

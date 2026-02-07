@@ -10,7 +10,7 @@ const allNavItems = [
   { name: 'PULSE', href: '/pulse', icon: Activity, roles: ['ADMIN', 'STAFF', 'CUSTOMER'] },
   { name: 'CUSTOMERS', href: '/customers', icon: UserCircle, roles: ['ADMIN', 'STAFF'] },
   { name: 'PLANS', href: '/plans', icon: Sparkles, roles: ['ADMIN', 'STAFF'] },
-  { name: 'COLLECT', href: '/collections', icon: Users, roles: ['ADMIN', 'STAFF', 'CUSTOMER'] },
+  { name: 'PAYMENTS', href: '/payments', icon: Users, roles: ['ADMIN', 'STAFF', 'CUSTOMER'] },
   { name: 'REDEEM', href: '/redemptions', icon: Award, roles: ['ADMIN', 'STAFF', 'CUSTOMER'] },
   { name: 'DUES', href: '/pulse', icon: AlertCircle, roles: ['ADMIN', 'STAFF', 'CUSTOMER'] },
   { name: 'GROWTH', href: '/pulse', icon: TrendingUp, roles: ['ADMIN'] },

@@ -160,6 +160,7 @@ export default function RedemptionsPage() {
           karat, 
           created_at, 
           maturity_date,
+          commitment_amount,
           customers(full_name, phone),
           scheme_templates(name, duration_months)
         `)
@@ -179,17 +180,20 @@ export default function RedemptionsPage() {
       // Fetch transactions to calculate total grams and paid amount
       const { data: transactionsData } = await supabase
         .from('transactions')
-        .select('enrollment_id, grams_allocated_snapshot, amount_paid')
+        .select('enrollment_id, grams_allocated_snapshot, amount_paid, txn_type')
         .eq('retailer_id', profile.retailer_id)
         .in('enrollment_id', enrollmentIds)
         .eq('payment_status', 'SUCCESS');
 
-      const gramsMap = new Map<string, { grams: number; paid: number }>();
+      const gramsMap = new Map<string, { grams: number; paid: number; primaryPaid: number }>();
       (transactionsData || []).forEach((t: any) => {
-        const current = gramsMap.get(t.enrollment_id) || { grams: 0, paid: 0 };
+        const current = gramsMap.get(t.enrollment_id) || { grams: 0, paid: 0, primaryPaid: 0 };
+        const paid = t.amount_paid || 0;
+        const isPrimary = t.txn_type === 'PRIMARY_INSTALLMENT';
         gramsMap.set(t.enrollment_id, {
           grams: current.grams + (t.grams_allocated_snapshot || 0),
-          paid: current.paid + (t.amount_paid || 0),
+          paid: current.paid + paid,
+          primaryPaid: current.primaryPaid + (isPrimary ? paid : 0),
         });
       });
 
@@ -200,13 +204,43 @@ export default function RedemptionsPage() {
 
       const eligible: EligibleEnrollment[] = enrollmentsData
         .filter((e: any) => {
-          if (!e.maturity_date) return false;
-          const maturityDate = new Date(e.maturity_date);
-          maturityDate.setHours(0, 0, 0, 0);
-          return maturityDate <= today;
+          const durationMonths = e.scheme_templates?.duration_months || 0;
+          const commitmentAmount = e.commitment_amount || 0;
+          const requiredDue = commitmentAmount * durationMonths;
+
+          if (!durationMonths || !commitmentAmount || !requiredDue) return false;
+
+          const maturityBase = e.maturity_date
+            ? new Date(e.maturity_date)
+            : e.created_at
+              ? new Date(e.created_at)
+              : null;
+
+          if (!maturityBase) return false;
+
+          if (!e.maturity_date && durationMonths) {
+            maturityBase.setMonth(maturityBase.getMonth() + durationMonths);
+          }
+
+          maturityBase.setHours(0, 0, 0, 0);
+          if (maturityBase > today) return false;
+
+          const totals = gramsMap.get(e.id) || { grams: 0, paid: 0, primaryPaid: 0 };
+          if (totals.grams <= 0) return false;
+          if (totals.primaryPaid < requiredDue) return false;
+
+          return true;
         })
         .map((e: any) => {
-          const totals = gramsMap.get(e.id) || { grams: 0, paid: 0 };
+          const totals = gramsMap.get(e.id) || { grams: 0, paid: 0, primaryPaid: 0 };
+          const durationMonths = e.scheme_templates?.duration_months || 0;
+          let eligibleDate = e.maturity_date as string | null;
+
+          if (!eligibleDate && e.created_at && durationMonths) {
+            const computed = new Date(e.created_at);
+            computed.setMonth(computed.getMonth() + durationMonths);
+            eligibleDate = computed.toISOString();
+          }
 
           return {
             id: e.id,
@@ -216,7 +250,7 @@ export default function RedemptionsPage() {
             plan_name: e.scheme_templates?.name || 'Unknown Plan',
             karat: e.karat || '22K',
             created_at: e.created_at,
-            eligible_date: e.maturity_date,
+            eligible_date: eligibleDate || e.created_at,
             total_grams: totals.grams,
             total_paid: totals.paid,
           };

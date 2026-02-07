@@ -9,7 +9,7 @@ const navItems = [
   { href: '/pulse', icon: Activity, label: 'Pulse', color: 'from-amber-400 to-amber-600' },
   { href: '/customers', icon: Users, label: 'Customers', color: 'from-rose-400 to-rose-600' },
   { href: '/plans', icon: Gem, label: 'Plans', color: 'from-emerald-400 to-emerald-600' },
-  { href: '/collections', icon: Wallet, label: 'Collections', color: 'from-blue-400 to-blue-600' },
+  { href: '/payments', icon: Wallet, label: 'Payments', color: 'from-blue-400 to-blue-600' },
   { href: '/redemptions', icon: Award, label: 'Redemptions', color: 'from-indigo-400 to-indigo-600' },
   { href: '/dashboard/due', icon: AlertCircle, label: 'Dues', color: 'from-red-400 to-red-600' },
   { href: '/dashboard/growth', icon: TrendingUp, label: 'Growth', color: 'from-purple-400 to-purple-600' },

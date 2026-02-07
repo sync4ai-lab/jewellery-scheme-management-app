@@ -109,7 +109,7 @@ export default function PulseDashboard() {
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
   
-  // Transactions moved to Collections page
+  // Transactions moved to Payments page
   
   const periodLabel = useMemo(() => {
     switch (timeFilter) {
@@ -943,10 +943,10 @@ export default function PulseDashboard() {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={() => router.push('/collections')}>
+        <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={() => router.push('/payments')}>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium">Collections</CardTitle>
+              <CardTitle className="text-sm font-medium">Payments</CardTitle>
               <Coins className="w-5 h-5 text-green-600" />
             </div>
           </CardHeader>
@@ -1238,7 +1238,7 @@ export default function PulseDashboard() {
                     <Line type="monotone" dataKey="silver" stroke="#64748B" strokeWidth={2} name="Silver" dot={{ fill: '#64748B' }} />
                   )}
                   {metalTypeFilter === 'ALL' && (
-                    <Line type="monotone" dataKey="total" stroke="#10B981" strokeWidth={3} name="Total Collections" dot={{ fill: '#10B981' }} />
+                    <Line type="monotone" dataKey="total" stroke="#10B981" strokeWidth={3} name="Total Payments" dot={{ fill: '#10B981' }} />
                   )}
                 </LineChart>
               </ResponsiveContainer>
@@ -1416,7 +1416,7 @@ export default function PulseDashboard() {
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip formatter={(value) => `₹${Number(value).toLocaleString()}`} />
                   <Legend />
-                  <Line type="monotone" dataKey="total" stroke="#D97706" strokeWidth={2} name="Total Collections" dot={{ fill: '#D97706' }} />
+                  <Line type="monotone" dataKey="total" stroke="#D97706" strokeWidth={2} name="Total Payments" dot={{ fill: '#D97706' }} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
