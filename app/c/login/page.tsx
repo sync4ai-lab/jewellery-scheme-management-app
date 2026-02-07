@@ -24,6 +24,7 @@ export default function CustomerLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
+
   useEffect(() => {
     // Clear any customer bypass values on login page mount
     localStorage.removeItem('customer_phone_bypass');
@@ -57,7 +58,7 @@ export default function CustomerLoginPage() {
       `91${normalizedPhone}`,
     ].filter(Boolean);
     console.log('[CustomerLogin] Attempt', { retailerId, phone, normalizedPhone, phoneCandidates });
-    // Try to find customer by retailer and phone
+    // Try to find customer by retailer and phone (customers.phone)
     const { data, error } = await supabase
       .from('customers')
       .select('id, retailer_id, phone, full_name')

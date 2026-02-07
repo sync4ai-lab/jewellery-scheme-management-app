@@ -33,6 +33,17 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
 
+  const lookupCustomerByPhone = async (phoneCandidates: string[], retailerId?: string | null) => {
+    let query = supabaseCustomer
+      .from('customers')
+      .select('id, retailer_id, full_name, phone, email')
+      .in('phone', phoneCandidates);
+    if (retailerId) {
+      query = query.eq('retailer_id', retailerId);
+    }
+    return query.maybeSingle();
+  };
+
   // Track hydration - only access browser APIs after mount
   useEffect(() => {
     setMounted(true);
@@ -101,15 +112,8 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
               `91${normalizedPhone}`,
             ].filter(Boolean);
             console.log('[CustomerAuth] Bypass lookup', { phoneCandidates, retailerId });
-            let query = supabaseCustomer
-              .from('customers')
-              .select('id, retailer_id, full_name, phone, email')
-              .in('phone', phoneCandidates);
-            if (retailerId) {
-              query = query.eq('retailer_id', retailerId);
-            }
             console.log('[CustomerAuth] Running customer bypass query:', { phoneCandidates, retailerId });
-            const result = await query.maybeSingle();
+            const result = await lookupCustomerByPhone(phoneCandidates, retailerId);
             console.log('[CustomerAuth] Customer bypass result:', result);
             if (isMounted) {
               if (result.data) {
@@ -183,26 +187,42 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       return;
     }
     // Prefer phone, fallback to email
-    let query = supabaseCustomer
-      .from('customers')
-      .select('id, retailer_id, full_name, phone, email')
-      .maybeSingle();
     if (user.phone) {
-      (query as any).eq('phone', user.phone);
-    } else if (user.email) {
-      (query as any).eq('email', user.email);
-    } else {
-      setCustomer(null);
+      const normalizedPhone = user.phone.replace(/\D/g, '');
+      const phoneCandidates = [
+        user.phone,
+        normalizedPhone,
+        `+91${normalizedPhone}`,
+        `91${normalizedPhone}`,
+      ].filter(Boolean);
+      const { data, error } = await lookupCustomerByPhone(phoneCandidates);
+      if (error) {
+        console.error('Customer hydrate error:', error);
+        setError('Customer hydrate error: ' + error.message);
+        setCustomer(null);
+        return;
+      }
+      setCustomer(data ?? null);
       return;
     }
-    const { data, error } = await query;
-    if (error) {
-      console.error('Customer hydrate error:', error);
-      setError('Customer hydrate error: ' + error.message);
-      setCustomer(null);
+
+    if (user.email) {
+      const { data, error } = await supabaseCustomer
+        .from('customers')
+        .select('id, retailer_id, full_name, email')
+        .eq('email', user.email)
+        .maybeSingle();
+      if (error) {
+        console.error('Customer hydrate error:', error);
+        setError('Customer hydrate error: ' + error.message);
+        setCustomer(null);
+        return;
+      }
+      setCustomer(data ?? null);
       return;
     }
-    setCustomer(data ?? null);
+
+    setCustomer(null);
   };
 
   /**
