@@ -26,19 +26,20 @@ type Notification = {
 };
 
 export default function NotificationsPage() {
-  const { customer } = useCustomerAuth();
+  const { customer, loading: authLoading } = useCustomerAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
+    if (authLoading) return;
     if (!customer) {
       router.push('/c/login');
       return;
     }
 
     loadNotifications();
-  }, [customer, router]);
+  }, [customer, authLoading, router]);
 
   async function loadNotifications() {
     if (!customer) return;

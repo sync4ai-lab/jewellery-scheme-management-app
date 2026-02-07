@@ -53,7 +53,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
   // NOTE: route param is named schemeId, but it represents enrollment_id.
   const enrollmentId = params.schemeId;
 
-  const { customer } = useCustomerAuth();
+  const { customer, loading: authLoading } = useCustomerAuth();
 
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [goldRate, setGoldRate] = useState<GoldRate | null>(null);
@@ -80,13 +80,14 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!customer) {
       router.push('/c/login');
       return;
     }
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer, enrollmentId, router]);
+  }, [customer, authLoading, enrollmentId, router]);
 
   async function loadData() {
     if (!customer) return;

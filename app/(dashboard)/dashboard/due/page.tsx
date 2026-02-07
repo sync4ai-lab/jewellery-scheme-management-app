@@ -1,25 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Calendar, AlertCircle, Phone, Search, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CustomerDetailModal } from '@/components/customer-detail-modal';
 
 type OverdueEnrollment = {
   enrollment_id: string;
@@ -40,38 +31,22 @@ type OverdueEnrollment = {
 };
 
 export default function DuePage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
   const [overdues, setOverdues] = useState<OverdueEnrollment[]>([]);
   const [filtered, setFiltered] = useState<OverdueEnrollment[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [periodFilter, setPeriodFilter] = useState<'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'RANGE'>('ALL');
-  const [periodStart, setPeriodStart] = useState('');
-  const [periodEnd, setPeriodEnd] = useState('');
   const [loading, setLoading] = useState(true);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const [reminderOpen, setReminderOpen] = useState(false);
-  const [reminderTarget, setReminderTarget] = useState<{
-    enrollmentId: string;
-    customerName: string;
-    customerPhone: string;
-  } | null>(null);
-  const loadSeqRef = useRef(0);
   const router = useRouter();
 
-  const reminderMessage =
-    'Dear Customer, This is a gentle reminder as your payments are now due. Kindly make the payment to enjoy the benefits from your enrolled Schemes. Contact us if you need any assistance';
-
   useEffect(() => {
-    if (authLoading) return;
     if (!user) {
-      router.replace('/login');
+      router.push('/login');
       return;
     }
     void loadOverdues();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user?.id, periodFilter, periodStart, periodEnd]);
+  }, [user, router]);
 
   useEffect(() => {
     applyFilters();
@@ -80,85 +55,31 @@ export default function DuePage() {
 
   async function loadOverdues() {
     if (!user) return;
-    const requestId = ++loadSeqRef.current;
 
     setLoading(true);
 
     try {
       // Note: overdue_billing_months view doesn't exist
       // Query enrollment_billing_months directly instead
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      const todayISO = now.toISOString().split('T')[0];
-
-      const toDateOnly = (d: Date) => d.toISOString().split('T')[0];
-      const parseDateInput = (value: string) => {
-        if (!value) return null;
-        const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? null : parsed;
-      };
-
-      let start: Date | null = null;
-      let end: Date | null = null;
-
-      if (periodFilter === 'TODAY') {
-        start = new Date(now);
-        end = new Date(now);
-        end.setDate(end.getDate() + 1);
-      } else if (periodFilter === 'WEEK') {
-        end = new Date(now);
-        end.setDate(end.getDate() + 1);
-        start = new Date(now);
-        start.setDate(start.getDate() - 6);
-      } else if (periodFilter === 'MONTH') {
-        start = new Date(now.getFullYear(), now.getMonth(), 1);
-        end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-      } else if (periodFilter === 'YEAR') {
-        start = new Date(now.getFullYear(), 0, 1);
-        end = new Date(now.getFullYear() + 1, 0, 1);
-      } else if (periodFilter === 'RANGE') {
-        const s = parseDateInput(periodStart);
-        const e = parseDateInput(periodEnd);
-        if (s && e) {
-          start = s;
-          end = new Date(e);
-          end.setDate(end.getDate() + 1);
-        }
-      }
-
-      let query = supabase
+      const today = new Date().toISOString().split('T')[0];
+      
+      const { data: billingData, error: billingError } = await supabase
         .from('enrollment_billing_months')
         .select('enrollment_id, billing_month, due_date, status, retailer_id')
         .eq('primary_paid', false)
+        .lt('due_date', today)
         .order('due_date', { ascending: true });
 
-      if (periodFilter === 'ALL') {
-        query = query.lt('due_date', todayISO);
-      } else if (start && end) {
-        const endLimit = new Date(now);
-        endLimit.setDate(endLimit.getDate() + 1);
-        const effectiveEnd = end < endLimit ? end : endLimit;
-        query = query
-          .gte('due_date', toDateOnly(start))
-          .lt('due_date', toDateOnly(effectiveEnd))
-          .lt('due_date', todayISO);
-      } else {
-        query = query.lt('due_date', todayISO);
-      }
-
-      const { data: billingData, error: billingError } = await query;
-
       if (billingError) throw billingError;
-
-      if (requestId !== loadSeqRef.current) return;
 
       // Get enrollment and customer details
       if (!billingData || billingData.length === 0) {
         setOverdues([]);
+        setLoading(false);
         return;
       }
 
-      const enrollmentIds = Array.from(new Set(billingData.map(b => b.enrollment_id)));
+      const enrollmentIds = billingData.map(b => b.enrollment_id);
       const { data: enrollments, error: enrollError } = await supabase
         .from('enrollments')
         .select(`
@@ -219,13 +140,9 @@ export default function DuePage() {
       setOverdues(overdueList);
     } catch (error) {
       console.error('Error loading overdue enrollments:', error);
-      if (requestId === loadSeqRef.current) {
-        setOverdues([]);
-      }
+      setOverdues([]);
     } finally {
-      if (requestId === loadSeqRef.current) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
   }
 
@@ -253,25 +170,32 @@ export default function DuePage() {
   const totalDueAmount = overdues.reduce((sum, s) => sum + Number(s.monthly_amount || 0), 0);
   const criticalOverdue = overdues.filter((s) => Number(s.days_overdue || 0) > 14).length;
 
-  function openCustomerDetails(customerId: string) {
-    setSelectedCustomerId(customerId);
-    setDetailModalOpen(true);
+  async function sendReminder(enrollmentId?: string) {
+    try {
+      // Safer RPC patterns:
+      // 1) enqueue_due_reminders(p_retailer uuid, p_enrollment uuid default null)
+      // OR
+      // 2) enqueue_due_reminders_for_enrollment(p_enrollment uuid)
+      //
+      // Choose ONE and implement in DB.
+      const retailerId = (user as any)?.retailer_id;
+
+      const { error } = await supabase.rpc('enqueue_due_reminders', {
+        p_retailer: retailerId ?? null,
+        p_enrollment: enrollmentId ?? null,
+      });
+
+      if (error) throw error;
+
+      alert('Reminder queued!');
+      await loadOverdues();
+    } catch (error) {
+      console.error('Error sending reminder:', error);
+      alert('Failed to send reminder');
+    }
   }
 
-  function openReminderDialog(row: OverdueEnrollment) {
-    setReminderTarget({
-      enrollmentId: row.enrollment_id,
-      customerName: row.customer_name,
-      customerPhone: row.customer_phone,
-    });
-    setReminderOpen(true);
-  }
-
-  function handleSendReminder() {
-    setReminderOpen(false);
-  }
-
-  if (authLoading || loading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-pulse text-xl">Loading...</div>
@@ -281,42 +205,9 @@ export default function DuePage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Due & Overdue Payments</h1>
-          <p className="text-muted-foreground">Track and manage customer payment dues</p>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <Label>Period</Label>
-            <Select value={periodFilter} onValueChange={(value) => setPeriodFilter(value as typeof periodFilter)}>
-              <SelectTrigger className="w-[170px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="TODAY">Today</SelectItem>
-                <SelectItem value="WEEK">Last 7 Days</SelectItem>
-                <SelectItem value="MONTH">This Month</SelectItem>
-                <SelectItem value="YEAR">This Year</SelectItem>
-                <SelectItem value="RANGE">Custom Range</SelectItem>
-                <SelectItem value="ALL">All Time</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {periodFilter === 'RANGE' && (
-            <div className="flex items-end gap-2">
-              <div className="space-y-1">
-                <Label>From</Label>
-                <Input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label>To</Label>
-                <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
-              </div>
-            </div>
-          )}
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Due & Overdue Payments</h1>
+        <p className="text-muted-foreground">Track and manage customer payment dues</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -391,14 +282,13 @@ export default function DuePage() {
             {filtered.map((row) => (
               <div
                 key={`${row.enrollment_id}-${row.billing_month}`}
-                className={`p-4 rounded-lg border-2 transition-all hover:shadow-md cursor-pointer ${
+                className={`p-4 rounded-lg border-2 transition-all hover:shadow-md ${
                   row.days_overdue > 14
                     ? 'border-red-200 bg-red-50 dark:bg-red-900/10'
                     : row.days_overdue > 7
                     ? 'border-orange-200 bg-orange-50 dark:bg-orange-900/10'
                     : 'border-yellow-200 bg-yellow-50 dark:bg-yellow-900/10'
                 }`}
-                onClick={() => openCustomerDetails(row.customer_id)}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 space-y-2">
@@ -459,26 +349,21 @@ export default function DuePage() {
                 </div>
 
                 <div className="flex gap-2 mt-4 pt-4 border-t border-border">
-                  <Link
-                    href={`tel:${row.customer_phone}`}
-                    className="flex-1"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <Button variant="outline" className="w-full" size="sm" onClick={(event) => event.stopPropagation()}>
+                  <Link href={`tel:${row.customer_phone}`} className="flex-1">
+                    <Button variant="outline" className="w-full" size="sm">
                       <Phone className="w-4 h-4 mr-2" />
                       Call Customer
                     </Button>
                   </Link>
 
-                  <Button
-                    variant="default"
-                    className="flex-1"
-                    size="sm"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openReminderDialog(row);
-                    }}
-                  >
+                  {/* Adjust to your actual admin route for viewing an enrollment */}
+                  <Link href={`/dashboard/passbook/${row.enrollment_id}`} className="flex-1">
+                    <Button variant="outline" className="w-full" size="sm">
+                      View Plan
+                    </Button>
+                  </Link>
+
+                  <Button variant="default" className="flex-1" size="sm" onClick={() => sendReminder(row.enrollment_id)}>
                     Send Reminder
                   </Button>
                 </div>
@@ -514,38 +399,6 @@ export default function DuePage() {
           </div>
         </CardContent>
       </Card>
-
-      <Dialog open={reminderOpen} onOpenChange={setReminderOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Send Reminder</DialogTitle>
-            <DialogDescription>
-              {reminderTarget?.customerName ? `To: ${reminderTarget.customerName} (${reminderTarget.customerPhone})` : 'Customer reminder'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Message preview</p>
-            <div className="rounded-lg border border-gold-200 bg-gold-50/40 p-3 text-sm">
-              {reminderMessage}
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setReminderOpen(false)}>
-              Close
-            </Button>
-            <Button onClick={handleSendReminder}>Send</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <CustomerDetailModal
-        customerId={selectedCustomerId}
-        open={detailModalOpen}
-        onClose={() => {
-          setDetailModalOpen(false);
-          setSelectedCustomerId(null);
-        }}
-      />
     </div>
   );
 }

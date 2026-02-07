@@ -70,12 +70,13 @@ export default function CustomerSchemesPage() {
   const [availablePlans, setAvailablePlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
+    if (authLoading) return;
     if (!customer) {
       router.push('/c/login');
       return;
     }
     void loadData();
-  }, [customer]);
+  }, [customer, authLoading, router]);
 
   if (brandingLoading || authLoading) {
     return <div className="p-6">Loading...</div>;

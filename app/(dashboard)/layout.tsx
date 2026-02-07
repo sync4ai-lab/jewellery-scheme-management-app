@@ -10,7 +10,7 @@ import { MobileNav } from '@/components/dashboard/mobile-nav';
 import { Toaster } from '@/components/ui/sonner';
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading, error } = useAuth();
+  const { user, profile, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -40,9 +40,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  const profileMissing = !loading && user && !profile;
-  const retailerMissing = !loading && user && profile && !profile.retailer_id;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-gold-50/10">
       <TopBar />
@@ -50,25 +47,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
       <div className="flex flex-col items-center py-6">
         <main className="w-full max-w-7xl px-4 md:px-6 page-transition pb-32 md:pb-6">
-          {(error || profileMissing || retailerMissing) && (
-            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {error && (
-                <div>
-                  <strong>Auth error:</strong> {error}
-                </div>
-              )}
-              {profileMissing && (
-                <div>
-                  <strong>Profile missing:</strong> No row found in user_profiles for this user. Create a user_profiles row with id = auth.uid().
-                </div>
-              )}
-              {retailerMissing && (
-                <div>
-                  <strong>Retailer missing:</strong> user_profiles.retailer_id is null. Set retailer_id to a valid retailer.
-                </div>
-              )}
-            </div>
-          )}
           {children}
         </main>
       </div>

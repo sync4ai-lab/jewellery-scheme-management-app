@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -44,18 +44,26 @@ type DashboardMetrics = {
   dues22K: number;
   dues24K: number;
   duesSilver: number;
-  customersTotalPeriod: number;
-  customersActivePeriod: number;
-  enrollmentsTotalPeriod: number;
-  enrollmentsActivePeriod: number;
-  redemptionsReadyPeriod: number;
-  redemptionsCompletedPeriod: number;
+  overdueCount: number;
+  newEnrollmentsPeriod: number;
+  activeCustomers: number;
+  planAmountTotal: number;
+  totalActiveEnrollmentsAllTime: number;
   currentRates: {
     k18: { rate: number; validFrom: string } | null;
     k22: { rate: number; validFrom: string } | null;
     k24: { rate: number; validFrom: string } | null;
     silver: { rate: number; validFrom: string } | null;
   };
+};
+
+type StaffMember = {
+  staff_id: string;
+  retailer_id: string;
+  full_name: string;
+  enrollments_count: number;
+  transactions_count: number;
+  total_collected: number;
 };
 
 function safeNumber(v: unknown): number {
@@ -66,7 +74,6 @@ function safeNumber(v: unknown): number {
 export default function PulseDashboard() {
   const { profile } = useAuth();
   const router = useRouter();
-  const enrollmentKaratCache = useRef<Map<string, string> | null>(null);
   
   // Only ADMIN and STAFF can access Pulse
   useEffect(() => {
@@ -76,8 +83,11 @@ export default function PulseDashboard() {
   }, [profile, router]);
 
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [staffLeaderboard, setStaffLeaderboard] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [collectionsTrend, setCollectionsTrend] = useState<Array<{ date: string; collections: number }>>([]);
+  const [overdueTrend, setOverdueTrend] = useState<Array<{ date: string; overdue: number }>>([]);
+  const [enrollmentTrend, setEnrollmentTrend] = useState<Array<{ date: string; enrollments: number }>>([]);
   
   // New analytics state
   const [analyticsFilter, setAnalyticsFilter] = useState<'7D' | '30D' | '3M' | '6M' | '1Y' | 'CUSTOM'>('30D');
@@ -111,9 +121,22 @@ export default function PulseDashboard() {
     }
   }, [timeFilter]);
 
+  const todayRange = useMemo(() => {
+    // Use UTC day boundaries to avoid "today" drifting due to server timezone comparisons
+    const now = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+    return {
+      startISO: start.toISOString(),
+      endISO: end.toISOString(),
+      todayDateISO: start.toISOString().split('T')[0], // YYYY-MM-DD (UTC)
+    };
+  }, []);
+
   useEffect(() => {
     if (!profile?.retailer_id) return;
     void loadDashboard();
+    void loadChartTrends();
     void loadAdvancedAnalytics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.retailer_id]);
@@ -130,18 +153,29 @@ export default function PulseDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analyticsFilter, analyticsStart, analyticsEnd, metalTypeFilter]);
 
+  async function safeCountCustomers(retailerId: string): Promise<number> {
+    const { count, error } = await supabase
+      .from('customers')
+      .select('id', { count: 'exact', head: true })
+      .eq('retailer_id', retailerId);
+
+    if (error) {
+      console.error('Error counting customers:', error);
+      return 0;
+    }
+    return count || 0;
+  }
+
   async function loadDashboard() {
     if (!profile?.retailer_id) return;
-    if (metrics) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
+
+    setLoading(true);
 
     try {
       const retailerId = profile.retailer_id;
       let startISO: string;
       let endISO: string;
+      let todayDateISO: string;
 
       const now = new Date();
       const startOfDayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
@@ -166,12 +200,6 @@ export default function PulseDashboard() {
         return { s, e };
       };
 
-      const parseDateInput = (value: string, fallback: Date) => {
-        if (!value) return fallback;
-        const parsed = new Date(value);
-        return Number.isNaN(parsed.getTime()) ? fallback : parsed;
-      };
-
       if (timeFilter === 'DAY') {
         startISO = toISO(startOfDayUTC);
         endISO = toISO(endOfDayUTC);
@@ -185,20 +213,13 @@ export default function PulseDashboard() {
         const { s, e } = startOfYearUTC(now);
         startISO = toISO(s); endISO = toISO(e);
       } else {
-        const s = parseDateInput(customStart, startOfDayUTC);
-        const rawEnd = parseDateInput(customEnd, endOfDayUTC);
-        const endExclusive = customEnd
-          ? new Date(Date.UTC(rawEnd.getUTCFullYear(), rawEnd.getUTCMonth(), rawEnd.getUTCDate() + 1, 0, 0, 0, 0))
-          : endOfDayUTC;
-
-        const safeEnd = endExclusive <= s
-          ? new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate() + 1, 0, 0, 0, 0))
-          : endExclusive;
-
+        const s = customStart ? new Date(customStart) : startOfDayUTC;
+        const e = customEnd ? new Date(customEnd) : endOfDayUTC;
         startISO = toISO(s);
-        endISO = toISO(safeEnd);
+        endISO = toISO(e);
       }
 
+      todayDateISO = startOfDayUTC.toISOString().split('T')[0];
 
       const [
         rate18Result,
@@ -207,12 +228,12 @@ export default function PulseDashboard() {
         rateSilverResult,
         txnsResult,
         duesResult,
-        enrollmentsTotalPeriodResult,
-        enrollmentsActivePeriodResult,
-        customersTotalPeriodResult,
-        customersActivePeriodResult,
-        redemptionsCompletedResult,
-        redemptionsReadyResult,
+        overdueResult,
+        enrollmentsResult,
+        customersCount,
+        staffResult,
+        activeEnrollmentsAll,
+        schemesAll,
       ] = await Promise.all([
         supabase
           .from('gold_rates')
@@ -253,52 +274,44 @@ export default function PulseDashboard() {
           .eq('payment_status', 'SUCCESS')
           .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
           .gte('paid_at', startISO)
-          .lt('paid_at', endISO),
+          .lt('paid_at', endISO)
+          .limit(1000), // Lower limit for faster dashboard
         supabase
           .from('enrollment_billing_months')
           .select('enrollment_id')
           .eq('retailer_id', retailerId)
           .gte('due_date', startISO.split('T')[0])
           .lt('due_date', endISO.split('T')[0])
-          .eq('primary_paid', false),
+          .eq('primary_paid', false)
+          .limit(500),
         supabase
-          .from('enrollments')
-          .select('id', { count: 'exact', head: true })
+          .from('enrollment_billing_months')
+          .select('enrollment_id', { count: 'exact', head: true })
           .eq('retailer_id', retailerId)
-          .gte('created_at', startISO)
-          .lt('created_at', endISO),
-        supabase
-          .from('enrollments')
-          .select('id', { count: 'exact', head: true })
-          .eq('retailer_id', retailerId)
-          .eq('status', 'ACTIVE')
-          .gte('created_at', startISO)
-          .lt('created_at', endISO),
-        supabase
-          .from('customers')
-          .select('id', { count: 'exact', head: true })
-          .eq('retailer_id', retailerId)
-          .gte('created_at', startISO)
-          .lt('created_at', endISO),
-        supabase
-          .from('customers')
-          .select('id', { count: 'exact', head: true })
-          .eq('retailer_id', retailerId)
-          .eq('status', 'ACTIVE')
-          .gte('created_at', startISO)
-          .lt('created_at', endISO),
-        supabase
-          .from('redemptions')
-          .select('id, redemption_status, redemption_date, processed_at')
-          .eq('retailer_id', retailerId)
-          .eq('redemption_status', 'COMPLETED'),
+          .lt('due_date', todayDateISO)
+          .eq('primary_paid', false)
+          .limit(500),
         supabase
           .from('enrollments')
           .select('id', { count: 'exact', head: true })
           .eq('retailer_id', retailerId)
           .eq('status', 'ACTIVE')
-          .gte('maturity_date', startISO)
-          .lt('maturity_date', endISO),
+          .gte('created_at', startISO)
+          .lt('created_at', endISO)
+          .limit(500),
+        safeCountCustomers(retailerId),
+        supabase.rpc('get_staff_leaderboard', { period_days: 30 }),
+        supabase
+          .from('enrollments')
+          .select('id, plan_id, status')
+          .eq('retailer_id', retailerId)
+          .eq('status', 'ACTIVE')
+          .limit(500),
+        supabase
+          .from('scheme_templates')
+          .select('id, installment_amount, duration_months')
+          .eq('retailer_id', retailerId)
+          .limit(100),
       ]);
 
       // Log any errors from the parallel queries
@@ -308,12 +321,10 @@ export default function PulseDashboard() {
       if (rateSilverResult.error) console.error('Silver rate error:', rateSilverResult.error);
       if (txnsResult.error) console.error('Transactions error:', txnsResult.error);
       if (duesResult.error) console.error('Dues error:', duesResult.error);
-      if (enrollmentsTotalPeriodResult.error) console.error('Enrollments total error:', enrollmentsTotalPeriodResult.error);
-      if (enrollmentsActivePeriodResult.error) console.error('Enrollments active error:', enrollmentsActivePeriodResult.error);
-      if (customersTotalPeriodResult.error) console.error('Customers total error:', customersTotalPeriodResult.error);
-      if (customersActivePeriodResult.error) console.error('Customers active error:', customersActivePeriodResult.error);
-      if (redemptionsCompletedResult.error) console.error('Redemptions completed error:', redemptionsCompletedResult.error);
-      if (redemptionsReadyResult.error) console.error('Redemptions ready error:', redemptionsReadyResult.error);
+      if (overdueResult.error) console.error('Overdue error:', overdueResult.error);
+      if (enrollmentsResult.error) console.error('Enrollments count error:', enrollmentsResult.error);
+      if (activeEnrollmentsAll.error) console.error('Active enrollments error:', activeEnrollmentsAll.error);
+      if (schemesAll.error) console.error('Schemes error:', schemesAll.error);
 
       const currentRates = {
         k18: rate18Result.data
@@ -342,36 +353,32 @@ export default function PulseDashboard() {
           : null,
       };
 
-      // Fetch all enrollments to get karat information (cached per retailer)
-      let enrollmentKaratMap = enrollmentKaratCache.current;
-      if (!enrollmentKaratMap) {
-        const enrollmentsKaratResult = await supabase
-          .from('enrollments')
-          .select('id, karat')
-          .eq('retailer_id', retailerId);
+      // Fetch all enrollments to get karat information
+      // Fetch ALL enrollments for the retailer (not just ACTIVE)
+      const enrollmentsKaratResult = await supabase
+        .from('enrollments')
+        .select('id, karat')
+        .eq('retailer_id', retailerId);
 
-        if (enrollmentsKaratResult.error) {
-          console.error('Error fetching enrollments karat data:', enrollmentsKaratResult.error);
-        }
-
-        enrollmentKaratMap = new Map<string, string>();
-        (enrollmentsKaratResult.data || []).forEach((e: any) => {
-          enrollmentKaratMap!.set(e.id, e.karat);
-        });
-        enrollmentKaratCache.current = enrollmentKaratMap;
+      if (enrollmentsKaratResult.error) {
+        console.error('Error fetching enrollments karat data:', enrollmentsKaratResult.error);
       }
+
+      // Create a map of enrollment_id -> karat
+      const enrollmentKaratMap = new Map<string, string>();
+      (enrollmentsKaratResult.data || []).forEach((e: any) => {
+        enrollmentKaratMap.set(e.id, e.karat);
+      });
 
       // Calculate collections and grams allocated broken down by metal type
       let collections18K = 0, collections22K = 0, collections24K = 0, collectionsSilver = 0;
       let gold18KAllocated = 0, gold22KAllocated = 0, gold24KAllocated = 0, silverAllocated = 0;
-      let totalCollections = 0;
       
       (txnsResult.data || []).forEach((t: any) => {
         // Only count PRIMARY_INSTALLMENT and TOP_UP (already filtered in query)
         const karat = enrollmentKaratMap.get(t.enrollment_id);
         const amt = safeNumber(t.amount_paid);
         const grams = safeNumber(t.grams_allocated_snapshot);
-        totalCollections += amt;
         if (!karat) {
           // Debug: log missing enrollment_id mapping
           console.warn('Transaction with enrollment_id not found in enrollments:', t.enrollment_id, t);
@@ -392,20 +399,15 @@ export default function PulseDashboard() {
         }
       });
 
-      const periodCollections = totalCollections;
+      const periodCollections = collections18K + collections22K + collections24K + collectionsSilver;
       const goldAllocatedPeriod = gold18KAllocated + gold22KAllocated + gold24KAllocated;
 
       // Calculate dues outstanding broken down by metal type
       // We need to fetch enrollment details for unpaid billing months
       let dues18K = 0, dues22K = 0, dues24K = 0, duesSilver = 0;
       
-      const dueCounts = new Map<string, number>();
-      (duesResult.data || []).forEach((d: any) => {
-        dueCounts.set(d.enrollment_id, (dueCounts.get(d.enrollment_id) || 0) + 1);
-      });
-
-      if (dueCounts.size > 0) {
-        const dueEnrollmentIds = Array.from(dueCounts.keys());
+      if (duesResult.data && duesResult.data.length > 0) {
+        const dueEnrollmentIds = duesResult.data.map((d: any) => d.enrollment_id);
         const { data: dueEnrollments } = await supabase
           .from('enrollments')
           .select('id, karat, commitment_amount')
@@ -413,7 +415,7 @@ export default function PulseDashboard() {
           .in('id', dueEnrollmentIds);
         
         (dueEnrollments || []).forEach((e: any) => {
-          const amt = safeNumber(e.commitment_amount) * (dueCounts.get(e.id) || 0);
+          const amt = safeNumber(e.commitment_amount);
           
           if (e.karat === '18K') {
             dues18K += amt;
@@ -429,14 +431,20 @@ export default function PulseDashboard() {
 
       const duesOutstanding = dues18K + dues22K + dues24K + duesSilver;
 
-      const redemptionStart = new Date(startISO);
-      const redemptionEnd = new Date(endISO);
-      const completedRedemptionsPeriod = (redemptionsCompletedResult.data || []).filter((r: any) => {
-        const dateValue = r.redemption_date || r.processed_at;
-        if (!dateValue) return false;
-        const date = new Date(dateValue);
-        return date >= redemptionStart && date < redemptionEnd;
-      }).length;
+
+      // Compute plan total = sum(installment_amount * duration_months) for each active enrollment
+      const schemesMap = new Map<string, { installment_amount: number; duration_months: number }>();
+      (schemesAll.data || []).forEach((s: any) => {
+        schemesMap.set(String(s.id), {
+          installment_amount: safeNumber(s.installment_amount),
+          duration_months: safeNumber(s.duration_months),
+        });
+      });
+      const planAmountTotal = (activeEnrollmentsAll.data || []).reduce((sum: number, e: any) => {
+        const s = schemesMap.get(String(e.plan_id));
+        if (!s) return sum;
+        return sum + s.installment_amount * s.duration_months;
+      }, 0);
 
       setMetrics({
         periodCollections,
@@ -454,20 +462,97 @@ export default function PulseDashboard() {
         dues22K,
         dues24K,
         duesSilver,
-        customersTotalPeriod: customersTotalPeriodResult.count || 0,
-        customersActivePeriod: customersActivePeriodResult.count || 0,
-        enrollmentsTotalPeriod: enrollmentsTotalPeriodResult.count || 0,
-        enrollmentsActivePeriod: enrollmentsActivePeriodResult.count || 0,
-        redemptionsReadyPeriod: redemptionsReadyResult.count || 0,
-        redemptionsCompletedPeriod: completedRedemptionsPeriod,
+        overdueCount: overdueResult.count || 0,
+        newEnrollmentsPeriod: enrollmentsResult.count || 0,
+        activeCustomers: customersCount || 0,
+        planAmountTotal,
+        totalActiveEnrollmentsAllTime: (activeEnrollmentsAll.data || []).length,
         currentRates,
       });
+
+      if (staffResult.error) {
+        console.error('Staff leaderboard RPC error:', staffResult.error);
+        setStaffLeaderboard([]);
+      } else if (staffResult.data) {
+        setStaffLeaderboard((staffResult.data as StaffMember[]).slice(0, 5));
+      }
     } catch (error) {
       console.error('Error loading dashboard:', error);
       toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
-      setRefreshing(false);
+    }
+  }
+
+  async function loadChartTrends() {
+    if (!profile?.retailer_id) return;
+
+    try {
+      // Load last 7 days of collections, overdue, and enrollment data
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      // Collections trend (last 7 days)
+      const { data: txnData } = await supabase
+        .from('transactions')
+        .select('paid_at, amount_paid')
+        .eq('retailer_id', profile.retailer_id)
+        .eq('payment_status', 'SUCCESS')
+        .gte('paid_at', sevenDaysAgo.toISOString());
+
+      const collectionsMap = new Map<string, number>();
+      (txnData || []).forEach((txn: any) => {
+        const date = new Date(txn.paid_at).toISOString().split('T')[0];
+        collectionsMap.set(date, (collectionsMap.get(date) || 0) + (txn.amount_paid || 0));
+      });
+
+      const collectionsTrendData = Array.from(collectionsMap).map(([date, amount]) => ({
+        date,
+        collections: Math.round(amount),
+      })).sort((a, b) => a.date.localeCompare(b.date));
+      setCollectionsTrend(collectionsTrendData);
+
+      // Overdue trend (last 7 days)
+      const { data: billingData } = await supabase
+        .from('enrollment_billing_months')
+        .select('due_date, primary_paid')
+        .eq('retailer_id', profile.retailer_id);
+
+      const overdueMap = new Map<string, number>();
+      (billingData || []).forEach((billing: any) => {
+        if (!billing.primary_paid && billing.due_date <= now.toISOString().split('T')[0]) {
+          const date = billing.due_date;
+          overdueMap.set(date, (overdueMap.get(date) || 0) + 1);
+        }
+      });
+
+      const overdueTrendData = Array.from(overdueMap).map(([date, count]) => ({
+        date,
+        overdue: count,
+      })).sort((a, b) => a.date.localeCompare(b.date));
+      setOverdueTrend(overdueTrendData);
+
+      // Enrollment trend (last 7 days)
+      const { data: enrollData } = await supabase
+        .from('enrollments')
+        .select('created_at, status')
+        .eq('retailer_id', profile.retailer_id)
+        .eq('status', 'ACTIVE')
+        .gte('created_at', sevenDaysAgo.toISOString());
+
+      const enrollmentMap = new Map<string, number>();
+      (enrollData || []).forEach((enroll: any) => {
+        const date = new Date(enroll.created_at).toISOString().split('T')[0];
+        enrollmentMap.set(date, (enrollmentMap.get(date) || 0) + 1);
+      });
+
+      const enrollmentTrendData = Array.from(enrollmentMap).map(([date, count]) => ({
+        date,
+        enrollments: count,
+      })).sort((a, b) => a.date.localeCompare(b.date));
+      setEnrollmentTrend(enrollmentTrendData);
+    } catch (error) {
+      console.error('Error loading chart trends:', error);
     }
   }
 
@@ -511,10 +596,9 @@ export default function PulseDashboard() {
       // 1. Revenue & Collection Trends by Metal Type
       const { data: txnData } = await supabase
         .from('transactions')
-        .select('paid_at, amount_paid, enrollment_id, grams_allocated_snapshot, txn_type')
+        .select('paid_at, amount_paid, enrollment_id, grams_allocated_snapshot')
         .eq('retailer_id', profile.retailer_id)
         .eq('payment_status', 'SUCCESS')
-        .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
         .gte('paid_at', startDate.toISOString())
         .lte('paid_at', endDate.toISOString());
 
@@ -740,7 +824,6 @@ export default function PulseDashboard() {
                 <SelectItem value="RANGE">Range</SelectItem>
               </SelectContent>
             </Select>
-            {refreshing && <span className="text-xs text-muted-foreground">Updating…</span>}
           </div>
           {timeFilter === 'RANGE' && (
             <div className="flex items-center gap-2">
@@ -860,10 +943,10 @@ export default function PulseDashboard() {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={() => router.push('/payments')}>
+        <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={() => router.push('/collections')}>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium">Payments</CardTitle>
+              <CardTitle className="text-sm font-medium">Collections</CardTitle>
               <Coins className="w-5 h-5 text-green-600" />
             </div>
           </CardHeader>
@@ -970,65 +1053,102 @@ export default function PulseDashboard() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Plan Amount Overview */}
+      <Card className="jewel-card border-2 border-primary/20">
+        <CardHeader>
+          <CardTitle>Total Scheme Value</CardTitle>
+          <CardDescription>Active enrollment commitments across all plans</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-gold-100 to-gold-50 dark:from-gold-900/30 dark:to-gold-800/20">
+              <p className="text-xs text-muted-foreground mb-1">Total Plan Value</p>
+              <p className="text-2xl font-bold gold-text">₹{(metrics?.planAmountTotal ?? 0).toLocaleString()}</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/20">
+              <p className="text-xs text-muted-foreground mb-1">Active Enrollments</p>
+              <p className="text-2xl font-bold text-blue-600">{metrics?.totalActiveEnrollmentsAllTime ?? 0}</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-100 to-orange-50 dark:from-orange-900/30 dark:to-orange-800/20">
+              <p className="text-xs text-muted-foreground mb-1">Total Dues & Overdue</p>
+              <p className="text-2xl font-bold text-orange-600">{(metrics?.duesOutstanding ?? 0) + (metrics?.overdueCount ?? 0)}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="jewel-card">
           <CardHeader>
-            <CardTitle>Customers</CardTitle>
-            <CardDescription>Our Customer Aquisitions</CardDescription>
+            <CardTitle>New Enrollments</CardTitle>
+            <CardDescription>{periodLabel} customer acquisitions</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/30 dark:to-amber-800/20">
-                <p className="text-xs text-muted-foreground mb-1">Total Customers</p>
-                <p className="text-3xl font-bold text-amber-700">{metrics?.customersTotalPeriod ?? 0}</p>
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/20 flex items-center justify-center">
+                <Users className="w-10 h-10 text-blue-600" />
               </div>
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-900/30 dark:to-emerald-800/20">
-                <p className="text-xs text-muted-foreground mb-1">Active Customers</p>
-                <p className="text-3xl font-bold text-emerald-600">{metrics?.customersActivePeriod ?? 0}</p>
+              <div>
+                <div className="text-4xl font-bold">{metrics?.newEnrollmentsPeriod || 0}</div>
+                <p className="text-sm text-muted-foreground">
+                  New enrollments • Active customers: {metrics?.activeCustomers || 0}
+                </p>
               </div>
             </div>
+            <Button onClick={() => router.push('/enroll')} className="w-full mt-4 jewel-gradient text-white hover:opacity-90">
+              Enroll New Customer
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
           </CardContent>
         </Card>
 
         <Card className="jewel-card">
           <CardHeader>
-            <CardTitle>Enrollments</CardTitle>
-            <CardDescription>Our Successful Enrollments</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/20">
-                <p className="text-xs text-muted-foreground mb-1">Total Enrollments</p>
-                <p className="text-3xl font-bold text-blue-600">{metrics?.enrollmentsTotalPeriod ?? 0}</p>
-              </div>
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-900/30 dark:to-purple-800/20">
-                <p className="text-xs text-muted-foreground mb-1">Active Enrollments</p>
-                <p className="text-3xl font-bold text-purple-600">{metrics?.enrollmentsActivePeriod ?? 0}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="jewel-card">
-          <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>Redemptions</CardTitle>
-                <CardDescription>Customer Withdrawals</CardDescription>
+                <CardTitle>Staff Leaderboard</CardTitle>
+                <CardDescription>Top performers (last 30 days)</CardDescription>
               </div>
               <Trophy className="w-6 h-6 text-gold-600" />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-100 to-orange-50 dark:from-orange-900/30 dark:to-orange-800/20">
-                <p className="text-xs text-muted-foreground mb-1">Ready to Redeem</p>
-                <p className="text-3xl font-bold text-orange-600">{metrics?.redemptionsReadyPeriod ?? 0}</p>
-              </div>
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-green-100 to-green-50 dark:from-green-900/30 dark:to-green-800/20">
-                <p className="text-xs text-muted-foreground mb-1">Completed</p>
-                <p className="text-3xl font-bold text-green-600">{metrics?.redemptionsCompletedPeriod ?? 0}</p>
-              </div>
+            <div className="space-y-3">
+              {staffLeaderboard.length > 0 ? (
+                staffLeaderboard.map((staff, index) => (
+                  <div
+                    key={staff.staff_id}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors"
+                  >
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                        index === 0
+                          ? 'bg-gold-400 text-white'
+                          : index === 1
+                          ? 'bg-gray-300 text-gray-700'
+                          : index === 2
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {index + 1}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium">{staff.full_name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {safeNumber(staff.enrollments_count)} enrollments • {safeNumber(staff.transactions_count)} txns • ₹
+                        {safeNumber(staff.total_collected).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">No data available</p>
+              )}
             </div>
+            <Button variant="outline" className="w-full mt-4" onClick={() => router.push('/dashboard/growth')}>
+              View Full Leaderboard
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -1087,14 +1207,14 @@ export default function PulseDashboard() {
           </CardContent>
         </Card>
 
-        {/* Chart 1: Revenue & Payment Trends by Metal Type */}
+        {/* Chart 1: Revenue & Collection Trends by Metal Type */}
         <Card className="jewel-card border-2 border-primary/20">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-green-600" />
-              Revenue & Payment Trends
+              Revenue & Collection Trends
             </CardTitle>
-            <CardDescription>Daily payments broken down by metal type</CardDescription>
+            <CardDescription>Daily collections broken down by metal type</CardDescription>
           </CardHeader>
           <CardContent>
             {revenueByMetal.length > 0 ? (
@@ -1118,7 +1238,7 @@ export default function PulseDashboard() {
                     <Line type="monotone" dataKey="silver" stroke="#64748B" strokeWidth={2} name="Silver" dot={{ fill: '#64748B' }} />
                   )}
                   {metalTypeFilter === 'ALL' && (
-                    <Line type="monotone" dataKey="total" stroke="#10B981" strokeWidth={3} name="Total Payments" dot={{ fill: '#10B981' }} />
+                    <Line type="monotone" dataKey="total" stroke="#10B981" strokeWidth={3} name="Total Collections" dot={{ fill: '#10B981' }} />
                   )}
                 </LineChart>
               </ResponsiveContainer>
@@ -1126,7 +1246,7 @@ export default function PulseDashboard() {
               <div className="h-96 flex items-center justify-center text-muted-foreground">
                 <div className="text-center">
                   <TrendingUp className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>No payment data available for selected period</p>
+                  <p>No collection data available for selected period</p>
                 </div>
               </div>
             )}
@@ -1285,7 +1405,7 @@ export default function PulseDashboard() {
               <Trophy className="w-5 h-5 text-gold-600" />
               Staff Performance Trends
             </CardTitle>
-            <CardDescription>Track team member payments over time</CardDescription>
+            <CardDescription>Track team member collections over time</CardDescription>
           </CardHeader>
           <CardContent>
             {staffPerformance.length > 0 ? (
@@ -1296,7 +1416,7 @@ export default function PulseDashboard() {
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip formatter={(value) => `₹${Number(value).toLocaleString()}`} />
                   <Legend />
-                  <Line type="monotone" dataKey="total" stroke="#D97706" strokeWidth={2} name="Total Payments" dot={{ fill: '#D97706' }} />
+                  <Line type="monotone" dataKey="total" stroke="#D97706" strokeWidth={2} name="Total Collections" dot={{ fill: '#D97706' }} />
                 </LineChart>
               </ResponsiveContainer>
             ) : (

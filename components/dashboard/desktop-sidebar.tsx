@@ -14,10 +14,10 @@ const allNavItems = [
   { name: 'Pulse', href: '/pulse', icon: Activity, description: 'Business Health', roles: ['ADMIN', 'STAFF', 'CUSTOMER'] },
   { name: 'Customers', href: '/customers', icon: UserCircle, description: 'Customer Management', roles: ['ADMIN', 'STAFF'] },
   { name: 'Plans', href: '/plans', icon: Sparkles, description: 'Scheme Templates', roles: ['ADMIN', 'STAFF'] },
-  { name: 'Payments', href: '/payments', icon: Users, description: 'Payments', roles: ['ADMIN', 'STAFF', 'CUSTOMER'] },
+  { name: 'Collections', href: '/collections', icon: Users, description: 'Payment Collection', roles: ['ADMIN', 'STAFF', 'CUSTOMER'] },
   { name: 'Redemptions', href: '/redemptions', icon: Award, description: 'Withdrawals', roles: ['ADMIN', 'STAFF', 'CUSTOMER'] },
-  { name: 'Dues', href: '/dashboard/due', icon: AlertCircle, description: 'Overdue Payments', roles: ['ADMIN', 'STAFF'] },
-  { name: 'Growth', href: '/dashboard/growth', icon: TrendingUp, description: 'Staff Performance', roles: ['ADMIN'] },
+  { name: 'Dues', href: '/pulse', icon: AlertCircle, description: 'Overdue Payments', roles: ['ADMIN', 'STAFF', 'CUSTOMER'] },
+  { name: 'Growth', href: '/pulse', icon: TrendingUp, description: 'Staff Performance', roles: ['ADMIN'] },
   { name: 'Settings', href: '/settings', icon: Gem, description: 'Configuration', roles: ['ADMIN', 'STAFF'] },
 ];
 

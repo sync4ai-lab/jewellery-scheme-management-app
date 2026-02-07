@@ -13,7 +13,6 @@ import { toast } from 'sonner';
 import { TrendingUp, Plus, Coins, Search, Download, Calendar } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useDebounce } from '@/lib/hooks/use-debounce';
-import { createNotification } from '@/lib/utils/notifications';
 import {
   Dialog,
   DialogContent,
@@ -168,14 +167,6 @@ export default function CollectionsPage() {
       setMonthlyPaymentInfo(null);
     }
   }, [selectedEnrollmentId]);
-
-  useEffect(() => {
-    if (!selectedEnrollmentId) return;
-    const enrollment = enrollments.find((e) => e.id === selectedEnrollmentId);
-    if (enrollment?.store_id) {
-      setSelectedStore(enrollment.store_id);
-    }
-  }, [selectedEnrollmentId, enrollments]);
 
   const calculatedGrams = useMemo(() => {
     const amountNum = parseFloat(amount);
@@ -433,13 +424,6 @@ export default function CollectionsPage() {
 
     setSubmitting(true);
     try {
-      const enrollment = enrollments.find((e) => e.id === selectedEnrollmentId);
-      const resolvedStoreId = selectedStore || enrollment?.store_id || (stores.length === 1 ? stores[0].id : '');
-      if (!resolvedStoreId) {
-        toast.error('Select a store before recording payment');
-        return;
-      }
-
       const gramsAllocated = amountNum / goldRate.rate_per_gram;
       const now = new Date().toISOString();
 
@@ -457,23 +441,10 @@ export default function CollectionsPage() {
         paid_at: now,
         recorded_at: now,
         source: 'STAFF_OFFLINE',
-        store_id: resolvedStoreId,
+        store_id: selectedStore || null,
       });
 
       if (txnError) throw txnError;
-
-      const customerName = customers.find((c) => c.id === selectedCustomerId)?.full_name || 'Customer';
-      void createNotification({
-        retailerId: profile.retailer_id,
-        customerId: selectedCustomerId,
-        enrollmentId: selectedEnrollmentId,
-        type: 'PAYMENT_SUCCESS',
-        message: `Payment received: ${customerName} - ₹${amountNum.toLocaleString()}`,
-        metadata: {
-          type: 'PAYMENT',
-          amount: amountNum,
-        },
-      });
 
       toast.success(
         `✅ Payment recorded: ₹${amountNum.toLocaleString()} = ${gramsAllocated.toFixed(4)}g ${metalName}`
@@ -615,9 +586,9 @@ export default function CollectionsPage() {
     <div className="space-y-6 pb-32">
       <div className="space-y-2">
         <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
-          Payments
+          Collections
         </h1>
-        <p className="text-muted-foreground">Record customer precious metal savings payments with live rate tracking</p>
+        <p className="text-muted-foreground">Record customer precious metal savings with live rate tracking</p>
       </div>
 
       {/* Payment Recording Card */}
@@ -625,7 +596,7 @@ export default function CollectionsPage() {
         <Card className="glass-card border-2 border-primary/15">
           <CardHeader>
             <CardTitle>Record Payment</CardTitle>
-            <CardDescription>Record a customer payment</CardDescription>
+            <CardDescription>Add a customer payment collection</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Customer Selection */}
@@ -886,7 +857,7 @@ export default function CollectionsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">All Transactions</SelectItem>
-                <SelectItem value="COLLECTIONS">Payments</SelectItem>
+                <SelectItem value="COLLECTIONS">Payment Collections</SelectItem>
                 <SelectItem value="REDEMPTIONS">Redemptions</SelectItem>
               </SelectContent>
             </Select>

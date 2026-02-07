@@ -73,7 +73,7 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
   // NOTE: params.schemeId is actually enrollmentId now
   const enrollmentId = params.schemeId;
 
-  const { customer } = useCustomerAuth();
+  const { customer, loading: authLoading } = useCustomerAuth();
 
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [currentBillingMonth, setCurrentBillingMonth] = useState<BillingMonth | null>(null);
@@ -98,13 +98,14 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!customer) {
       router.push('/c/login');
       return;
     }
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer, enrollmentId, router]);
+  }, [customer, authLoading, enrollmentId, router]);
 
   useEffect(() => {
     filterTransactions();

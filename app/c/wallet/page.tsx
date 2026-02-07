@@ -49,7 +49,7 @@ type BillingRow = {
 };
 
 export default function CustomerWalletPage() {
-  const { customer, signOut } = useCustomerAuth();
+  const { customer, signOut, loading: authLoading } = useCustomerAuth();
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
@@ -62,13 +62,14 @@ export default function CustomerWalletPage() {
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!customer) {
       router.push('/c/login');
       return;
     }
     void loadWallet();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer, router]);
+  }, [customer, authLoading, router]);
 
   async function loadWallet() {
     if (!customer) return;
