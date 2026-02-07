@@ -14,7 +14,7 @@ import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { createNotification } from '@/lib/utils/notifications';
 import { fireCelebrationConfetti } from '@/lib/utils/confetti';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -50,9 +50,11 @@ type BillingMonthRow = {
   status: string | null;
 };
 
-export default function PaymentPage({ params }: { params: { schemeId: string } }) {
-  // NOTE: route param is named schemeId, but it represents enrollment_id.
-  const enrollmentId = params.schemeId;
+export default function PaymentPage() {
+  const params = useParams<{ schemeId?: string | string[] }>();
+  const enrollmentId = Array.isArray(params?.schemeId)
+    ? params?.schemeId?.[0]
+    : params?.schemeId;
 
   const { customer, loading: authLoading } = useCustomerAuth();
 
@@ -84,6 +86,11 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
     if (authLoading) return;
     if (!customer) {
       router.push('/c/login');
+      return;
+    }
+    if (!enrollmentId) {
+      setLoading(false);
+      setEnrollment(null);
       return;
     }
     void loadData();

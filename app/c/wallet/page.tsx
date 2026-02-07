@@ -3,62 +3,77 @@
 export const dynamic = 'force-dynamic';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Gem, ArrowRight, Plus, TrendingUp, Calendar, Wallet, LogOut, Bell } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-
-type WalletData = {
-  totalGold: number;
-  totalPaid: number;
-  activeEnrollments: number;
-  nextDue: {
-    amount: number;
-    date: string;
-    enrollmentId: string;
-    planName: string;
-  } | null;
-  currentRate: number | null;
-};
+import { useToast } from '@/hooks/use-toast';
+import { createNotification } from '@/lib/utils/notifications';
+import { fireCelebrationConfetti } from '@/lib/utils/confetti';
+import { TrendingUp } from 'lucide-react';
 
 type Plan = {
   id: string;
   name: string;
   installment_amount?: number | null;
-  monthly_amount?: number | null;
   duration_months: number;
-};
+  bonus_percentage?: number | null;
+} | null;
 
-type EnrollmentRow = {
+type Enrollment = {
   id: string;
-  status?: string | null;
-  customer_id: string;
+  plan_id: string;
+  commitment_amount: number | null;
+  karat: string | null;
   retailer_id: string;
-  commitment_amount?: number | null;
-  scheme_templates?: Plan | null;
+  plan: Plan;
 };
 
-type BillingRow = {
-  enrollment_id: string;
-  due_date: string | null;
-  primary_paid: boolean | null;
+type GoldRate = {
+  id: string;
+  rate_per_gram: number;
+  effective_from: string;
 };
 
-export default function CustomerWalletPage() {
-  const { customer, user, signOut, loading: authLoading } = useCustomerAuth();
-  const [wallet, setWallet] = useState<WalletData | null>(null);
-  const [loading, setLoading] = useState(true);
+type MonthlyPaymentInfo = {
+  total_paid: number;
+  commitment_amount: number;
+  is_met: boolean;
+};
+
+const QUICK_AMOUNTS = [3000, 5000, 10000, 25000];
+
+export default function CustomerCollectionsPage() {
+  const { customer, loading: authLoading } = useCustomerAuth();
+  const { toast } = useToast();
   const router = useRouter();
 
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+  const [selectedEnrollmentId, setSelectedEnrollmentId] = useState('');
+  const [goldRate, setGoldRate] = useState<GoldRate | null>(null);
+  const [amount, setAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'CARD' | 'BANK_TRANSFER'>('UPI');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [monthlyPaymentInfo, setMonthlyPaymentInfo] = useState<MonthlyPaymentInfo | null>(null);
+
   const currentMonthStr = useMemo(() => {
-    const today = new Date();
-    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const now = new Date();
+    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     currentMonth.setHours(0, 0, 0, 0);
     return currentMonth.toISOString().split('T')[0];
   }, []);
+
+  const selectedEnrollment = enrollments.find((e) => e.id === selectedEnrollmentId) || null;
+  const commitmentAmount =
+    (typeof selectedEnrollment?.commitment_amount === 'number' && selectedEnrollment.commitment_amount > 0
+      ? selectedEnrollment.commitment_amount
+      : selectedEnrollment?.plan?.installment_amount) || 0;
 
   useEffect(() => {
     if (authLoading) return;
@@ -66,317 +81,360 @@ export default function CustomerWalletPage() {
       router.push('/c/login');
       return;
     }
-    void loadWallet();
+    void loadEnrollments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer, authLoading, router]);
+  }, [customer, authLoading]);
 
-  async function loadWallet() {
-    if (!customer && !user) return;
+  useEffect(() => {
+    if (!selectedEnrollmentId || !customer?.retailer_id) return;
+    void loadGoldRate();
+    void loadMonthlyPaymentInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEnrollmentId]);
 
+  async function loadEnrollments() {
+    if (!customer) return;
+    setLoading(true);
     try {
-      const customerId = customer?.id || user?.id;
-      const authUserId = user?.id;
-
-      let enrollmentsQuery = supabase
+      const { data, error } = await supabase
         .from('enrollments')
-        .select('id, status, customer_id, retailer_id, commitment_amount, scheme_templates(id, name, installment_amount, duration_months)')
+        .select('id, plan_id, commitment_amount, karat, retailer_id, scheme_templates(id, name, installment_amount, duration_months, bonus_percentage)')
+        .eq('customer_id', customer.id)
+        .eq('retailer_id', customer.retailer_id)
         .eq('status', 'ACTIVE');
 
-      if (customerId && authUserId && customerId !== authUserId) {
-        enrollmentsQuery = enrollmentsQuery.in('customer_id', [customerId, authUserId]);
-      } else if (customerId) {
-        enrollmentsQuery = enrollmentsQuery.eq('customer_id', customerId);
-      }
+      if (error) throw error;
 
-      if (customer?.retailer_id) {
-        enrollmentsQuery = enrollmentsQuery.eq('retailer_id', customer.retailer_id);
-      }
-
-      const { data: enrollmentsData, error: enrollmentsError } = await enrollmentsQuery;
-
-      if (enrollmentsError) throw enrollmentsError;
-
-      const enrollments = (enrollmentsData || []) as any[];
-
-      // Gold rate (best effort)
-      let currentRate: number | null = null;
-      try {
-        const { data: rateRow, error: rateErr } = await supabase.rpc('get_latest_rate', {
-          p_retailer: customer.retailer_id,
-          p_karat: '22K',
-          p_time: new Date().toISOString(),
-        });
-
-        if (!rateErr && rateRow) currentRate = (rateRow as any).rate_per_gram ?? null;
-      } catch {
-        // ignore; fallback below
-      }
-
-      if (currentRate === null) {
-        const { data: fallbackRate } = await supabase
-          .from('gold_rates')
-          .select('rate_per_gram')
-          .eq('retailer_id', customer.retailer_id)
-          .eq('karat', '22K')
-          .order('effective_from', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        currentRate = (fallbackRate as any)?.rate_per_gram ?? null;
-      }
-
-      let totalGold = 0;
-      let totalPaid = 0;
-
-      const enrollmentIds = enrollments.map((e) => e.id);
-      if (enrollmentIds.length > 0) {
-        let txQuery = supabase
-          .from('transactions')
-          .select('enrollment_id, amount_paid, grams_allocated_snapshot')
-          .in('enrollment_id', enrollmentIds)
-          .eq('payment_status', 'SUCCESS')
-          .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP']);
-
-        if (customer?.retailer_id) {
-          txQuery = txQuery.eq('retailer_id', customer.retailer_id);
-        }
-
-        const { data: txnRows, error: txnErr } = await txQuery;
-
-        if (!txnErr && txnRows) {
-          for (const row of txnRows as any[]) {
-            totalPaid += Number(row.amount_paid || 0);
-            totalGold += Number(row.grams_allocated_snapshot || 0);
-          }
-        }
-      }
-
-      let nextDue: WalletData['nextDue'] = null;
-
-      if (enrollmentIds.length > 0) {
-        let billingQuery = supabase
-          .from('enrollment_billing_months')
-          .select('enrollment_id, due_date, primary_paid')
-          .in('enrollment_id', enrollmentIds)
-          .eq('billing_month', currentMonthStr);
-
-        if (customer?.retailer_id) {
-          billingQuery = billingQuery.eq('retailer_id', customer.retailer_id);
-        }
-
-        const { data: billingRows, error: billingErr } = await billingQuery;
-
-        if (!billingErr && billingRows) {
-          const unpaid = (billingRows as BillingRow[]).filter((b) => !b.primary_paid && b.due_date);
-
-          for (const row of unpaid) {
-            const dueDate = new Date(row.due_date as string);
-
-            const enrollment = enrollments.find((e) => e.id === row.enrollment_id);
-            const plan = enrollment?.scheme_templates as Plan | null | undefined;
-
-            const amount =
-              (typeof enrollment?.commitment_amount === 'number' && enrollment.commitment_amount > 0
-                ? enrollment.commitment_amount
-                : plan?.monthly_amount ?? plan?.installment_amount) ?? 0;
-
-            const planName = plan?.name ?? 'Gold Plan';
-
-            if (!nextDue || dueDate < new Date(nextDue.date)) {
-              nextDue = {
-                amount: Number(amount),
-                date: row.due_date as string,
-                enrollmentId: row.enrollment_id,
-                planName,
-              };
+      const rows = (data || []).map((row: any) => ({
+        id: row.id,
+        plan_id: row.plan_id,
+        commitment_amount: row.commitment_amount,
+        karat: row.karat || '22K',
+        retailer_id: row.retailer_id,
+        plan: row.scheme_templates
+          ? {
+              id: row.scheme_templates.id,
+              name: row.scheme_templates.name,
+              installment_amount: row.scheme_templates.installment_amount,
+              duration_months: row.scheme_templates.duration_months,
+              bonus_percentage: row.scheme_templates.bonus_percentage,
             }
-          }
-        }
-      }
+          : null,
+      })) as Enrollment[];
 
-      setWallet({
-        totalGold,
-        totalPaid,
-        activeEnrollments: enrollments.length,
-        nextDue,
-        currentRate,
+      setEnrollments(rows);
+      if (rows.length === 1) {
+        setSelectedEnrollmentId(rows[0].id);
+      }
+    } catch (error: any) {
+      console.error('Error loading enrollments:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load your active plans.',
+        variant: 'destructive',
       });
-    } catch (error) {
-      console.error('Error loading wallet:', error);
     } finally {
       setLoading(false);
     }
   }
 
+  async function loadGoldRate() {
+    if (!customer?.retailer_id || !selectedEnrollment) return;
+    try {
+      const desiredKarat = (selectedEnrollment.karat || '22K').toString();
+      let rate: GoldRate | null = null;
+
+      try {
+        const { data: rateRow, error: rateErr } = await supabase.rpc('get_latest_rate', {
+          p_retailer: customer.retailer_id,
+          p_karat: desiredKarat,
+          p_time: new Date().toISOString(),
+        });
+
+        if (!rateErr && rateRow) {
+          rate = {
+            id: (rateRow as any).id,
+            rate_per_gram: Number((rateRow as any).rate_per_gram),
+            effective_from: (rateRow as any).effective_from ?? (rateRow as any).valid_from,
+          };
+        }
+      } catch {
+        // ignore
+      }
+
+      if (!rate) {
+        const { data: rateRow } = await supabase
+          .from('gold_rates')
+          .select('id, rate_per_gram, effective_from')
+          .eq('retailer_id', customer.retailer_id)
+          .eq('karat', desiredKarat)
+          .order('effective_from', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (rateRow) rate = rateRow as GoldRate;
+      }
+
+      setGoldRate(rate);
+    } catch (error) {
+      console.error('Error loading gold rate:', error);
+    }
+  }
+
+  async function loadMonthlyPaymentInfo() {
+    if (!customer?.retailer_id || !selectedEnrollmentId) return;
+
+    try {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59);
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('amount_paid')
+        .eq('retailer_id', customer.retailer_id)
+        .eq('customer_id', customer.id)
+        .eq('enrollment_id', selectedEnrollmentId)
+        .eq('payment_status', 'SUCCESS')
+        .eq('txn_type', 'PRIMARY_INSTALLMENT')
+        .gte('paid_at', startOfMonth.toISOString())
+        .lte('paid_at', endOfMonth.toISOString());
+
+      if (error) throw error;
+
+      const totalPaid = (data || []).reduce((sum, row) => sum + Number(row.amount_paid || 0), 0);
+      const isMet = totalPaid >= commitmentAmount;
+
+      setMonthlyPaymentInfo({
+        total_paid: totalPaid,
+        commitment_amount: commitmentAmount,
+        is_met: isMet,
+      });
+    } catch (error) {
+      console.error('Error loading monthly payment info:', error);
+      setMonthlyPaymentInfo(null);
+    }
+  }
+
+  async function recordPayment() {
+    if (!customer?.retailer_id || !selectedEnrollmentId) {
+      toast({
+        title: 'Error',
+        description: 'Please select a plan to continue.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!goldRate) {
+      toast({
+        title: 'Error',
+        description: 'Gold rate not available. Please try again later.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const amountNum = parseFloat(amount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      toast({
+        title: 'Error',
+        description: 'Enter a valid payment amount.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const isFirstPaymentThisMonth = !monthlyPaymentInfo || monthlyPaymentInfo.total_paid === 0;
+
+    if (isFirstPaymentThisMonth && amountNum < commitmentAmount) {
+      toast({
+        title: 'Minimum Required',
+        description: `First payment this month must be at least ₹${commitmentAmount.toLocaleString()}.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const gramsAllocated = amountNum / goldRate.rate_per_gram;
+      const now = new Date().toISOString();
+      const txnType = isFirstPaymentThisMonth ? 'PRIMARY_INSTALLMENT' : 'TOP_UP';
+
+      const { error } = await supabase.from('transactions').insert({
+        retailer_id: customer.retailer_id,
+        customer_id: customer.id,
+        enrollment_id: selectedEnrollmentId,
+        amount_paid: amountNum,
+        rate_per_gram_snapshot: goldRate.rate_per_gram,
+        gold_rate_id: goldRate.id,
+        grams_allocated_snapshot: gramsAllocated,
+        txn_type: txnType,
+        billing_month: currentMonthStr,
+        payment_status: 'SUCCESS',
+        paid_at: now,
+        recorded_at: now,
+        source: 'CUSTOMER_ONLINE',
+        mode: paymentMethod,
+        receipt_number: `RCP${Date.now()}${Math.floor(Math.random() * 1000)}`,
+      });
+
+      if (error) throw error;
+
+      if (selectedEnrollment?.plan?.name) {
+        void createNotification({
+          retailerId: customer.retailer_id,
+          customerId: customer.id,
+          enrollmentId: selectedEnrollmentId,
+          type: 'PAYMENT_SUCCESS',
+          message: `Payment received: ${selectedEnrollment.plan.name} - ₹${amountNum.toLocaleString()}`,
+          metadata: {
+            type: 'PAYMENT',
+            amount: amountNum,
+            source: 'CUSTOMER_ONLINE',
+            txnType,
+          },
+        });
+      }
+
+      fireCelebrationConfetti();
+
+      toast({
+        title: 'Payment Successful',
+        description: `₹${amountNum.toLocaleString()} received. Gold added: ${gramsAllocated.toFixed(4)}g`,
+      });
+
+      setAmount('');
+      await loadMonthlyPaymentInfo();
+    } catch (error: any) {
+      console.error('Payment error:', error);
+      toast({
+        title: 'Error',
+        description: error?.message || 'Failed to record payment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background via-gold-50/10 to-background sparkle-bg">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gold-50 via-white to-gold-100">
         <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full jewel-gradient animate-pulse mx-auto flex items-center justify-center">
-            <Gem className="w-8 h-8 text-white" />
-          </div>
-          <p className="text-muted-foreground">Loading your wallet...</p>
+          <div className="w-12 h-12 rounded-full jewel-gradient animate-pulse mx-auto" />
+          <p className="text-muted-foreground">Loading your collections...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-gold-50/10 to-background sparkle-bg">
-      <div className="sticky top-0 z-50 backdrop-blur-xl bg-white/80 dark:bg-zinc-900/80 border-b border-gold-200/30 dark:border-gold-600/30">
-        <div className="flex items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl jewel-gradient flex items-center justify-center">
-              <Wallet className="w-6 h-6 text-white" />
+    <div className="min-h-screen bg-gradient-to-br from-gold-50 via-white to-gold-100 p-4 md:p-8">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle>Record Payment</CardTitle>
+            <CardDescription>Add a customer payment</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="space-y-2">
+              <Label>Customer *</Label>
+              <Input value={customer?.full_name || customer?.phone || ''} disabled />
             </div>
-            <div>
-              <h2 className="text-lg font-bold gold-text">My Wallet</h2>
-              <p className="text-xs text-muted-foreground">{customer?.full_name}</p>
+
+            <div className="space-y-2">
+              <Label>Select Plan/Enrollment *</Label>
+              <Select value={selectedEnrollmentId} onValueChange={setSelectedEnrollmentId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a plan" />
+                </SelectTrigger>
+                <SelectContent>
+                  {enrollments.map((enrollment) => (
+                    <SelectItem key={enrollment.id} value={enrollment.id}>
+                      {enrollment.plan?.name || 'Gold Plan'} • ₹{Number(
+                        typeof enrollment.commitment_amount === 'number' && enrollment.commitment_amount > 0
+                          ? enrollment.commitment_amount
+                          : enrollment.plan?.installment_amount || 0
+                      ).toLocaleString()}/month
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link href="/c/notifications">
-              <Button variant="outline" size="icon" className="rounded-xl">
-                <Bell className="w-4 h-4" />
-              </Button>
-            </Link>
-            <Button variant="outline" size="icon" className="rounded-xl" onClick={() => signOut()}>
-              <LogOut className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
 
-      <div className="max-w-2xl mx-auto p-6 space-y-6">
-        <Card className="jewel-card glitter-overlay overflow-hidden">
-          <CardContent className="pt-8">
-            <div className="text-center space-y-6">
-              <div>
-                <p className="text-sm text-muted-foreground mb-2">Total Gold Balance</p>
-                <div className="text-6xl font-bold gold-text mb-2">
-                  {Number(wallet?.totalGold || 0).toFixed(4)}
-                  <span className="text-2xl ml-2">g</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Worth ₹{wallet?.currentRate ? (wallet.totalGold * wallet.currentRate).toLocaleString() : '0'} at current rate
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 py-6 border-y border-gold-200/30">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Total Invested</p>
-                  <p className="text-2xl font-bold">₹{Number(wallet?.totalPaid || 0).toLocaleString()}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Active Plans</p>
-                  <p className="text-2xl font-bold">{wallet?.activeEnrollments || 0}</p>
-                </div>
-              </div>
-
-              {wallet?.currentRate && (
-                <div className="flex items-center justify-center gap-2 text-sm">
-                  <TrendingUp className="w-4 h-4 text-gold-600" />
-                  <span className="text-muted-foreground">Current Rate (22K):</span>
-                  <span className="font-bold gold-text">₹{wallet.currentRate.toLocaleString()}/g</span>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {wallet?.nextDue && (
-          <Card className="border-2 border-orange-200 bg-gradient-to-br from-orange-50/80 to-white dark:from-orange-900/20 dark:to-zinc-900">
-            <CardContent className="pt-6">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center flex-shrink-0">
-                  <Calendar className="w-6 h-6 text-orange-600" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-orange-800 dark:text-orange-400 mb-1">Payment Due</p>
-                  <p className="text-2xl font-bold text-orange-900 dark:text-orange-300">
-                    ₹{wallet.nextDue.amount.toLocaleString()}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {wallet.nextDue.planName} • Due: {new Date(wallet.nextDue.date).toLocaleDateString('en-IN')}
-                  </p>
-                </div>
-                <Link href={`/c/pay/${wallet.nextDue.enrollmentId}`}>
-                  <Button className="jewel-gradient text-white hover:opacity-90 rounded-xl">
-                    Pay Now
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </Link>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid grid-cols-1 gap-4">
-          <Link href="/c/schemes">
-            <Card className="jewel-card hover:scale-[1.02] transition-transform cursor-pointer">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/20 flex items-center justify-center">
-                      <Gem className="w-7 h-7 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-lg">My Plans</p>
-                      <p className="text-sm text-muted-foreground">View all active plans</p>
-                    </div>
-                  </div>
-                  <ArrowRight className="w-5 h-5 text-muted-foreground" />
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          {wallet?.nextDue && (
-            <Link href={`/c/pay/${wallet.nextDue.enrollmentId}`}>
-              <Card className="jewel-card hover:scale-[1.02] transition-transform cursor-pointer border-2 border-gold-300/50">
-                <CardContent className="pt-6">
+            {selectedEnrollment && (
+              <Card className="border border-gold-200 bg-white/70">
+                <CardContent className="pt-4">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-2xl jewel-gradient flex items-center justify-center">
-                        <Plus className="w-7 h-7 text-white" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-lg">Add Top-Up</p>
-                        <p className="text-sm text-muted-foreground">Extra payment to grow gold faster</p>
-                      </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Monthly Commitment:</p>
+                      <p className="text-lg font-semibold">₹{Number(commitmentAmount).toLocaleString()}</p>
                     </div>
-                    <ArrowRight className="w-5 h-5 text-muted-foreground" />
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Paid This Month:</p>
+                      <p className="text-lg font-semibold text-emerald-600">₹{Number(monthlyPaymentInfo?.total_paid || 0).toLocaleString()}</p>
+                      <Badge className={monthlyPaymentInfo?.is_met ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}>
+                        {monthlyPaymentInfo?.is_met ? 'Commitment Met' : 'Commitment Due'}
+                      </Badge>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
-            </Link>
-          )}
-        </div>
+            )}
 
-        <Card className="bg-gradient-to-br from-gold-50/50 to-white dark:from-gold-900/10 dark:to-zinc-900 border-gold-200/50">
-          <CardContent className="pt-6">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gold-100 dark:bg-gold-900/30 flex items-center justify-center flex-shrink-0">
-                <Gem className="w-5 h-5 text-gold-600" />
-              </div>
-              <div>
-                <h3 className="font-semibold mb-2">How It Works</h3>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li className="flex items-start gap-2">
-                    <span className="text-gold-600 mt-0.5">•</span>
-                    <span>Each payment is instantly converted to gold at that day's locked rate</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-gold-600 mt-0.5">•</span>
-                    <span>Your monthly installment must be paid before the due date</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-gold-600 mt-0.5">•</span>
-                    <span>Top-ups are unlimited — add more gold anytime</span>
-                  </li>
-                </ul>
+            <div className="space-y-2">
+              <Label>Payment Mode</Label>
+              <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as any)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UPI">UPI</SelectItem>
+                  <SelectItem value="CARD">Debit/Credit Card</SelectItem>
+                  <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Quick Amounts (₹)</Label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {QUICK_AMOUNTS.map((amt) => (
+                  <Button
+                    key={amt}
+                    type="button"
+                    variant={Number(amount) === amt ? 'default' : 'outline'}
+                    className={Number(amount) === amt ? 'gold-gradient text-white' : ''}
+                    onClick={() => setAmount(String(amt))}
+                  >
+                    ₹{amt.toLocaleString()}
+                  </Button>
+                ))}
               </div>
             </div>
+
+            <div className="space-y-2">
+              <Label>Amount (₹)</Label>
+              <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Enter amount" />
+            </div>
+
+            {goldRate && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <TrendingUp className="w-4 h-4 text-gold-600" />
+                Rate: ₹{goldRate.rate_per_gram.toLocaleString()}/g
+              </div>
+            )}
+
+            <Button
+              className="w-full gold-gradient text-white font-semibold h-12 text-lg"
+              onClick={recordPayment}
+              disabled={submitting || !selectedEnrollmentId || !amount}
+            >
+              {submitting ? 'Recording...' : 'Record Payment'}
+            </Button>
           </CardContent>
         </Card>
       </div>
