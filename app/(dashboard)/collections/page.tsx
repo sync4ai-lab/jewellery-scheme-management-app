@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { toast } from 'sonner';
+import { createNotification } from '@/lib/utils/notifications';
 import { TrendingUp, Plus, Coins, Search, Download, Calendar } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useDebounce } from '@/lib/hooks/use-debounce';
@@ -445,6 +446,21 @@ export default function CollectionsPage() {
       });
 
       if (txnError) throw txnError;
+
+      const customerName = customers.find(c => c.id === selectedCustomerId)?.full_name || 'Customer';
+      void createNotification({
+        retailerId: profile.retailer_id,
+        customerId: selectedCustomerId,
+        enrollmentId: selectedEnrollmentId,
+        type: 'PAYMENT_SUCCESS',
+        message: `Payment received: ${customerName} - ₹${amountNum.toLocaleString()}`,
+        metadata: {
+          type: 'PAYMENT',
+          amount: amountNum,
+          source: 'STAFF_OFFLINE',
+          txnType,
+        },
+      });
 
       toast.success(
         `✅ Payment recorded: ₹${amountNum.toLocaleString()} = ${gramsAllocated.toFixed(4)}g ${metalName}`

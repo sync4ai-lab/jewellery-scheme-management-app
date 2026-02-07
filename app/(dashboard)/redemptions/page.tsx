@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Award, CheckCircle, Clock, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { createNotification } from '@/lib/utils/notifications';
 
 type Redemption = {
   id: string;
@@ -333,6 +334,20 @@ export default function RedemptionsPage() {
         .eq('id', selectedEnrollment.id);
 
       if (updateError) throw updateError;
+
+      void createNotification({
+        retailerId: profile.retailer_id,
+        customerId: selectedEnrollment.customer_id,
+        enrollmentId: selectedEnrollment.id,
+        type: 'REDEMPTION_REQUEST',
+        message: `Redemption requested: ${selectedEnrollment.customer_name} - ${grams.toFixed(4)}g ${karat}`,
+        metadata: {
+          type: 'REDEMPTION',
+          grams,
+          karat,
+          value,
+        },
+      });
 
       toast.success('Redemption processed successfully');
       setProcessDialog(false);
