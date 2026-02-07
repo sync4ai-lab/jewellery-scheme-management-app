@@ -193,6 +193,16 @@ export async function POST(request: Request) {
         console.error('Error creating user profile:', profileError);
         // Continue anyway - profile can be created later
       }
+
+      const { error: linkError } = await supabaseAdmin
+        .from('customers')
+        .update({ user_id: authData.user.id })
+        .eq('id', newCustomer.id)
+        .eq('retailer_id', effectiveRetailerId);
+
+      if (linkError) {
+        console.error('Error linking customer user_id:', linkError);
+      }
     }
 
     // Return success without magic link - customer will login via OTP

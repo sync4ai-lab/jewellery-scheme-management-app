@@ -108,7 +108,7 @@ export default function CustomerSchemesPage() {
       // Fetch enrollments
       const enrollmentsResult = await supabase
         .from('enrollments')
-        .select('id, plan_id, commitment_amount, status, created_at')
+        .select('id, plan_id, commitment_amount, status, created_at, scheme_templates(id, name, installment_amount, monthly_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll, created_at)')
         .eq('customer_id', customer.id)
         .order('created_at', { ascending: false });
       const enrollmentRows = enrollmentsResult.data || [];
@@ -146,7 +146,7 @@ export default function CustomerSchemesPage() {
 
       // Map enrollments
       const cards: EnrollmentCard[] = enrollmentRows.map(e => {
-        const plan = planMap.get(e.plan_id);
+        const plan = planMap.get(e.plan_id) || (e as any).scheme_templates;
         const monthly = Number(e.commitment_amount || (plan?.monthly_amount ?? plan?.installment_amount) || 0);
         const duration = Number(plan?.duration_months || 0);
         const startDateLabel = e.created_at

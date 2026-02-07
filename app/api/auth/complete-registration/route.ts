@@ -85,6 +85,16 @@ export async function POST(request: Request) {
           error: 'Failed to create user profile: ' + profileError.message,
         }, { status: 500 });
       }
+
+      const { error: linkError } = await supabaseAdmin
+        .from('customers')
+        .update({ user_id: authData.user.id })
+        .eq('id', customer_id)
+        .eq('retailer_id', retailer_id);
+
+      if (linkError) {
+        console.error('Error linking customer user_id:', linkError);
+      }
     }
 
     // Registration completed successfully
