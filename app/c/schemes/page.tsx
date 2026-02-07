@@ -333,7 +333,7 @@ export default function CustomerSchemesPage() {
 
                       <div className="flex gap-2 mt-2">
                         {isActive && !enrollment.monthlyInstallmentPaid && (
-                          <Link href={`/c/pay/${enrollment.id}`} className="flex-1">
+                          <Link href={`/c/wallet?enrollmentId=${enrollment.id}`} className="flex-1">
                             <Button className="w-full gold-gradient text-white">Pay Now <ArrowRight className="w-4 h-4 ml-2" /></Button>
                           </Link>
                         )}

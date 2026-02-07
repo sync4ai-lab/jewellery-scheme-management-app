@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { createNotification } from '@/lib/utils/notifications';
 import { fireCelebrationConfetti } from '@/lib/utils/confetti';
@@ -70,6 +70,8 @@ export default function CustomerCollectionsPage() {
   const { customer, loading: authLoading } = useCustomerAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const preselectEnrollmentId = searchParams.get('enrollmentId');
 
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState('');
@@ -108,6 +110,14 @@ export default function CustomerCollectionsPage() {
     void loadEnrollments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer, authLoading]);
+
+  useEffect(() => {
+    if (!preselectEnrollmentId || enrollments.length === 0) return;
+    const exists = enrollments.some((e) => e.id === preselectEnrollmentId);
+    if (exists && preselectEnrollmentId !== selectedEnrollmentId) {
+      setSelectedEnrollmentId(preselectEnrollmentId);
+    }
+  }, [preselectEnrollmentId, enrollments, selectedEnrollmentId]);
 
   useEffect(() => {
     if (!selectedEnrollmentId || !customer?.retailer_id) return;

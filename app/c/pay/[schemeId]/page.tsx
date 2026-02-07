@@ -74,6 +74,7 @@ export default function PaymentPage() {
   const [monthlyInstallmentPaid, setMonthlyInstallmentPaid] = useState(false);
 
   const router = useRouter();
+  const [redirecting, setRedirecting] = useState(true);
 
   const currentMonthStr = useMemo(() => {
     const today = new Date();
@@ -83,6 +84,15 @@ export default function PaymentPage() {
   }, []);
 
   useEffect(() => {
+    if (!enrollmentId) {
+      setRedirecting(false);
+      return;
+    }
+    router.replace(`/c/wallet?enrollmentId=${enrollmentId}`);
+  }, [enrollmentId, router]);
+
+  useEffect(() => {
+    if (redirecting) return;
     if (authLoading) return;
     if (!customer) {
       router.push('/c/login');
@@ -95,7 +105,7 @@ export default function PaymentPage() {
     }
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer, authLoading, enrollmentId, router]);
+  }, [customer, authLoading, enrollmentId, router, redirecting]);
 
   useEffect(() => {
     if (success) {
@@ -320,6 +330,14 @@ export default function PaymentPage() {
   }
 
   const calculatedGrams = amount && goldRate ? parseFloat(amount) / goldRate.rate_per_gram : 0;
+
+  if (redirecting) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-pulse text-xl gold-text">Redirecting to collections...</div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
