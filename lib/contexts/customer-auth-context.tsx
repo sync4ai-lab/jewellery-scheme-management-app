@@ -34,6 +34,30 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
   const router = useRouter();
   const pathname = usePathname();
 
+  const getCookie = (name: string) => {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? decodeURIComponent(match[2]) : null;
+  };
+
+  const getBypassValue = (key: string) => {
+    if (typeof window === 'undefined') return null;
+    let value: string | null = null;
+    try {
+      value = localStorage.getItem(key);
+    } catch {
+      // ignore
+    }
+    if (value) return value;
+    try {
+      value = sessionStorage.getItem(key);
+    } catch {
+      // ignore
+    }
+    if (value) return value;
+    return getCookie(key);
+  };
+
   const lookupCustomerByPhone = async (phone: string, retailerId?: string | null) => {
     if (!retailerId) {
       return { data: null, error: null } as const;
@@ -84,72 +108,93 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       setLoading(false);
     };
 
-    // BYPASS: If phone in localStorage, fetch customer by phone, but NOT on /c/login
-    if (typeof window !== 'undefined' && pathname !== '/c/login') {
-      const phoneBypass = localStorage.getItem('customer_phone_bypass');
-      const retailerBypass = localStorage.getItem('customer_retailer_bypass');
-      const payloadBypass = localStorage.getItem('customer_bypass_payload');
-      if (phoneBypass) {
-        (async () => {
-          setLoading(true);
-          try {
-            if (payloadBypass) {
-              const parsed = JSON.parse(payloadBypass);
-              if (parsed?.id && parsed?.retailer_id) {
-                if (isMounted) {
-                  setCustomer(parsed);
-                  setUser(null);
-                  setLoading(false);
-                }
-                return;
-              }
-            }
-            // Try to get retailer_id from branding context if available
-            let retailerId = null;
-            try {
-              const { useBranding } = await import('@/lib/contexts/branding-context');
-              retailerId = useBranding()?.branding?.retailer_id || useBranding()?.branding?.id;
-              console.log('[CustomerAuth] Branding context retailerId:', retailerId);
-            } catch (e) {
-              console.warn('[CustomerAuth] Branding context not available:', e);
-            }
-            if (!retailerId && retailerBypass) {
-              retailerId = retailerBypass;
-            }
-            const normalizedPhone = phoneBypass.replace(/\D/g, '');
-            console.log('[CustomerAuth] Bypass lookup', { phone: normalizedPhone || phoneBypass, retailerId });
-            console.log('[CustomerAuth] Running customer bypass query:', { phone: normalizedPhone || phoneBypass, retailerId });
-            const result = await lookupCustomerByPhone(normalizedPhone || phoneBypass, retailerId);
-            const customer = Array.isArray(result.data) ? result.data[0] : result.data;
-            console.log('[CustomerAuth] Customer bypass result:', { data: customer, error: result.error });
-            if (isMounted) {
-              if (customer) {
-                setCustomer(customer as any);
-                setUser(null); // No supabase user session
-                console.log('[CustomerAuth] Customer set from bypass:', customer);
-              } else {
-                setCustomer(null);
-                setError('No customer found for phone: ' + phoneBypass + (retailerId ? ' and retailer: ' + retailerId : ''));
-                console.error('[CustomerAuth] No customer found for bypass');
-              }
-              setLoading(false);
-            }
-          } catch (err: any) {
-            if (err?.name === 'AbortError') {
-              console.warn('Suppressed AbortError in customer phone bypass');
-              setLoading(false);
-              return;
-            }
-            setError('Customer fetch error: ' + (err?.message || 'Unknown error'));
-            setLoading(false);
-            console.error('[CustomerAuth] Customer fetch error:', err);
-          }
-        })();
-        return () => { isMounted = false; };
-      }
-    }
+    const runBypassIfPresent = async () => {
+      if (pathname === '/c/login') return false;
 
-    initializeAuth();
+      const phoneBypass = getBypassValue('customer_phone_bypass');
+      const retailerBypass = getBypassValue('customer_retailer_bypass');
+      const payloadBypass = getBypassValue('customer_bypass_payload');
+
+      if (!phoneBypass) return false;
+
+      setLoading(true);
+
+      console.log('[CustomerAuth] Bypass detected', {
+        phone: phoneBypass,
+        retailer: retailerBypass,
+        hasPayload: Boolean(payloadBypass),
+        path: pathname,
+      });
+
+      try {
+        if (payloadBypass) {
+          const parsed = JSON.parse(payloadBypass);
+          if (parsed?.id && parsed?.retailer_id) {
+            if (isMounted) {
+              setCustomer(parsed);
+              setUser(null);
+              setLoading(false);
+              console.log('[CustomerAuth] Customer set from bypass payload', { id: parsed.id });
+            }
+            return true;
+          }
+        }
+
+        // Try to get retailer_id from branding context if available
+        let retailerId = null;
+        try {
+          const { useBranding } = await import('@/lib/contexts/branding-context');
+          retailerId = useBranding()?.branding?.retailer_id || useBranding()?.branding?.id;
+          console.log('[CustomerAuth] Branding context retailerId:', retailerId);
+        } catch (e) {
+          console.warn('[CustomerAuth] Branding context not available:', e);
+        }
+        if (!retailerId && retailerBypass) {
+          retailerId = retailerBypass;
+        }
+
+        const normalizedPhone = phoneBypass.replace(/\D/g, '');
+        console.log('[CustomerAuth] Bypass lookup', { phone: normalizedPhone || phoneBypass, retailerId });
+        console.log('[CustomerAuth] Running customer bypass query:', { phone: normalizedPhone || phoneBypass, retailerId });
+        const result = await lookupCustomerByPhone(normalizedPhone || phoneBypass, retailerId);
+        const customer = Array.isArray(result.data) ? result.data[0] : result.data;
+        console.log('[CustomerAuth] Customer bypass result:', { data: customer, error: result.error });
+
+        if (isMounted) {
+          if (customer) {
+            setCustomer(customer as any);
+            setUser(null); // No supabase user session
+            console.log('[CustomerAuth] Customer set from bypass lookup:', customer);
+          } else {
+            setCustomer(null);
+            setError('No customer found for phone: ' + phoneBypass + (retailerId ? ' and retailer: ' + retailerId : ''));
+            console.error('[CustomerAuth] No customer found for bypass');
+          }
+          setLoading(false);
+        }
+
+        return true;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          console.warn('Suppressed AbortError in customer phone bypass');
+          setLoading(false);
+          return true;
+        }
+        setError('Customer fetch error: ' + (err?.message || 'Unknown error'));
+        setLoading(false);
+        console.error('[CustomerAuth] Customer fetch error:', err);
+        return true;
+      }
+    };
+
+    const bootstrap = async () => {
+      const bypassed = await runBypassIfPresent();
+      if (!bypassed) {
+        await initializeAuth();
+      }
+    };
+
+    void bootstrap();
 
     const { data: { subscription } } =
       supabaseCustomer.auth.onAuthStateChange(async (_event, session) => {

@@ -27,9 +27,23 @@ export default function CustomerLoginPage() {
 
   useEffect(() => {
     // Clear any customer bypass values on login page mount
-    localStorage.removeItem('customer_phone_bypass');
-    localStorage.removeItem('customer_retailer_bypass');
-    localStorage.removeItem('customer_bypass_payload');
+    try {
+      localStorage.removeItem('customer_phone_bypass');
+      localStorage.removeItem('customer_retailer_bypass');
+      localStorage.removeItem('customer_bypass_payload');
+    } catch (storageError) {
+      console.warn('[CustomerLogin] localStorage unavailable', storageError);
+    }
+    try {
+      sessionStorage.removeItem('customer_phone_bypass');
+      sessionStorage.removeItem('customer_retailer_bypass');
+      sessionStorage.removeItem('customer_bypass_payload');
+    } catch (storageError) {
+      console.warn('[CustomerLogin] sessionStorage unavailable', storageError);
+    }
+    document.cookie = 'customer_phone_bypass=; path=/; max-age=0';
+    document.cookie = 'customer_retailer_bypass=; path=/; max-age=0';
+    document.cookie = 'customer_bypass_payload=; path=/; max-age=0';
     setMounted(true);
   }, []);
 
@@ -77,11 +91,32 @@ export default function CustomerLoginPage() {
       return;
     }
     // Save bypass info and reload
-    localStorage.setItem('customer_phone_bypass', normalizedPhone || phone);
-    localStorage.setItem('customer_retailer_bypass', retailerId);
-    localStorage.setItem('customer_bypass_payload', JSON.stringify(customer));
+    const bypassPhone = normalizedPhone || phone;
+    const bypassPayload = JSON.stringify(customer);
+    try {
+      localStorage.setItem('customer_phone_bypass', bypassPhone);
+      localStorage.setItem('customer_retailer_bypass', retailerId);
+      localStorage.setItem('customer_bypass_payload', bypassPayload);
+    } catch (storageError) {
+      console.warn('[CustomerLogin] localStorage unavailable', storageError);
+    }
+    try {
+      sessionStorage.setItem('customer_phone_bypass', bypassPhone);
+      sessionStorage.setItem('customer_retailer_bypass', retailerId);
+      sessionStorage.setItem('customer_bypass_payload', bypassPayload);
+    } catch (storageError) {
+      console.warn('[CustomerLogin] sessionStorage unavailable', storageError);
+    }
+    try {
+      document.cookie = `customer_phone_bypass=${encodeURIComponent(bypassPhone)}; path=/; max-age=3600`;
+      document.cookie = `customer_retailer_bypass=${encodeURIComponent(retailerId)}; path=/; max-age=3600`;
+      document.cookie = `customer_bypass_payload=${encodeURIComponent(bypassPayload)}; path=/; max-age=3600`;
+    } catch (cookieError) {
+      console.warn('[CustomerLogin] cookie set failed', cookieError);
+    }
+    console.log('[CustomerLogin] Bypass stored, redirecting to /c/pulse');
     setLoading(false);
-    router.replace('/c/schemes');
+    window.location.assign('/c/pulse');
   };
 
   // Hydration guard: only render on client
