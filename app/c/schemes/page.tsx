@@ -102,7 +102,7 @@ export default function CustomerSchemesPage() {
       // Fetch ALL plans for mapping (active/inactive)
       let allPlansQuery = supabase
         .from('scheme_templates')
-        .select('id, retailer_id, name, installment_amount, monthly_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll');
+         .select('id, retailer_id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll');
 
       if (retailerId) {
         allPlansQuery = allPlansQuery.eq('retailer_id', retailerId);
@@ -111,17 +111,17 @@ export default function CustomerSchemesPage() {
       const allPlansResult = await allPlansQuery;
       const allPlans: Plan[] = allPlansResult.data || [];
 
-      // Show all active plans as available in the list
-      setAvailablePlans(allPlans.filter(p => p.is_active));
+      // Show only active, self-enrollable plans as available in the list
+      setAvailablePlans(allPlans.filter(p => p.is_active && p.allow_self_enroll));
 
       // Fetch enrollments
       let enrollmentsQuery = supabase
         .from('enrollments')
-        .select('id, plan_id, commitment_amount, status, created_at, scheme_templates(id, name, installment_amount, monthly_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll, created_at)')
+         .select('id, plan_id, commitment_amount, status, created_at, scheme_templates(id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll, created_at)')
         .order('created_at', { ascending: false });
 
       if (customerId && authUserId && customerId !== authUserId) {
-        enrollmentsQuery = enrollmentsQuery.or(`customer_id.eq.${customerId},customer_id.eq.${authUserId}`);
+        enrollmentsQuery = enrollmentsQuery.in('customer_id', [customerId, authUserId]);
       } else if (customerId) {
         enrollmentsQuery = enrollmentsQuery.eq('customer_id', customerId);
       }

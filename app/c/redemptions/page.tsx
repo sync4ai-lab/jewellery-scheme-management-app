@@ -52,7 +52,7 @@ export default function CustomerRedemptionsPage() {
 				.order('redemption_date', { ascending: false });
 
 			if (customerId && authUserId && customerId !== authUserId) {
-				redemptionsQuery = redemptionsQuery.or(`customer_id.eq.${customerId},customer_id.eq.${authUserId}`);
+				redemptionsQuery = redemptionsQuery.in('customer_id', [customerId, authUserId]);
 			} else if (customerId) {
 				redemptionsQuery = redemptionsQuery.eq('customer_id', customerId);
 			}

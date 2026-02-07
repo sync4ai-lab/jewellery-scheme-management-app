@@ -60,12 +60,12 @@ export default function CustomerDuesPage() {
 
 			let duesQuery = supabase
 				.from('enrollment_billing_months')
-				.select('id, enrollment_id, billing_month, due_date, primary_paid, status, enrollments(commitment_amount, scheme_templates(name, monthly_amount, installment_amount))')
+				.select('id, enrollment_id, billing_month, due_date, primary_paid, status, enrollments(commitment_amount, scheme_templates(name, installment_amount))')
 				.eq('primary_paid', false)
 				.order('due_date', { ascending: true });
 
 			if (customerId && authUserId && customerId !== authUserId) {
-				duesQuery = duesQuery.or(`customer_id.eq.${customerId},customer_id.eq.${authUserId}`);
+				duesQuery = duesQuery.in('customer_id', [customerId, authUserId]);
 			} else if (customerId) {
 				duesQuery = duesQuery.eq('customer_id', customerId);
 			}

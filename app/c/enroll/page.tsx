@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,15 +18,16 @@ type Plan = {
   id: string;
   name: string;
   installment_amount?: number | null;
-  monthly_amount?: number | null;
   duration_months: number;
   bonus_percentage: number;
   description: string | null;
   is_active: boolean;
+  allow_self_enroll?: boolean | null;
 };
 
 export default function CustomerEnrollmentPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { customer, loading: authLoading } = useCustomerAuth();
   
@@ -58,6 +59,14 @@ export default function CustomerEnrollmentPage() {
       loadPlans();
     }
   }, [customer?.retailer_id]);
+
+  useEffect(() => {
+    const planId = searchParams.get('planId');
+    if (!planId) return;
+    if (plans.some((p) => p.id === planId)) {
+      setSelectedPlan(planId);
+    }
+  }, [searchParams, plans]);
   
   async function loadPlans() {
     if (!customer?.retailer_id) {
@@ -74,10 +83,11 @@ export default function CustomerEnrollmentPage() {
     try {
       const { data, error } = await supabase
         .from('scheme_templates')
-        .select('id, name, installment_amount, monthly_amount, duration_months, bonus_percentage, description, is_active')
+        .select('id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll')
         .eq('retailer_id', customer.retailer_id)
         .eq('is_active', true)
-        .order('monthly_amount', { ascending: true, nullsFirst: false });
+        .eq('allow_self_enroll', true)
+        .order('installment_amount', { ascending: true, nullsFirst: false });
       
       if (error) throw error;
       
@@ -99,7 +109,7 @@ export default function CustomerEnrollmentPage() {
   
   // Validate commitment amount
   const commitmentAmountNum = parseFloat(commitmentAmount) || 0;
-  const minAmount = selectedPlanDetails?.monthly_amount ?? selectedPlanDetails?.installment_amount || 0;
+  const minAmount = selectedPlanDetails?.installment_amount ?? 0;
   const isCommitmentValid = commitmentAmountNum >= minAmount;
   
   // Validate initial payment
@@ -247,7 +257,7 @@ export default function CustomerEnrollmentPage() {
               key={plan.id}
               className={`cursor-pointer transition-all hover:shadow-lg ${
                 selectedPlan === plan.id
-                  ? 'ring-2 ring-gold-600 shadow-lg'
+                  ? 'ring-2 ring-gold-600 shadow-xl bg-gradient-to-br from-gold-500 via-amber-500 to-orange-500 text-white'
                   : 'hover:ring-2 hover:ring-gold-300'
               }`}
               onClick={() => setSelectedPlan(plan.id)}
@@ -255,39 +265,47 @@ export default function CustomerEnrollmentPage() {
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Package className="h-5 w-5 text-gold-600" />
+                    <CardTitle className={`text-lg flex items-center gap-2 ${
+                      selectedPlan === plan.id ? 'gold-text drop-shadow-sm' : ''
+                    }`}>
+                      <Package className={`h-5 w-5 ${
+                        selectedPlan === plan.id ? 'text-white' : 'text-gold-600'
+                      }`} />
                       {plan.name}
                     </CardTitle>
                     {plan.bonus_percentage > 0 && (
-                      <Badge className="mt-2 bg-gradient-to-r from-gold-600 to-gold-700">
+                      <Badge className={`mt-2 ${
+                        selectedPlan === plan.id
+                          ? 'bg-white/20 text-white border border-white/30'
+                          : 'bg-gradient-to-r from-gold-600 to-gold-700'
+                      }`}>
                         <Sparkles className="h-3 w-3 mr-1" />
                         {plan.bonus_percentage}% Bonus
                       </Badge>
                     )}
                   </div>
                   {selectedPlan === plan.id && (
-                    <CheckCircle className="h-6 w-6 text-gold-600 flex-shrink-0" />
+                    <CheckCircle className="h-6 w-6 text-white flex-shrink-0" />
                   )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex items-center gap-2 text-sm">
-                  <IndianRupee className="h-4 w-4 text-gray-500" />
-                  <span className="text-gray-600">Min. Monthly:</span>
-                  <span className="font-semibold text-gray-900">
+                  <IndianRupee className={`h-4 w-4 ${selectedPlan === plan.id ? 'text-white/90' : 'text-gray-500'}`} />
+                  <span className={selectedPlan === plan.id ? 'text-white/90' : 'text-gray-600'}>Min. Monthly:</span>
+                  <span className={`font-semibold ${selectedPlan === plan.id ? 'text-white' : 'text-gray-900'}`}>
                     ₹{plan.installment_amount.toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
-                  <Calendar className="h-4 w-4 text-gray-500" />
-                  <span className="text-gray-600">Duration:</span>
-                  <span className="font-semibold text-gray-900">
+                  <Calendar className={`h-4 w-4 ${selectedPlan === plan.id ? 'text-white/90' : 'text-gray-500'}`} />
+                  <span className={selectedPlan === plan.id ? 'text-white/90' : 'text-gray-600'}>Duration:</span>
+                  <span className={`font-semibold ${selectedPlan === plan.id ? 'text-white' : 'text-gray-900'}`}>
                     {plan.duration_months} months
                   </span>
                 </div>
                 {plan.description && (
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className={`text-xs mt-2 ${selectedPlan === plan.id ? 'text-white/80' : 'text-gray-500'}`}>
                     {plan.description}
                   </p>
                 )}

@@ -137,10 +137,10 @@ export default function CustomerPulsePage() {
       // Fetch customer's enrollments
       let enrollmentsQuery = supabase
         .from('enrollments')
-        .select('id, plan_id, karat, status, scheme_templates(name, installment_amount, monthly_amount, duration_months)');
+        .select('id, plan_id, karat, status, scheme_templates(name, installment_amount, duration_months)');
 
       if (customerId && authUserId && customerId !== authUserId) {
-        enrollmentsQuery = enrollmentsQuery.or(`customer_id.eq.${customerId},customer_id.eq.${authUserId}`);
+        enrollmentsQuery = enrollmentsQuery.in('customer_id', [customerId, authUserId]);
       } else if (customerId) {
         enrollmentsQuery = enrollmentsQuery.eq('customer_id', customerId);
       }
