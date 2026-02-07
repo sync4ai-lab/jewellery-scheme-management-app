@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
@@ -46,7 +47,24 @@ type MonthlyPaymentInfo = {
   is_met: boolean;
 };
 
+type Transaction = {
+  id: string;
+  amount_paid: number;
+  grams_allocated_snapshot: number;
+  paid_at: string;
+  txn_type: string;
+  enrollment_id: string;
+  scheme_name?: string;
+  karat?: string | null;
+  mode?: string | null;
+};
+
 const QUICK_AMOUNTS = [3000, 5000, 10000, 25000];
+
+function safeNumber(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
 
 export default function CustomerCollectionsPage() {
   const { customer, loading: authLoading } = useCustomerAuth();
@@ -57,10 +75,16 @@ export default function CustomerCollectionsPage() {
   const [selectedEnrollmentId, setSelectedEnrollmentId] = useState('');
   const [goldRate, setGoldRate] = useState<GoldRate | null>(null);
   const [amount, setAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'CARD' | 'BANK_TRANSFER'>('UPI');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CHEQUE' | 'CREDIT_CARD' | 'DIGITAL' | 'UPI'>('CASH');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [monthlyPaymentInfo, setMonthlyPaymentInfo] = useState<MonthlyPaymentInfo | null>(null);
+  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [timeFilter, setTimeFilter] = useState<'DAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'RANGE'>('MONTH');
+  const [customStart, setCustomStart] = useState<string>('');
+  const [customEnd, setCustomEnd] = useState<string>('');
 
   const currentMonthStr = useMemo(() => {
     const now = new Date();
@@ -91,6 +115,12 @@ export default function CustomerCollectionsPage() {
     void loadMonthlyPaymentInfo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEnrollmentId]);
+
+  useEffect(() => {
+    if (!customer?.id || enrollments.length === 0) return;
+    void loadTransactions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer?.id, enrollments, timeFilter, customStart, customEnd]);
 
   async function loadEnrollments() {
     if (!customer) return;
@@ -217,6 +247,116 @@ export default function CustomerCollectionsPage() {
     }
   }
 
+  async function loadTransactions() {
+    if (!customer?.id || enrollments.length === 0) return;
+
+    setTransactionsLoading(true);
+
+    try {
+      const enrollmentIds = enrollments.map((e) => e.id);
+      const enrollmentSchemeMap = new Map<string, string>();
+      const enrollmentKaratMap = new Map<string, string | null>();
+      enrollments.forEach((e) => {
+        enrollmentSchemeMap.set(e.id, e.plan?.name || 'Gold Plan');
+        enrollmentKaratMap.set(e.id, e.karat);
+      });
+
+      let recentQuery = supabase
+        .from('transactions')
+        .select('id, amount_paid, grams_allocated_snapshot, paid_at, enrollment_id, txn_type, mode')
+        .eq('customer_id', customer.id)
+        .eq('payment_status', 'SUCCESS')
+        .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
+        .order('paid_at', { ascending: false })
+        .limit(10);
+
+      if (customer.retailer_id) {
+        recentQuery = recentQuery.eq('retailer_id', customer.retailer_id);
+      }
+
+      const recentResult = await recentQuery;
+
+      const now = new Date();
+      const startOfDayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+      const endOfDayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+      const toISO = (d: Date) => d.toISOString();
+
+      const startOfWeekUTC = (d: Date) => {
+        const day = d.getUTCDay();
+        const diff = (day + 6) % 7;
+        const s = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - diff, 0, 0, 0, 0));
+        const e = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate() + 7, 0, 0, 0, 0));
+        return { s, e };
+      };
+      const startOfMonthUTC = (d: Date) => {
+        const s = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0));
+        const e = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+        return { s, e };
+      };
+      const startOfYearUTC = (d: Date) => {
+        const s = new Date(Date.UTC(d.getUTCFullYear(), 0, 1, 0, 0, 0, 0));
+        const e = new Date(Date.UTC(d.getUTCFullYear() + 1, 0, 1, 0, 0, 0, 0));
+        return { s, e };
+      };
+
+      let startISO: string;
+      let endISO: string;
+
+      if (timeFilter === 'DAY') {
+        startISO = toISO(startOfDayUTC);
+        endISO = toISO(endOfDayUTC);
+      } else if (timeFilter === 'WEEK') {
+        const { s, e } = startOfWeekUTC(now);
+        startISO = toISO(s);
+        endISO = toISO(e);
+      } else if (timeFilter === 'MONTH') {
+        const { s, e } = startOfMonthUTC(now);
+        startISO = toISO(s);
+        endISO = toISO(e);
+      } else if (timeFilter === 'YEAR') {
+        const { s, e } = startOfYearUTC(now);
+        startISO = toISO(s);
+        endISO = toISO(e);
+      } else {
+        const s = customStart ? new Date(customStart) : startOfDayUTC;
+        const e = customEnd ? new Date(customEnd) : endOfDayUTC;
+        startISO = toISO(s);
+        endISO = toISO(e);
+      }
+
+      let allQuery = supabase
+        .from('transactions')
+        .select('id, amount_paid, grams_allocated_snapshot, paid_at, enrollment_id, txn_type, mode')
+        .eq('customer_id', customer.id)
+        .eq('payment_status', 'SUCCESS')
+        .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
+        .gte('paid_at', startISO)
+        .lt('paid_at', endISO)
+        .order('paid_at', { ascending: false })
+        .limit(500);
+
+      if (customer.retailer_id) {
+        allQuery = allQuery.eq('retailer_id', customer.retailer_id);
+      }
+
+      const allResult = await allQuery;
+
+      const mapRows = (rows: any[]) =>
+        rows.map((t) => ({
+          ...t,
+          scheme_name: enrollmentSchemeMap.get(t.enrollment_id) || 'Gold Plan',
+          karat: enrollmentKaratMap.get(t.enrollment_id),
+        }));
+
+      setRecentTransactions(mapRows(recentResult.data || []));
+      setAllTransactions(mapRows(allResult.data || []));
+    } catch (error) {
+      console.error('Error loading transactions:', error);
+    } finally {
+      setTransactionsLoading(false);
+    }
+  }
+
   async function recordPayment() {
     if (!customer?.retailer_id || !selectedEnrollmentId) {
       toast({
@@ -301,13 +441,16 @@ export default function CustomerCollectionsPage() {
 
       fireCelebrationConfetti();
 
+      const metalName = selectedEnrollment?.karat === 'SILVER' ? 'Silver' : 'Gold';
+
       toast({
         title: 'Payment Successful',
-        description: `₹${amountNum.toLocaleString()} received. Gold added: ${gramsAllocated.toFixed(4)}g`,
+        description: `₹${amountNum.toLocaleString()} received. ${metalName} added: ${gramsAllocated.toFixed(4)}g`,
       });
 
       setAmount('');
       await loadMonthlyPaymentInfo();
+      await loadTransactions();
     } catch (error: any) {
       console.error('Payment error:', error);
       toast({
@@ -337,7 +480,7 @@ export default function CustomerCollectionsPage() {
         <Card className="glass-card">
           <CardHeader>
             <CardTitle>Record Payment</CardTitle>
-            <CardDescription>Add a customer payment</CardDescription>
+            <CardDescription>Add your payment</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="space-y-2">
@@ -392,9 +535,11 @@ export default function CustomerCollectionsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="CASH">Cash</SelectItem>
+                  <SelectItem value="CHEQUE">Cheque</SelectItem>
+                  <SelectItem value="CREDIT_CARD">Credit Card</SelectItem>
+                  <SelectItem value="DIGITAL">Digital</SelectItem>
                   <SelectItem value="UPI">UPI</SelectItem>
-                  <SelectItem value="CARD">Debit/Credit Card</SelectItem>
-                  <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -422,9 +567,28 @@ export default function CustomerCollectionsPage() {
             </div>
 
             {goldRate && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <TrendingUp className="w-4 h-4 text-gold-600" />
-                Rate: ₹{goldRate.rate_per_gram.toLocaleString()}/g
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <TrendingUp className="w-4 h-4 text-gold-600" />
+                  Rate: ₹{goldRate.rate_per_gram.toLocaleString()}/g
+                </div>
+                <div className="rounded-xl border border-gold-200 bg-white/70 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-muted-foreground">{selectedEnrollment?.karat === 'SILVER' ? 'Silver' : 'Gold'} Collected</p>
+                      <p className="text-xl font-semibold text-gold-700">
+                        {(safeNumber(goldRate.rate_per_gram) > 0
+                          ? safeNumber(amount) / safeNumber(goldRate.rate_per_gram)
+                          : 0
+                        ).toFixed(4)}g
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">Rate</p>
+                      <p className="text-sm font-semibold">₹{goldRate.rate_per_gram.toLocaleString()}/g</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -435,6 +599,120 @@ export default function CustomerCollectionsPage() {
             >
               {submitting ? 'Recording...' : 'Record Payment'}
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle>Recent Transactions</CardTitle>
+            <CardDescription>Last 10 payments across your plans</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {transactionsLoading ? (
+              <p className="text-muted-foreground text-center py-6">Loading transactions...</p>
+            ) : recentTransactions.length === 0 ? (
+              <p className="text-muted-foreground text-center py-6">No transactions found yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Gold/Silver</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentTransactions.map((txn) => (
+                      <TableRow key={txn.id}>
+                        <TableCell>{new Date(txn.paid_at).toLocaleDateString()}</TableCell>
+                        <TableCell>{txn.scheme_name}</TableCell>
+                        <TableCell>
+                          <Badge variant={txn.txn_type === 'PRIMARY_INSTALLMENT' ? 'default' : 'secondary'}>
+                            {txn.txn_type === 'PRIMARY_INSTALLMENT' ? 'Installment' : 'Top-up'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">₹{safeNumber(txn.amount_paid).toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{safeNumber(txn.grams_allocated_snapshot).toFixed(3)}g</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle>All Transactions</CardTitle>
+            <CardDescription>Filter payments by day, week, month, year or custom range</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Period</Label>
+                <Select value={timeFilter} onValueChange={(v) => setTimeFilter(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DAY">Day</SelectItem>
+                    <SelectItem value="WEEK">Week</SelectItem>
+                    <SelectItem value="MONTH">Month</SelectItem>
+                    <SelectItem value="YEAR">Year</SelectItem>
+                    <SelectItem value="RANGE">Date Range</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Start Date</Label>
+                <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} disabled={timeFilter !== 'RANGE'} />
+              </div>
+              <div className="space-y-2">
+                <Label>End Date</Label>
+                <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} disabled={timeFilter !== 'RANGE'} />
+              </div>
+            </div>
+
+            {transactionsLoading ? (
+              <p className="text-muted-foreground text-center py-6">Loading transactions...</p>
+            ) : allTransactions.length === 0 ? (
+              <p className="text-muted-foreground text-center py-6">No transactions found for this period.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Mode</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Gold/Silver</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allTransactions.map((txn) => (
+                      <TableRow key={txn.id}>
+                        <TableCell>{new Date(txn.paid_at).toLocaleDateString()}</TableCell>
+                        <TableCell>{txn.scheme_name}</TableCell>
+                        <TableCell>
+                          <Badge variant={txn.txn_type === 'PRIMARY_INSTALLMENT' ? 'default' : 'secondary'}>
+                            {txn.txn_type === 'PRIMARY_INSTALLMENT' ? 'Installment' : 'Top-up'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="uppercase">{txn.mode || '—'}</TableCell>
+                        <TableCell className="text-right font-medium">₹{safeNumber(txn.amount_paid).toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{safeNumber(txn.grams_allocated_snapshot).toFixed(3)}g</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
