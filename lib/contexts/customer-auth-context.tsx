@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabaseCustomer } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 
 type CustomerProfile = {
   id: string;
@@ -32,6 +32,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
 
   const lookupCustomerByPhone = async (phone: string, retailerId?: string | null) => {
     if (!retailerId) {
@@ -84,13 +85,25 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     };
 
     // BYPASS: If phone in localStorage, fetch customer by phone, but NOT on /c/login
-    if (typeof window !== 'undefined' && window.location.pathname !== '/c/login') {
+    if (typeof window !== 'undefined' && pathname !== '/c/login') {
       const phoneBypass = localStorage.getItem('customer_phone_bypass');
       const retailerBypass = localStorage.getItem('customer_retailer_bypass');
+      const payloadBypass = localStorage.getItem('customer_bypass_payload');
       if (phoneBypass) {
         (async () => {
           setLoading(true);
           try {
+            if (payloadBypass) {
+              const parsed = JSON.parse(payloadBypass);
+              if (parsed?.id && parsed?.retailer_id) {
+                if (isMounted) {
+                  setCustomer(parsed);
+                  setUser(null);
+                  setLoading(false);
+                }
+                return;
+              }
+            }
             // Try to get retailer_id from branding context if available
             let retailerId = null;
             try {
@@ -168,7 +181,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [mounted]);
+  }, [mounted, pathname]);
 
   /**
    * Centralized customer hydration

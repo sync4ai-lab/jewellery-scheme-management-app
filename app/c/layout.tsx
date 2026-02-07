@@ -48,9 +48,9 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
   const CustomerTopBar = require('@/components/customer/top-bar').CustomerTopBar;
   const CustomerMobileNav = require('@/components/customer/mobile-nav').CustomerMobileNav;
   const BrandingProvider = require('@/lib/contexts/branding-context').BrandingProvider;
+  const pathname = usePathname();
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => { setMounted(true); }, []);
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
   const isLoginPage = pathname === '/c/login';
   // Hydration guard: only render on client
   if (!mounted) return null;

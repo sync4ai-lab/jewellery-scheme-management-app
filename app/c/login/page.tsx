@@ -29,6 +29,7 @@ export default function CustomerLoginPage() {
     // Clear any customer bypass values on login page mount
     localStorage.removeItem('customer_phone_bypass');
     localStorage.removeItem('customer_retailer_bypass');
+    localStorage.removeItem('customer_bypass_payload');
     setMounted(true);
   }, []);
 
@@ -78,6 +79,7 @@ export default function CustomerLoginPage() {
     // Save bypass info and reload
     localStorage.setItem('customer_phone_bypass', normalizedPhone || phone);
     localStorage.setItem('customer_retailer_bypass', retailerId);
+    localStorage.setItem('customer_bypass_payload', JSON.stringify(customer));
     setLoading(false);
     router.replace('/c/schemes');
   };
