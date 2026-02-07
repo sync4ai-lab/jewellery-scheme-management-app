@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseCustomer as supabase } from '@/lib/supabase/client';
+import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -17,9 +18,11 @@ type Retailer = {
 
 export default function CustomerLoginPage() {
   const router = useRouter();
+  const { signInWithPhone } = useCustomerAuth();
   const [retailers, setRetailers] = useState<Retailer[] | null>(null);
   const [retailerId, setRetailerId] = useState('');
   const [phone, setPhone] = useState('');
+  const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -61,7 +64,23 @@ export default function CustomerLoginPage() {
     fetchRetailers();
   }, [mounted]);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handlePinLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    const normalizedPhone = phone.replace(/\D/g, '');
+    console.log('[CustomerLogin] PIN login attempt', { phone: normalizedPhone || phone });
+    const result = await signInWithPhone(normalizedPhone || phone, pin);
+    if (!result.success) {
+      setError(result.error || 'Login failed. Please try again.');
+      setLoading(false);
+      return;
+    }
+    setLoading(false);
+    window.location.assign('/c/pulse');
+  };
+
+  const handleBypassLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
@@ -156,7 +175,7 @@ export default function CustomerLoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handlePinLogin} className="space-y-4">
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
@@ -168,7 +187,6 @@ export default function CustomerLoginPage() {
                   className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500"
                   value={retailerId}
                   onChange={e => setRetailerId(e.target.value)}
-                  required
                 >
                   <option value="" disabled>Select a retailer</option>
                   {retailers.map(r => (
@@ -191,9 +209,34 @@ export default function CustomerLoginPage() {
                   autoFocus
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={loading || !retailerId || phone.length !== 10}>
-                {loading ? 'Logging in…' : 'Login'}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">6-digit PIN</label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  minLength={6}
+                  placeholder="Enter your 6-digit PIN"
+                  value={pin}
+                  onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
+                  className="mb-2"
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading || phone.length !== 10 || pin.length !== 6}>
+                {loading ? 'Logging in…' : 'Login with PIN'}
               </Button>
+              {process.env.NODE_ENV !== 'production' && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={loading || !retailerId || phone.length !== 10}
+                  onClick={handleBypassLogin}
+                >
+                  {loading ? 'Logging in…' : 'Dev Bypass Login'}
+                </Button>
+              )}
             </form>
           </CardContent>
         </Card>

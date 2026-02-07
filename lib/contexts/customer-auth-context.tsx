@@ -58,6 +58,18 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     return getCookie(key);
   };
 
+  const getBypassPayload = () => {
+    const payloadBypass = getBypassValue('customer_bypass_payload');
+    if (!payloadBypass) return null;
+    try {
+      const parsed = JSON.parse(payloadBypass);
+      if (parsed?.id && parsed?.retailer_id) return parsed as CustomerProfile;
+    } catch {
+      // ignore
+    }
+    return null;
+  };
+
   const lookupCustomerByPhone = async (phone: string, retailerId?: string | null) => {
     if (!retailerId) {
       return { data: null, error: null } as const;
@@ -218,6 +230,17 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
             setError('Customer hydration error: ' + (err?.message || 'Unknown error'));
           }
         } else {
+          if (pathname !== '/c/login') {
+            const bypassCustomer = getBypassPayload();
+            if (bypassCustomer) {
+              console.log('[CustomerAuth] Retaining bypass customer on auth change', {
+                id: bypassCustomer.id,
+                retailer_id: bypassCustomer.retailer_id,
+              });
+              setCustomer(bypassCustomer);
+              return;
+            }
+          }
           setCustomer(null);
         }
       });

@@ -116,7 +116,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
       // Fetch scheme template (plan details)
       const { data: planData } = await supabase
         .from('scheme_templates')
-        .select('id, name, installment_amount, duration_months')
+        .select('id, name, installment_amount, monthly_amount, duration_months')
         .eq('id', enrData.plan_id)
         .maybeSingle();
 
@@ -125,7 +125,7 @@ export default function PaymentPage({ params }: { params: { schemeId: string } }
         plans: planData ? {
           id: planData.id,
           plan_name: planData.name,
-          monthly_amount: planData.installment_amount,
+          monthly_amount: planData.monthly_amount ?? planData.installment_amount,
           tenure_months: planData.duration_months,
           karat: enrData.karat || null
         } : null

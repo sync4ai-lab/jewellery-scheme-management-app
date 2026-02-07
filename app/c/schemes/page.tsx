@@ -17,7 +17,8 @@ type Plan = {
   id: string;
   retailer_id?: string | null;
   name: string;
-  installment_amount: number;
+  installment_amount?: number | null;
+  monthly_amount?: number | null;
   duration_months: number;
   bonus_percentage?: number | null;
   description?: string | null;
@@ -97,7 +98,7 @@ export default function CustomerSchemesPage() {
       // Fetch ALL plans for mapping (active/inactive)
       const allPlansResult = await supabase
         .from('scheme_templates')
-        .select('id, retailer_id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll')
+        .select('id, retailer_id, name, installment_amount, monthly_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll')
         .eq('retailer_id', customer.retailer_id);
       const allPlans: Plan[] = allPlansResult.data || [];
 
@@ -146,7 +147,7 @@ export default function CustomerSchemesPage() {
       // Map enrollments
       const cards: EnrollmentCard[] = enrollmentRows.map(e => {
         const plan = planMap.get(e.plan_id);
-        const monthly = Number(e.commitment_amount || plan?.installment_amount || 0);
+        const monthly = Number(e.commitment_amount || (plan?.monthly_amount ?? plan?.installment_amount) || 0);
         const duration = Number(plan?.duration_months || 0);
         const startDateLabel = e.created_at
           ? new Date(e.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -347,7 +348,7 @@ export default function CustomerSchemesPage() {
                       </div>
                       <CardHeader className="pt-6">
                         <CardDescription className="text-base text-gold-600">
-                          <span className="font-semibold">{plan.duration_months} months</span> • <span className="font-semibold">₹{plan.installment_amount.toLocaleString()}</span>
+                          <span className="font-semibold">{plan.duration_months} months</span> • <span className="font-semibold">₹{Number((plan.monthly_amount ?? plan.installment_amount) || 0).toLocaleString()}</span>
                           {plan.bonus_percentage ? <span> • <span className="text-rose-600 font-semibold">Bonus: {plan.bonus_percentage}%</span></span> : ''}
                           {plan.description ? <><br /><span className="text-sm text-gray-500">{plan.description}</span></> : null}
                         </CardDescription>

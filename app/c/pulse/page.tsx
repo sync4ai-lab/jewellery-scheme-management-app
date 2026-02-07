@@ -136,7 +136,7 @@ export default function CustomerPulsePage() {
       // Fetch customer's enrollments
       const { data: enrollments, error: enrollError } = await supabase
         .from('enrollments')
-        .select('id, plan_id, karat, status, scheme_templates(name, installment_amount, duration_months)')
+        .select('id, plan_id, karat, status, scheme_templates(name, installment_amount, monthly_amount, duration_months)')
         .eq('customer_id', customerId)
         .eq('retailer_id', retailerId);
 
@@ -222,7 +222,7 @@ export default function CustomerPulsePage() {
       // Calculate total scheme value
       let totalSchemeValue = 0;
       (enrollments || []).forEach((e: any) => {
-        const amt = safeNumber(e.scheme_templates?.installment_amount);
+        const amt = safeNumber(e.scheme_templates?.monthly_amount ?? e.scheme_templates?.installment_amount);
         const dur = safeNumber(e.scheme_templates?.duration_months);
         totalSchemeValue += amt * dur;
       });
@@ -247,7 +247,7 @@ export default function CustomerPulsePage() {
       const unpaidEnrollmentIds = new Set((duesResult.data || []).map((d: any) => d.enrollment_id));
       (enrollments || []).forEach((e: any) => {
         if (unpaidEnrollmentIds.has(e.id) && e.status === 'ACTIVE') {
-          duesOutstanding += safeNumber(e.scheme_templates?.installment_amount);
+          duesOutstanding += safeNumber(e.scheme_templates?.monthly_amount ?? e.scheme_templates?.installment_amount);
         }
       });
 
@@ -289,7 +289,7 @@ export default function CustomerPulsePage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold gold-gradient-shimmer bg-clip-text text-transparent">
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground">
             My Dashboard
           </h1>
           <p className="text-muted-foreground">Welcome back, {customer?.full_name}</p>

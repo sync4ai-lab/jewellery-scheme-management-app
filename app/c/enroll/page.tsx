@@ -17,7 +17,8 @@ import { createNotification } from '@/lib/utils/notifications';
 type Plan = {
   id: string;
   name: string;
-  installment_amount: number;
+  installment_amount?: number | null;
+  monthly_amount?: number | null;
   duration_months: number;
   bonus_percentage: number;
   description: string | null;
@@ -73,10 +74,10 @@ export default function CustomerEnrollmentPage() {
     try {
       const { data, error } = await supabase
         .from('scheme_templates')
-        .select('id, name, installment_amount, duration_months, bonus_percentage, description, is_active')
+        .select('id, name, installment_amount, monthly_amount, duration_months, bonus_percentage, description, is_active')
         .eq('retailer_id', customer.retailer_id)
         .eq('is_active', true)
-        .order('installment_amount', { ascending: true });
+        .order('monthly_amount', { ascending: true, nullsFirst: false });
       
       if (error) throw error;
       
@@ -98,7 +99,7 @@ export default function CustomerEnrollmentPage() {
   
   // Validate commitment amount
   const commitmentAmountNum = parseFloat(commitmentAmount) || 0;
-  const minAmount = selectedPlanDetails?.installment_amount || 0;
+  const minAmount = selectedPlanDetails?.monthly_amount ?? selectedPlanDetails?.installment_amount || 0;
   const isCommitmentValid = commitmentAmountNum >= minAmount;
   
   // Validate initial payment

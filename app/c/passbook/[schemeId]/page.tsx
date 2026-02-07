@@ -53,11 +53,12 @@ type Enrollment = {
   commitment_amount: number | null;
   created_at: string | null;
   plan_id: string | null;
-  plans: {
+  scheme_templates: {
     id: string;
-    plan_name: string;
-    tenure_months: number;
-    monthly_amount: number;
+    name: string;
+    duration_months: number;
+    monthly_amount?: number | null;
+    installment_amount?: number | null;
   } | null;
 };
 
@@ -140,7 +141,7 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
       const [enrollmentResult, transactionsResult, billingMonthResult] = await Promise.all([
         supabase
           .from('enrollments')
-          .select('id, status, commitment_amount, created_at, plan_id, plans(id, plan_name, tenure_months, monthly_amount)')
+          .select('id, status, commitment_amount, created_at, plan_id, scheme_templates(id, name, duration_months, monthly_amount, installment_amount)')
           .eq('id', enrollmentId)
           .eq('customer_id', customer.id)
           .maybeSingle(),
@@ -165,9 +166,9 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
       if (enrollmentResult.data) {
         const transformed = {
           ...enrollmentResult.data,
-          plans: Array.isArray((enrollmentResult.data as any).plans) 
-            ? (enrollmentResult.data as any).plans[0] 
-            : (enrollmentResult.data as any).plans,
+          scheme_templates: Array.isArray((enrollmentResult.data as any).scheme_templates)
+            ? (enrollmentResult.data as any).scheme_templates[0]
+            : (enrollmentResult.data as any).scheme_templates,
         };
         setEnrollment(transformed as Enrollment);
       } else {
@@ -274,15 +275,15 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
     );
   }
 
-  const planName = enrollment.plans?.plan_name || 'Gold Plan';
+  const planName = enrollment.scheme_templates?.name || 'Gold Plan';
 
   // Monthly amount priority:
   // 1) enrollment.commitment_amount (if set)
-  // 2) plans.monthly_amount
+  // 2) scheme_templates.monthly_amount / installment_amount
   const monthlyAmount =
     (typeof enrollment.commitment_amount === 'number' && enrollment.commitment_amount > 0
       ? enrollment.commitment_amount
-      : enrollment.plans?.monthly_amount) || 0;
+      : enrollment.scheme_templates?.monthly_amount ?? enrollment.scheme_templates?.installment_amount) || 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-gold-50/10 to-background">
