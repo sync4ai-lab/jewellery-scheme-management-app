@@ -308,17 +308,24 @@ export default function PaymentPage() {
 
       if (insertError) throw insertError;
 
-      void createNotification({
-        retailerId: enrollment.retailer_id,
-        customerId: customer.id,
-        enrollmentId: enrollment.id,
-        type: 'PAYMENT_SUCCESS',
-        message: `Payment received: ${customer.full_name || customer.phone} - ₹${paymentAmount.toLocaleString()}`,
-        metadata: {
-          type: 'PAYMENT',
-          amount: paymentAmount,
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || null;
+      void createNotification(
+        {
+          retailerId: enrollment.retailer_id,
+          customerId: customer.id,
+          enrollmentId: enrollment.id,
+          type: 'PAYMENT_SUCCESS',
+          message: `Payment received: ${customer.full_name || customer.phone} - ₹${paymentAmount.toLocaleString()}`,
+          metadata: {
+            type: 'PAYMENT',
+            amount: paymentAmount,
+          },
         },
-      });
+        accessToken
+          ? { useServerEndpoint: true, accessToken, skipRpc: true, skipQueueFallback: true }
+          : { skipRpc: true, skipQueueFallback: true }
+      );
 
       setSuccess(true);
       setTimeout(() => router.push(`/c/passbook/${enrollment.id}`), 1200);

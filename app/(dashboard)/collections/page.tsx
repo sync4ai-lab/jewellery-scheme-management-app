@@ -88,6 +88,7 @@ export default function CollectionsPage() {
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [transactions, setTransactions] = useState<Txn[]>([]);
   const [monthlyPaymentInfo, setMonthlyPaymentInfo] = useState<MonthlyPaymentInfo | null>(null);
+  const [enrollmentsLoading, setEnrollmentsLoading] = useState(false);
 
   // Transaction list state (for full transaction history section)
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
@@ -133,14 +134,18 @@ export default function CollectionsPage() {
   }, [profile?.retailer_id]);
 
   useEffect(() => {
-    if (selectedCustomerId && goldRate) {
+    if (selectedCustomerId) {
+      setEnrollments([]);
+      setSelectedEnrollmentId('');
+      setMonthlyPaymentInfo(null);
       void loadEnrollments(selectedCustomerId);
       void loadTransactions(selectedCustomerId);
     } else {
       setEnrollments([]);
       setSelectedEnrollmentId('');
+      setMonthlyPaymentInfo(null);
     }
-  }, [selectedCustomerId, goldRate?.id]);
+  }, [selectedCustomerId]);
 
   // Get the karat for the selected enrollment
   const selectedEnrollmentKarat = useMemo(() => {
@@ -257,6 +262,7 @@ export default function CollectionsPage() {
   async function loadEnrollments(customerId: string) {
     if (!profile?.retailer_id) return;
     try {
+      setEnrollmentsLoading(true);
       console.log('Loading enrollments for customer:', customerId);
       
       // First get enrollments
@@ -332,6 +338,8 @@ export default function CollectionsPage() {
       } else {
         toast.error(`Failed to load customer enrollments: ${error?.message || 'Unknown error'}`);
       }
+    } finally {
+      setEnrollmentsLoading(false);
     }
   }
 
@@ -635,12 +643,24 @@ export default function CollectionsPage() {
             </div>
 
             {/* Enrollment/Plan Selection */}
-            {selectedCustomerId && enrollments.length > 0 && (
+            {selectedCustomerId && (
               <div className="space-y-2">
                 <Label>Select Plan/Enrollment *</Label>
-                <Select value={selectedEnrollmentId || undefined} onValueChange={setSelectedEnrollmentId}>
+                <Select
+                  value={selectedEnrollmentId || undefined}
+                  onValueChange={setSelectedEnrollmentId}
+                  disabled={enrollmentsLoading || enrollments.length === 0}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose enrolled plan" />
+                    <SelectValue
+                      placeholder={
+                        enrollmentsLoading
+                          ? 'Loading plans...'
+                          : enrollments.length > 0
+                            ? 'Choose enrolled plan'
+                            : 'No active plans'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {enrollments.map((enrollment) => (

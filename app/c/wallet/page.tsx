@@ -88,6 +88,7 @@ export default function CustomerCollectionsPage() {
   const [timeFilter, setTimeFilter] = useState<'DAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'RANGE'>('MONTH');
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
+  const [lastPaymentGrams, setLastPaymentGrams] = useState<number | null>(null);
 
   const currentMonthStr = useMemo(() => {
     const now = new Date();
@@ -239,7 +240,7 @@ export default function CustomerCollectionsPage() {
         .eq('customer_id', customer.id)
         .eq('enrollment_id', selectedEnrollmentId)
         .eq('payment_status', 'SUCCESS')
-        .eq('txn_type', 'PRIMARY_INSTALLMENT')
+        .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
         .gte('paid_at', startOfMonth.toISOString())
         .lte('paid_at', endOfMonth.toISOString());
 
@@ -457,30 +458,38 @@ export default function CustomerCollectionsPage() {
       if (error) throw error;
 
       if (selectedEnrollment?.plan?.name) {
-        void createNotification({
-          retailerId: customer.retailer_id,
-          customerId: customer.id,
-          enrollmentId: selectedEnrollmentId,
-          type: 'PAYMENT_SUCCESS',
-          message: `Payment received: ${selectedEnrollment.plan.name} - ₹${amountNum.toLocaleString()}`,
-          metadata: {
-            type: 'PAYMENT',
-            amount: amountNum,
-            source: 'CUSTOMER_ONLINE',
-            txnType,
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token || null;
+        void createNotification(
+          {
+            retailerId: customer.retailer_id,
+            customerId: customer.id,
+            enrollmentId: selectedEnrollmentId,
+            type: 'PAYMENT_SUCCESS',
+            message: `Payment received: ${selectedEnrollment.plan.name} - ₹${amountNum.toLocaleString()}`,
+            metadata: {
+              type: 'PAYMENT',
+              amount: amountNum,
+              source: 'CUSTOMER_ONLINE',
+              txnType,
+            },
           },
-        });
+          accessToken
+            ? { useServerEndpoint: true, accessToken, skipRpc: true, skipQueueFallback: true }
+            : { skipRpc: true, skipQueueFallback: true }
+        );
       }
 
       fireCelebrationConfetti();
 
-      const metalName = selectedEnrollment?.karat === 'SILVER' ? 'Silver' : 'Gold';
+      const metalName = selectedEnrollment?.karat?.toUpperCase() === 'SILVER' ? 'Silver' : 'Gold';
 
       toast({
         title: 'Payment Successful',
         description: `₹${amountNum.toLocaleString()} received. ${metalName} added: ${gramsAllocated.toFixed(4)}g`,
       });
 
+      setLastPaymentGrams(gramsAllocated);
       setAmount('');
       await loadMonthlyPaymentInfo();
       await loadTransactions();
@@ -608,13 +617,18 @@ export default function CustomerCollectionsPage() {
                 <div className="rounded-xl border border-gold-200 bg-white/70 p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">{selectedEnrollment?.karat === 'SILVER' ? 'Silver' : 'Gold'} Collected</p>
+                      <p className="text-sm text-muted-foreground">
+                        {(selectedEnrollment?.karat?.toUpperCase() === 'SILVER' ? 'Silver' : 'Gold')} Collected
+                      </p>
                       <p className="text-xl font-semibold text-gold-700">
                         {(safeNumber(goldRate.rate_per_gram) > 0
-                          ? safeNumber(amount) / safeNumber(goldRate.rate_per_gram)
+                          ? (amount ? safeNumber(amount) / safeNumber(goldRate.rate_per_gram) : safeNumber(lastPaymentGrams))
                           : 0
                         ).toFixed(4)}g
                       </p>
+                      {!amount && lastPaymentGrams !== null && (
+                        <p className="text-xs text-muted-foreground">Last payment</p>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">Rate</p>
@@ -668,7 +682,12 @@ export default function CustomerCollectionsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right font-medium">₹{safeNumber(txn.amount_paid).toLocaleString()}</TableCell>
-                        <TableCell className="text-right">{safeNumber(txn.grams_allocated_snapshot).toFixed(3)}g</TableCell>
+                        <TableCell className="text-right">
+                          {safeNumber(txn.grams_allocated_snapshot).toFixed(3)}g
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            {txn.karat?.toUpperCase() === 'SILVER' ? 'Silver' : 'Gold'}
+                          </span>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -739,7 +758,12 @@ export default function CustomerCollectionsPage() {
                         </TableCell>
                         <TableCell className="uppercase">{txn.mode || '—'}</TableCell>
                         <TableCell className="text-right font-medium">₹{safeNumber(txn.amount_paid).toLocaleString()}</TableCell>
-                        <TableCell className="text-right">{safeNumber(txn.grams_allocated_snapshot).toFixed(3)}g</TableCell>
+                        <TableCell className="text-right">
+                          {safeNumber(txn.grams_allocated_snapshot).toFixed(3)}g
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            {txn.karat?.toUpperCase() === 'SILVER' ? 'Silver' : 'Gold'}
+                          </span>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

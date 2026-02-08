@@ -206,17 +206,24 @@ export default function CustomerEnrollmentPage() {
 
       const enrolledPlanName = plans.find((p) => p.id === selectedPlan)?.name || 'Scheme';
 
-      void createNotification({
-        retailerId: customer.retailer_id,
-        customerId: customer.id,
-        enrollmentId,
-        type: 'GENERAL',
-        message: `New enrollment: ${customer.full_name} enrolled in ${enrolledPlanName}`,
-        metadata: {
-          type: 'ENROLLMENT',
-          plan_id: selectedPlan,
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token || null;
+      void createNotification(
+        {
+          retailerId: customer.retailer_id,
+          customerId: customer.id,
+          enrollmentId,
+          type: 'GENERAL',
+          message: `New enrollment: ${customer.full_name} enrolled in ${enrolledPlanName}`,
+          metadata: {
+            type: 'ENROLLMENT',
+            plan_id: selectedPlan,
+          },
         },
-      });
+        accessToken
+          ? { useServerEndpoint: true, accessToken, skipRpc: true, skipQueueFallback: true }
+          : { skipRpc: true, skipQueueFallback: true }
+      );
 
       fireCelebrationConfetti();
 

@@ -125,6 +125,9 @@ export type Database = {
           date_of_birth: string | null;
           address: string | null;
           pan_number: string | null;
+          nominee_name: string | null;
+          nominee_relation: string | null;
+          nominee_phone: string | null;
           aadhar_number: string | null;
           tags: string[];
           status: 'active' | 'inactive' | 'blocked';

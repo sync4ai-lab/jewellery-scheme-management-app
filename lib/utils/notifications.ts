@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type NotificationPayload = {
   retailerId: string;
@@ -9,26 +10,69 @@ export type NotificationPayload = {
   metadata?: Record<string, any>;
 };
 
-export async function createNotification(payload: NotificationPayload) {
+type NotificationOptions = {
+  client?: SupabaseClient;
+  skipRpc?: boolean;
+  skipQueueFallback?: boolean;
+  useServerEndpoint?: boolean;
+  accessToken?: string | null;
+};
+
+export async function createNotification(payload: NotificationPayload, options: NotificationOptions = {}) {
   const { retailerId, customerId, enrollmentId, type, message, metadata } = payload;
+  const client = options.client ?? supabase;
 
-  try {
-    const { error } = await supabase.rpc('create_notification', {
-      p_retailer_id: retailerId,
-      p_customer_id: customerId,
-      p_enrollment_id: enrollmentId ?? null,
-      p_type: type,
-      p_message: message,
-      p_metadata: metadata ?? {},
-    });
+  if (options.useServerEndpoint) {
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
+        },
+        body: JSON.stringify({
+          retailerId,
+          customerId,
+          enrollmentId: enrollmentId ?? null,
+          type,
+          message,
+          metadata: metadata ?? {},
+        }),
+      });
 
-    if (!error) return;
-  } catch (error) {
-    console.warn('Notification RPC failed:', error);
+      if (res.ok) return;
+    } catch (error) {
+      console.warn('Notification API failed:', error);
+    }
+
+    if (options.skipQueueFallback) {
+      return;
+    }
+  }
+
+  if (!options.skipRpc) {
+    try {
+      const { error } = await client.rpc('create_notification', {
+        p_retailer_id: retailerId,
+        p_customer_id: customerId,
+        p_enrollment_id: enrollmentId ?? null,
+        p_type: type,
+        p_message: message,
+        p_metadata: metadata ?? {},
+      });
+
+      if (!error) return;
+    } catch (error) {
+      console.warn('Notification RPC failed:', error);
+    }
+  }
+
+  if (options.skipQueueFallback) {
+    return;
   }
 
   try {
-    const { error } = await supabase.from('notification_queue').insert({
+    const { error } = await client.from('notification_queue').insert({
       retailer_id: retailerId,
       customer_id: customerId,
       enrollment_id: enrollmentId ?? null,
@@ -46,7 +90,7 @@ export async function createNotification(payload: NotificationPayload) {
   }
 
   try {
-    await supabase.from('notification_queue').insert({
+    await client.from('notification_queue').insert({
       retailer_id: retailerId,
       customer_id: customerId,
       notification_type: type,

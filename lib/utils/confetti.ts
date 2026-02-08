@@ -34,14 +34,7 @@ export function fireCelebrationConfetti(options: ConfettiOptions = {}) {
   setCanvasSize();
   window.addEventListener('resize', setCanvasSize, { passive: true });
 
-  let confettiInstance = null as ReturnType<typeof confetti.create> | null;
-
-  try {
-    confettiInstance = confetti.create(canvas, { resize: true, useWorker: true });
-  } catch {
-    // Fallback when workers are blocked by CSP or browser settings.
-    confettiInstance = confetti.create(canvas, { resize: true, useWorker: false });
-  }
+  const confettiInstance = confetti.create(canvas, { resize: true, useWorker: false });
   const end = Date.now() + durationMs;
 
   const frame = () => {

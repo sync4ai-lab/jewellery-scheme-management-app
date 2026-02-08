@@ -1,22 +1,15 @@
 'use client';
 
-import { User, Settings } from 'lucide-react';
+import { User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useBranding } from '@/lib/contexts/branding-context';
 import { AnimatedLogo } from '@/components/ui/animated-logo';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export function CustomerTopBar() {
-  const { signOut } = useCustomerAuth();
   const { branding } = useBranding();
   const router = useRouter();
-
-  function handleSignOut() {
-    signOut();
-    router.push('/c/login');
-  }
 
   return (
     <div className="sticky top-0 z-50 w-full backdrop-blur-2xl bg-white/85 border-b border-gold-300/40">
@@ -46,15 +39,7 @@ export function CustomerTopBar() {
             variant="outline" 
             size="icon" 
             className="rounded-2xl border-gold-300/50 hover:bg-gold-50"
-            onClick={() => router.push('/c/settings')}
-          >
-            <Settings className="w-5 h-5 text-gold-600" />
-          </Button>
-          <Button 
-            variant="outline" 
-            size="icon" 
-            className="rounded-2xl border-gold-300/50 hover:bg-gold-50"
-            onClick={handleSignOut}
+            onClick={() => router.push('/c/profile')}
           >
             <User className="w-5 h-5 text-gold-600" />
           </Button>

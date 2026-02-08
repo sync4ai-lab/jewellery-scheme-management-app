@@ -257,7 +257,7 @@ export default function CustomerSchemesPage() {
 
       <div className="relative z-10 max-w-6xl mx-auto p-4 md:p-8 space-y-8">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">
+          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent leading-[1.15] pb-1">
             My Gold Journey
           </h1>
           <p className="text-lg text-gold-600/70">Welcome, {customer?.full_name}</p>
@@ -279,14 +279,16 @@ export default function CustomerSchemesPage() {
                 else if (!enrollment.monthlyInstallmentPaid) dueMessage = 'Your payment for this month is pending.';
 
                 return (
-                  <Card key={enrollment.id} className="overflow-hidden group">
-                    <div className={`h-32 bg-gradient-to-br ${isActive ? 'from-gold-400 via-gold-500 to-rose-500' : 'from-orange-400 via-orange-500 to-red-500'} relative flex flex-col justify-center px-8`}>
+                  <Card key={enrollment.id} className="group overflow-hidden shadow-xl border-gold-100 hover:scale-[1.02] transition-transform">
+                    <div className={`min-h-[8rem] py-5 bg-gradient-to-br ${isActive ? 'from-gold-400 via-gold-500 to-rose-500' : 'from-orange-400 via-orange-500 to-red-500'} relative flex flex-col justify-center px-8`}>
                       <div className="flex justify-between">
                         <span className="text-2xl font-bold text-white drop-shadow-lg">{enrollment.planName}</span>
-                        <span className="ml-4 px-3 py-1 rounded-full bg-gold-900/80 text-gold-100 text-xs font-semibold">{isActive ? 'Active' : enrollment.status}</span>
+                        <span className={`ml-4 px-3 py-1 rounded-full text-xs font-semibold flex items-center justify-center ${isActive ? 'bg-emerald-600/90 text-emerald-50' : 'bg-red-600/90 text-red-50'}`}>
+                          {isActive ? 'Active' : 'Inactive'}
+                        </span>
                       </div>
-                      <div className="text-base text-gold-100/80 mt-2">Started: {enrollment.startDateLabel}</div>
-                      <div className="text-sm text-gold-100/80 mt-1">Total Paid: ₹{enrollment.totalPaid.toLocaleString()} • Gold Allocated: {enrollment.totalGrams.toFixed(2)}g</div>
+                      <div className="text-base text-white mt-2 drop-shadow-sm">Started: {enrollment.startDateLabel}</div>
+                      <div className="text-sm text-white mt-1 drop-shadow-sm">Total Paid: ₹{enrollment.totalPaid.toLocaleString()} • Gold Allocated: {enrollment.totalGrams.toFixed(2)}g</div>
                       {/* No message for missing transactions; just show calendar below */}
                     </div>
 
@@ -338,7 +340,9 @@ export default function CustomerSchemesPage() {
                           </Link>
                         )}
                         {isActive && enrollment.monthlyInstallmentPaid && (
-                          <Button className="flex-1 gold-gradient text-white opacity-70 cursor-not-allowed" disabled>Top-Up <ArrowRight className="w-4 h-4 ml-2" /></Button>
+                          <Link href={`/c/wallet?enrollmentId=${enrollment.id}`} className="flex-1">
+                            <Button className="w-full gold-gradient text-white">Top-Up <ArrowRight className="w-4 h-4 ml-2" /></Button>
+                          </Link>
                         )}
                       </div>
                     </CardContent>
