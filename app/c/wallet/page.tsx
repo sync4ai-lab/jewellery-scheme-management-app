@@ -32,6 +32,7 @@ type Enrollment = {
   commitment_amount: number | null;
   karat: string | null;
   retailer_id: string;
+  store_id: string | null;
   plan: Plan;
 };
 
@@ -138,7 +139,7 @@ export default function CustomerCollectionsPage() {
     try {
       const { data, error } = await supabase
         .from('enrollments')
-        .select('id, plan_id, commitment_amount, karat, retailer_id, scheme_templates(id, name, installment_amount, duration_months, bonus_percentage)')
+        .select('id, plan_id, commitment_amount, karat, retailer_id, store_id, scheme_templates(id, name, installment_amount, duration_months, bonus_percentage)')
         .eq('customer_id', customer.id)
         .eq('retailer_id', customer.retailer_id)
         .eq('status', 'ACTIVE');
@@ -151,6 +152,7 @@ export default function CustomerCollectionsPage() {
         commitment_amount: row.commitment_amount,
         karat: row.karat || '22K',
         retailer_id: row.retailer_id,
+        store_id: row.store_id ?? null,
         plan: row.scheme_templates
           ? {
               id: row.scheme_templates.id,
@@ -412,9 +414,30 @@ export default function CustomerCollectionsPage() {
       const gramsAllocated = amountNum / goldRate.rate_per_gram;
       const now = new Date().toISOString();
       const txnType = isFirstPaymentThisMonth ? 'PRIMARY_INSTALLMENT' : 'TOP_UP';
+      let storeId = selectedEnrollment?.store_id ?? null;
+
+      if (!storeId) {
+        const { data: customerRow } = await supabase
+          .from('customers')
+          .select('store_id')
+          .eq('id', customer.id)
+          .maybeSingle();
+        storeId = customerRow?.store_id ?? null;
+      }
+
+      if (!storeId) {
+        toast({
+          title: 'Missing store',
+          description: 'Store not assigned for this enrollment. Please contact support.',
+          variant: 'destructive',
+        });
+        setSubmitting(false);
+        return;
+      }
 
       const { error } = await supabase.from('transactions').insert({
         retailer_id: customer.retailer_id,
+        store_id: storeId,
         customer_id: customer.id,
         enrollment_id: selectedEnrollmentId,
         amount_paid: amountNum,

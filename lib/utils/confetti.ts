@@ -26,11 +26,26 @@ export function fireCelebrationConfetti(options: ConfettiOptions = {}) {
 
   document.body.appendChild(canvas);
 
-  const confettiInstance = confetti.create(canvas, { resize: true, useWorker: true });
+  const setCanvasSize = () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  };
+
+  setCanvasSize();
+  window.addEventListener('resize', setCanvasSize, { passive: true });
+
+  let confettiInstance = null as ReturnType<typeof confetti.create> | null;
+
+  try {
+    confettiInstance = confetti.create(canvas, { resize: true, useWorker: true });
+  } catch {
+    // Fallback when workers are blocked by CSP or browser settings.
+    confettiInstance = confetti.create(canvas, { resize: true, useWorker: false });
+  }
   const end = Date.now() + durationMs;
 
   const frame = () => {
-    confettiInstance({
+    confettiInstance?.({
       particleCount: Math.floor(particleCount / 2),
       spread: 75,
       startVelocity: 40,
@@ -43,6 +58,7 @@ export function fireCelebrationConfetti(options: ConfettiOptions = {}) {
       requestAnimationFrame(frame);
     } else {
       setTimeout(() => {
+        window.removeEventListener('resize', setCanvasSize);
         canvas.remove();
       }, 300);
     }
