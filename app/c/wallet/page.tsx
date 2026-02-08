@@ -17,6 +17,8 @@ import { useToast } from '@/hooks/use-toast';
 import { createNotification } from '@/lib/utils/notifications';
 import { fireCelebrationConfetti } from '@/lib/utils/confetti';
 import { TrendingUp } from 'lucide-react';
+import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 
 type Plan = {
   id: string;
@@ -109,6 +111,20 @@ export default function CustomerCollectionsPage() {
       router.push('/c/login');
       return;
     }
+    const cacheKey = `customer:wallet:${customer.id}:${timeFilter}:${customStart || 'na'}:${customEnd || 'na'}`;
+    const cached = readCustomerCache<{
+      enrollments: Enrollment[];
+      selectedEnrollmentId: string;
+      recentTransactions: Transaction[];
+      allTransactions: Transaction[];
+    }>(cacheKey);
+    if (cached) {
+      setEnrollments(cached.enrollments || []);
+      setSelectedEnrollmentId(cached.selectedEnrollmentId || '');
+      setRecentTransactions(cached.recentTransactions || []);
+      setAllTransactions(cached.allTransactions || []);
+      setLoading(false);
+    }
     void loadEnrollments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer, authLoading]);
@@ -130,7 +146,7 @@ export default function CustomerCollectionsPage() {
 
   useEffect(() => {
     if (!customer?.id || enrollments.length === 0) return;
-    void loadTransactions();
+    void loadTransactions(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer?.id, enrollments, timeFilter, customStart, customEnd]);
 
@@ -260,8 +276,24 @@ export default function CustomerCollectionsPage() {
     }
   }
 
-  async function loadTransactions() {
+  async function loadTransactions(preferCache = false) {
     if (!customer?.id || enrollments.length === 0) return;
+
+    const cacheKey = `customer:wallet:${customer.id}:${timeFilter}:${customStart || 'na'}:${customEnd || 'na'}`;
+    if (preferCache) {
+      const cached = readCustomerCache<{
+        enrollments: Enrollment[];
+        selectedEnrollmentId: string;
+        recentTransactions: Transaction[];
+        allTransactions: Transaction[];
+      }>(cacheKey);
+      if (cached) {
+        setRecentTransactions(cached.recentTransactions || []);
+        setAllTransactions(cached.allTransactions || []);
+        setTransactionsLoading(false);
+        return;
+      }
+    }
 
     setTransactionsLoading(true);
 
@@ -286,8 +318,6 @@ export default function CustomerCollectionsPage() {
       if (customer.retailer_id) {
         recentQuery = recentQuery.eq('retailer_id', customer.retailer_id);
       }
-
-      const recentResult = await recentQuery;
 
       const now = new Date();
       const startOfDayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
@@ -337,6 +367,29 @@ export default function CustomerCollectionsPage() {
         endISO = toISO(e);
       }
 
+      const { data: snapshot, error: snapshotError } = await supabase.rpc('get_customer_wallet_transactions', {
+        p_retailer_id: customer.retailer_id ?? null,
+        p_customer_id: customer.id,
+        p_start: startISO,
+        p_end: endISO,
+        p_recent_limit: 10,
+      });
+
+      if (!snapshotError && snapshot) {
+        const recent = Array.isArray((snapshot as any).recent) ? (snapshot as any).recent : [];
+        const all = Array.isArray((snapshot as any).all) ? (snapshot as any).all : [];
+        setRecentTransactions(recent as Transaction[]);
+        setAllTransactions(all as Transaction[]);
+        writeCustomerCache(cacheKey, {
+          enrollments,
+          selectedEnrollmentId,
+          recentTransactions: recent,
+          allTransactions: all,
+        });
+        setTransactionsLoading(false);
+        return;
+      }
+
       let allQuery = supabase
         .from('transactions')
         .select('id, amount_paid, grams_allocated_snapshot, paid_at, enrollment_id, txn_type, mode')
@@ -352,7 +405,7 @@ export default function CustomerCollectionsPage() {
         allQuery = allQuery.eq('retailer_id', customer.retailer_id);
       }
 
-      const allResult = await allQuery;
+      const [recentResult, allResult] = await Promise.all([recentQuery, allQuery]);
 
       const mapRows = (rows: any[]) =>
         rows.map((t) => ({
@@ -361,8 +414,17 @@ export default function CustomerCollectionsPage() {
           karat: enrollmentKaratMap.get(t.enrollment_id),
         }));
 
-      setRecentTransactions(mapRows(recentResult.data || []));
-      setAllTransactions(mapRows(allResult.data || []));
+      const recent = mapRows(recentResult.data || []);
+      const all = mapRows(allResult.data || []);
+      setRecentTransactions(recent);
+      setAllTransactions(all);
+
+      writeCustomerCache(cacheKey, {
+        enrollments,
+        selectedEnrollmentId,
+        recentTransactions: recent,
+        allTransactions: all,
+      });
     } catch (error) {
       console.error('Error loading transactions:', error);
     } finally {
@@ -506,14 +568,7 @@ export default function CustomerCollectionsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gold-50 via-white to-gold-100">
-        <div className="text-center space-y-4">
-          <div className="w-12 h-12 rounded-full jewel-gradient animate-pulse mx-auto" />
-          <p className="text-muted-foreground">Loading your collections...</p>
-        </div>
-      </div>
-    );
+    return <CustomerLoadingSkeleton title="Loading your collections..." />;
   }
 
   return (

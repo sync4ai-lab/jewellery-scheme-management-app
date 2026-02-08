@@ -11,6 +11,8 @@ import { useBranding } from '@/lib/contexts/branding-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 
 
 type Plan = {
@@ -76,6 +78,15 @@ export default function CustomerSchemesPage() {
       router.push('/c/login');
       return;
     }
+    const cacheKey = `customer:schemes:${customer.id}`;
+    const cached = readCustomerCache<{ enrollments: EnrollmentCard[]; availablePlans: Plan[] }>(cacheKey);
+    if (cached) {
+      setEnrollments(cached.enrollments);
+      setAvailablePlans(cached.availablePlans);
+      setLoading(false);
+      void loadData(true);
+      return;
+    }
     void loadData();
   }, [customer, authLoading, router]);
 
@@ -90,48 +101,49 @@ export default function CustomerSchemesPage() {
     router.push(`/c/enroll?planId=${plan.id}`);
   }
 
-  async function loadData() {
+  async function loadData(silent = false) {
     if (!customer && !user) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
 
     try {
       const retailerId = customer?.retailer_id;
       const customerId = customer?.id || user?.id;
       const authUserId = user?.id;
 
-      // Fetch ALL plans for mapping (active/inactive)
-      let allPlansQuery = supabase
-        .from('scheme_templates')
-         .select('id, retailer_id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll');
+      const allPlansPromise = (() => {
+        let allPlansQuery = supabase
+          .from('scheme_templates')
+          .select('id, retailer_id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll');
+        if (retailerId) {
+          allPlansQuery = allPlansQuery.eq('retailer_id', retailerId);
+        }
+        return allPlansQuery;
+      })();
 
-      if (retailerId) {
-        allPlansQuery = allPlansQuery.eq('retailer_id', retailerId);
-      }
+      const enrollmentsPromise = (() => {
+        let enrollmentsQuery = supabase
+          .from('enrollments')
+          .select('id, plan_id, commitment_amount, status, created_at, scheme_templates(id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll, created_at)')
+          .order('created_at', { ascending: false });
 
-      const allPlansResult = await allPlansQuery;
+        if (customerId && authUserId && customerId !== authUserId) {
+          enrollmentsQuery = enrollmentsQuery.in('customer_id', [customerId, authUserId]);
+        } else if (customerId) {
+          enrollmentsQuery = enrollmentsQuery.eq('customer_id', customerId);
+        }
+
+        if (retailerId) {
+          enrollmentsQuery = enrollmentsQuery.eq('retailer_id', retailerId);
+        }
+
+        return enrollmentsQuery;
+      })();
+
+      const [allPlansResult, enrollmentsResult] = await Promise.all([allPlansPromise, enrollmentsPromise]);
       const allPlans: Plan[] = allPlansResult.data || [];
-
-      // Show all active plans as available in the list
-      setAvailablePlans(allPlans.filter(p => p.is_active));
-
-      // Fetch enrollments
-      let enrollmentsQuery = supabase
-        .from('enrollments')
-         .select('id, plan_id, commitment_amount, status, created_at, scheme_templates(id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll, created_at)')
-        .order('created_at', { ascending: false });
-
-      if (customerId && authUserId && customerId !== authUserId) {
-        enrollmentsQuery = enrollmentsQuery.in('customer_id', [customerId, authUserId]);
-      } else if (customerId) {
-        enrollmentsQuery = enrollmentsQuery.eq('customer_id', customerId);
-      }
-
-      if (retailerId) {
-        enrollmentsQuery = enrollmentsQuery.eq('retailer_id', retailerId);
-      }
-
-      const enrollmentsResult = await enrollmentsQuery;
       const enrollmentRows = enrollmentsResult.data || [];
+
+      setAvailablePlans(allPlans.filter(p => p.is_active));
 
       const planMap = new Map(allPlans.map(p => [p.id, p]));
 
@@ -154,17 +166,11 @@ export default function CustomerSchemesPage() {
             }
 
             const { data: txData, error } = await txQuery;
-            if (error) {
-              console.warn('DEBUG transaction query error:', error);
-            }
-            if (txData && txData.length > 0) {
+            if (!error && txData && txData.length > 0) {
               transactions = txData;
-              console.log('DEBUG transactions (pulse logic):', transactions);
-            } else {
-              console.warn('DEBUG: No transactions found for enrollments:', enrollmentIds);
             }
           } catch (err) {
-            console.error('DEBUG transactions query error:', err);
+            console.error('Transactions query error:', err);
           }
         }
       }
@@ -228,24 +234,20 @@ export default function CustomerSchemesPage() {
       });
 
       setEnrollments(cards);
+
+      if (customer?.id) {
+        const cacheKey = `customer:schemes:${customer.id}`;
+        writeCustomerCache(cacheKey, { enrollments: cards, availablePlans: allPlans.filter(p => p.is_active) });
+      }
     } catch (err) {
-      console.error('DEBUG loadData error:', err);
+      console.error('Load data error:', err);
     } finally {
       setLoading(false);
     }
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-gold-25 via-background to-gold-50/30 sparkle-bg">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 rounded-full luxury-gold-gradient animate-pulse mx-auto flex items-center justify-center">
-            <Sparkles className="w-8 h-8 text-white" />
-          </div>
-          <p className="text-lg text-gold-600 font-semibold">Loading your gold journey...</p>
-        </div>
-      </div>
-    );
+    return <CustomerLoadingSkeleton title="Loading your gold journey..." />;
   }
 
   return (

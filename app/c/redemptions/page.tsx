@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
+import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 
 type RedemptionRow = {
 	id: string;
@@ -35,13 +37,21 @@ export default function CustomerRedemptionsPage() {
 			router.push('/c/login');
 			return;
 		}
+		const cacheKey = `customer:redemptions:${customer.id}`;
+		const cached = readCustomerCache<RedemptionRow[]>(cacheKey);
+		if (cached) {
+			setRedemptions(cached);
+			setLoading(false);
+			void loadRedemptions(true);
+			return;
+		}
 		void loadRedemptions();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [customer, authLoading, router]);
 
-	async function loadRedemptions() {
+	async function loadRedemptions(silent = false) {
 		if (!customer && !user) return;
-		setLoading(true);
+		if (!silent) setLoading(true);
 		try {
 			const customerId = customer?.id || user?.id;
 			const authUserId = user?.id;
@@ -64,7 +74,11 @@ export default function CustomerRedemptionsPage() {
 			const { data, error } = await redemptionsQuery;
 
 			if (error) throw error;
-			setRedemptions((data || []) as RedemptionRow[]);
+			const rows = (data || []) as RedemptionRow[];
+			setRedemptions(rows);
+			if (customer?.id) {
+				writeCustomerCache(`customer:redemptions:${customer.id}`, rows);
+			}
 		} catch (err) {
 			console.error('Customer redemptions load error:', err);
 			setRedemptions([]);
@@ -74,11 +88,7 @@ export default function CustomerRedemptionsPage() {
 	}
 
 	if (loading) {
-		return (
-			<div className="flex items-center justify-center min-h-screen">
-				<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gold-500"></div>
-			</div>
-		);
+		return <CustomerLoadingSkeleton title="Loading redemptions..." />;
 	}
 
 	return (

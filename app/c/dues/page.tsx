@@ -11,6 +11,8 @@ import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 
 type DueRow = {
 	id: string;
@@ -47,13 +49,21 @@ export default function CustomerDuesPage() {
 			router.push('/c/login');
 			return;
 		}
+		const cacheKey = `customer:dues:${customer.id}`;
+		const cached = readCustomerCache<DueRow[]>(cacheKey);
+		if (cached) {
+			setDues(cached);
+			setLoading(false);
+			void loadDues(true);
+			return;
+		}
 		void loadDues();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [customer, authLoading, router]);
 
-	async function loadDues() {
+	async function loadDues(silent = false) {
 		if (!customer && !user) return;
-		setLoading(true);
+		if (!silent) setLoading(true);
 		try {
 			const customerId = customer?.id || user?.id;
 			const authUserId = user?.id;
@@ -77,7 +87,11 @@ export default function CustomerDuesPage() {
 			const { data, error } = await duesQuery;
 
 			if (error) throw error;
-			setDues((data || []) as DueRow[]);
+			const rows = (data || []) as DueRow[];
+			setDues(rows);
+			if (customer?.id) {
+				writeCustomerCache(`customer:dues:${customer.id}`, rows);
+			}
 		} catch (err) {
 			console.error('Customer dues load error:', err);
 			setDues([]);
@@ -87,11 +101,7 @@ export default function CustomerDuesPage() {
 	}
 
 	if (loading) {
-		return (
-			<div className="flex items-center justify-center min-h-screen">
-				<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gold-500"></div>
-			</div>
-		);
+		return <CustomerLoadingSkeleton title="Loading dues..." />;
 	}
 
 	return (

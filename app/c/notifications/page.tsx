@@ -11,6 +11,8 @@ import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 
 type Notification = {
   id: string;
@@ -37,12 +39,23 @@ export default function NotificationsPage() {
       router.push('/c/login');
       return;
     }
+    const cacheKey = `customer:notifications:${customer.id}`;
+    const cached = readCustomerCache<Notification[]>(cacheKey);
+    if (cached) {
+      setNotifications(cached);
+      setLoading(false);
+      void loadNotifications(true);
+      return;
+    }
 
     loadNotifications();
   }, [customer, authLoading, router]);
 
-  async function loadNotifications() {
+  async function loadNotifications(silent = false) {
     if (!customer) return;
+    if (!silent) {
+      setLoading(true);
+    }
 
     try {
       const { data } = await supabase
@@ -54,6 +67,9 @@ export default function NotificationsPage() {
 
       if (data) {
         setNotifications(data);
+        if (customer?.id) {
+          writeCustomerCache(`customer:notifications:${customer.id}`, data);
+        }
       }
     } catch (error) {
       console.error('Error loading notifications:', error);
@@ -89,11 +105,7 @@ export default function NotificationsPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-pulse text-xl gold-text">Loading...</div>
-      </div>
-    );
+    return <CustomerLoadingSkeleton title="Loading notifications..." />;
   }
 
   return (

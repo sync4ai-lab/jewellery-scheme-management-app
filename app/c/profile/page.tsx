@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { supabaseCustomer } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
+import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 
 type CustomerProfile = {
   id: string;
@@ -114,14 +115,7 @@ export default function CustomerProfilePage() {
   }
 
   if (authLoading || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gold-50 via-white to-gold-100">
-        <div className="text-center space-y-3">
-          <div className="w-10 h-10 rounded-full jewel-gradient animate-pulse mx-auto" />
-          <p className="text-muted-foreground">Loading profile...</p>
-        </div>
-      </div>
-    );
+    return <CustomerLoadingSkeleton title="Loading profile..." />;
   }
 
   return (

@@ -17,6 +17,7 @@ import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 
 type Plan = {
   id: string;
@@ -347,11 +348,7 @@ export default function PaymentPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-pulse text-xl gold-text">Loading...</div>
-      </div>
-    );
+    return <CustomerLoadingSkeleton title="Loading payment details..." />;
   }
 
   if (!enrollment || !goldRate) {

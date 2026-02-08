@@ -12,6 +12,8 @@ import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 
 type TransactionRow = {
   id: string;
@@ -104,6 +106,26 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
       router.push('/c/login');
       return;
     }
+    const cacheKey = `customer:passbook:${customer.id}:${enrollmentId}`;
+    const cached = readCustomerCache<{
+      enrollment: Enrollment | null;
+      currentBillingMonth: BillingMonth | null;
+      transactions: Transaction[];
+      months: string[];
+      totalPaid: number;
+      totalGrams: number;
+    }>(cacheKey);
+    if (cached) {
+      setEnrollment(cached.enrollment || null);
+      setCurrentBillingMonth(cached.currentBillingMonth || null);
+      setTransactions(cached.transactions || []);
+      setMonths(cached.months || []);
+      setTotalPaid(cached.totalPaid || 0);
+      setTotalGrams(cached.totalGrams || 0);
+      setLoading(false);
+      void loadData(true);
+      return;
+    }
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer, authLoading, enrollmentId, router]);
@@ -132,10 +154,9 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
     };
   }
 
-  async function loadData() {
+  async function loadData(silent = false) {
     if (!customer) return;
-
-    setLoading(true);
+    if (!silent) setLoading(true);
 
     try {
       const [enrollmentResult, transactionsResult, billingMonthResult] = await Promise.all([
@@ -163,6 +184,7 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
           .maybeSingle(),
       ]);
 
+      let transformedEnrollment: Enrollment | null = null;
       if (enrollmentResult.data) {
         const transformed = {
           ...enrollmentResult.data,
@@ -170,11 +192,13 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
             ? (enrollmentResult.data as any).scheme_templates[0]
             : (enrollmentResult.data as any).scheme_templates,
         };
-        setEnrollment(transformed as Enrollment);
+        transformedEnrollment = transformed as Enrollment;
+        setEnrollment(transformedEnrollment);
       } else {
         setEnrollment(null);
       }
 
+      let computedBillingMonth: BillingMonth | null = null;
       if (billingMonthResult.data) {
         const due = billingMonthResult.data.due_date ? new Date(billingMonthResult.data.due_date) : null;
         const today = new Date();
@@ -188,13 +212,14 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
           }
         }
 
-        setCurrentBillingMonth({
+        computedBillingMonth = {
           billing_month: billingMonthResult.data.billing_month,
           due_date: billingMonthResult.data.due_date,
           primary_paid: billingMonthResult.data.primary_paid,
           status: billingMonthResult.data.status,
           days_overdue: daysOverdue,
-        });
+        };
+        setCurrentBillingMonth(computedBillingMonth);
       } else {
         setCurrentBillingMonth(null);
       }
@@ -219,7 +244,20 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
         const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         monthsSet.add(monthKey);
       }
-      setMonths(Array.from(monthsSet).sort().reverse());
+      const monthList = Array.from(monthsSet).sort().reverse();
+      setMonths(monthList);
+
+      if (customer?.id) {
+        const cacheKey = `customer:passbook:${customer.id}:${enrollmentId}`;
+        writeCustomerCache(cacheKey, {
+          enrollment: transformedEnrollment,
+          currentBillingMonth: computedBillingMonth,
+          transactions: txns,
+          months: monthList,
+          totalPaid: paidSum,
+          totalGrams: gramsSum,
+        });
+      }
     } catch (error) {
       console.error('Error loading passbook:', error);
     } finally {
@@ -250,11 +288,7 @@ export default function PassbookPage({ params }: { params: { schemeId: string } 
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-pulse text-xl gold-text">Loading passbook...</div>
-      </div>
-    );
+    return <CustomerLoadingSkeleton title="Loading passbook..." />;
   }
 
   if (!enrollment) {

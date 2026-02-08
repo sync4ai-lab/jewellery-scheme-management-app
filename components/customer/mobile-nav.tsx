@@ -1,6 +1,7 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Activity, ScrollText, Wallet, Gift, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,6 +17,13 @@ const navItems = [
 
 export function CustomerMobileNav() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    navItems.forEach((item) => {
+      router.prefetch(item.href);
+    });
+  }, [router]);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gold-200">
@@ -29,6 +37,7 @@ export function CustomerMobileNav() {
               <Link
                 key={`${item.href}-${item.label}`}
                 href={item.href}
+                prefetch
                 className={cn(
                   'flex flex-col items-center justify-center gap-1 transition-colors',
                   isActive

@@ -14,6 +14,7 @@ import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { createNotification } from '@/lib/utils/notifications';
 import { fireCelebrationConfetti } from '@/lib/utils/confetti';
+import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 
 type Plan = {
   id: string;
@@ -250,14 +251,7 @@ export default function CustomerEnrollmentPage() {
   
   // Show loading while auth is initializing
   if (authLoading || isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gold-50 via-white to-gold-100">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-8 w-8 animate-spin text-gold-600 mx-auto" />
-          <p className="text-gray-600">Loading your enrollment options...</p>
-        </div>
-      </div>
-    );
+    return <CustomerLoadingSkeleton title="Loading enrollment options..." />;
   }
   
   // Don't render if customer not loaded

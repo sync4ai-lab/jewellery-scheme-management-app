@@ -6,6 +6,7 @@ type ConfettiOptions = {
   durationMs?: number;
   particleCount?: number;
   colors?: string[];
+  burstCount?: number;
 };
 
 const defaultColors = ['#f59e0b', '#fbbf24', '#fde68a', '#d97706', '#ef4444'];
@@ -13,7 +14,12 @@ const defaultColors = ['#f59e0b', '#fbbf24', '#fde68a', '#d97706', '#ef4444'];
 export function fireCelebrationConfetti(options: ConfettiOptions = {}) {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
-  const { durationMs = 1400, particleCount = 160, colors = defaultColors } = options;
+  const {
+    durationMs = 2000,
+    particleCount = 70,
+    colors = defaultColors,
+    burstCount = 4,
+  } = options;
 
   const canvas = document.createElement('canvas');
   canvas.style.position = 'fixed';
@@ -35,27 +41,32 @@ export function fireCelebrationConfetti(options: ConfettiOptions = {}) {
   window.addEventListener('resize', setCanvasSize, { passive: true });
 
   const confettiInstance = confetti.create(canvas, { resize: true, useWorker: false });
-  const end = Date.now() + durationMs;
+  const burstInterval = Math.max(220, Math.floor(durationMs / burstCount));
+  let bursts = 0;
 
-  const frame = () => {
+  const fireBurst = () => {
     confettiInstance?.({
-      particleCount: Math.floor(particleCount / 2),
-      spread: 75,
-      startVelocity: 40,
-      ticks: 180,
-      origin: { x: 0.15 + Math.random() * 0.7, y: 0.15 },
+      particleCount: Math.max(12, Math.floor(particleCount / burstCount)),
+      spread: 55,
+      startVelocity: 24,
+      ticks: 220,
+      gravity: 0.6,
+      scalar: 0.95,
+      drift: (Math.random() - 0.5) * 0.3,
+      origin: { x: 0.2 + Math.random() * 0.6, y: 0.08 + Math.random() * 0.1 },
       colors,
     });
-
-    if (Date.now() < end) {
-      requestAnimationFrame(frame);
-    } else {
-      setTimeout(() => {
-        window.removeEventListener('resize', setCanvasSize);
-        canvas.remove();
-      }, 300);
-    }
   };
 
-  frame();
+  const timer = window.setInterval(() => {
+    fireBurst();
+    bursts += 1;
+    if (bursts >= burstCount) {
+      window.clearInterval(timer);
+      window.setTimeout(() => {
+        window.removeEventListener('resize', setCanvasSize);
+        canvas.remove();
+      }, 500);
+    }
+  }, burstInterval);
 }

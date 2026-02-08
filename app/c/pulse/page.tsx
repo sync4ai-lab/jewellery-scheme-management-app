@@ -18,6 +18,8 @@ import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 
 type CustomerMetrics = {
   totalCollections: number;
@@ -72,14 +74,22 @@ export default function CustomerPulsePage() {
 
   useEffect(() => {
     if (!customer?.id) return;
+    const cacheKey = `customer:pulse:${customer.id}:${timeFilter}:${customStart || 'na'}:${customEnd || 'na'}`;
+    const cached = readCustomerCache<{ metrics: CustomerMetrics | null; transactions: Transaction[] }>(cacheKey);
+    if (cached) {
+      setMetrics(cached.metrics);
+      setTransactions(cached.transactions);
+      setLoading(false);
+      void loadDashboard(true);
+      return;
+    }
     void loadDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer?.id, timeFilter, customStart, customEnd]);
 
-  async function loadDashboard() {
+  async function loadDashboard(silent = false) {
     if (!customer?.id && !user?.id) return;
-
-    setLoading(true);
+    if (!silent) setLoading(true);
 
     try {
       const retailerId = customer?.retailer_id;
@@ -134,6 +144,49 @@ export default function CustomerPulsePage() {
 
       const todayDateISO = startOfDayUTC.toISOString().split('T')[0];
 
+      if (customer?.id) {
+        const { data: snapshot, error: snapshotError } = await supabase.rpc('get_customer_pulse_snapshot', {
+          p_retailer_id: retailerId ?? null,
+          p_customer_id: customer.id,
+          p_start: startISO,
+          p_end: endISO,
+        });
+
+        if (!snapshotError && snapshot) {
+          const metricsData = (snapshot as any).metrics || {};
+          const txnsData = Array.isArray((snapshot as any).transactions)
+            ? (snapshot as any).transactions
+            : [];
+
+          const nextMetrics: CustomerMetrics = {
+            totalCollections: safeNumber(metricsData.totalCollections),
+            goldAllocated: safeNumber(metricsData.goldAllocated),
+            silverAllocated: safeNumber(metricsData.silverAllocated),
+            duesOutstanding: safeNumber(metricsData.duesOutstanding),
+            overdueCount: safeNumber(metricsData.overdueCount),
+            totalSchemeValue: safeNumber(metricsData.totalSchemeValue),
+            activeEnrollments: safeNumber(metricsData.activeEnrollments),
+            currentRates: {
+              k18: metricsData.currentRates?.k18 ?? null,
+              k22: metricsData.currentRates?.k22 ?? null,
+              k24: metricsData.currentRates?.k24 ?? null,
+              silver: metricsData.currentRates?.silver ?? null,
+            },
+          };
+
+          setMetrics(nextMetrics);
+          setTransactions(txnsData as Transaction[]);
+
+          if (customer?.id) {
+            const cacheKey = `customer:pulse:${customer.id}:${timeFilter}:${customStart || 'na'}:${customEnd || 'na'}`;
+            writeCustomerCache(cacheKey, { metrics: nextMetrics, transactions: txnsData });
+          }
+
+          setLoading(false);
+          return;
+        }
+      }
+
       // Fetch customer's enrollments
       let enrollmentsQuery = supabase
         .from('enrollments')
@@ -161,46 +214,40 @@ export default function CustomerPulsePage() {
         enrollmentSchemeMap.set(e.id, e.scheme_templates?.name || 'Unknown');
       });
 
-      // Fetch transactions for this customer's enrollments (in period)
-      let txnsResult: any = { data: [], error: null };
-      if (enrollmentIds.length > 0) {
-        let txnsQuery = supabase
-          .from('transactions')
-          .select('id, amount_paid, grams_allocated_snapshot, paid_at, enrollment_id, txn_type')
-          .eq('payment_status', 'SUCCESS')
-          .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
-          .in('enrollment_id', enrollmentIds)
-          .gte('paid_at', startISO)
-          .lt('paid_at', endISO)
-          .order('paid_at', { ascending: false })
-          .limit(100);
+      const txnsPromise = enrollmentIds.length > 0
+        ? (() => {
+            let txnsQuery = supabase
+              .from('transactions')
+              .select('id, amount_paid, grams_allocated_snapshot, paid_at, enrollment_id, txn_type')
+              .eq('payment_status', 'SUCCESS')
+              .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
+              .in('enrollment_id', enrollmentIds)
+              .gte('paid_at', startISO)
+              .lt('paid_at', endISO)
+              .order('paid_at', { ascending: false })
+              .limit(100);
+            if (retailerId) {
+              txnsQuery = txnsQuery.eq('retailer_id', retailerId);
+            }
+            return txnsQuery;
+          })()
+        : Promise.resolve({ data: [], error: null });
 
-        if (retailerId) {
-          txnsQuery = txnsQuery.eq('retailer_id', retailerId);
-        }
-
-        txnsResult = await txnsQuery;
-      }
-
-      if (txnsResult.error) console.error('Transactions error:', txnsResult.error);
-
-      // Fetch all-time transactions for totals
-      let allTimeTxns: any = { data: [], error: null };
-      if (enrollmentIds.length > 0) {
-        let allTimeQuery = supabase
-          .from('transactions')
-          .select('amount_paid, grams_allocated_snapshot, enrollment_id')
-          .eq('payment_status', 'SUCCESS')
-          .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
-          .in('enrollment_id', enrollmentIds)
-          .limit(500);
-
-        if (retailerId) {
-          allTimeQuery = allTimeQuery.eq('retailer_id', retailerId);
-        }
-
-        allTimeTxns = await allTimeQuery;
-      }
+      const allTimePromise = enrollmentIds.length > 0
+        ? (() => {
+            let allTimeQuery = supabase
+              .from('transactions')
+              .select('amount_paid, grams_allocated_snapshot, enrollment_id')
+              .eq('payment_status', 'SUCCESS')
+              .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
+              .in('enrollment_id', enrollmentIds)
+              .limit(500);
+            if (retailerId) {
+              allTimeQuery = allTimeQuery.eq('retailer_id', retailerId);
+            }
+            return allTimeQuery;
+          })()
+        : Promise.resolve({ data: [], error: null });
 
       // Calculate totals
       let totalCollections = 0;
@@ -217,38 +264,35 @@ export default function CustomerPulsePage() {
         }
       });
 
-      // Calculate dues
-      let duesResult: any = { data: [], error: null };
-      if (enrollmentIds.length > 0) {
-        let duesQuery = supabase
-          .from('enrollment_billing_months')
-          .select('enrollment_id')
-          .in('enrollment_id', enrollmentIds)
-          .eq('primary_paid', false)
-          .gte('due_date', todayDateISO);
+      const duesPromise = enrollmentIds.length > 0
+        ? (() => {
+            let duesQuery = supabase
+              .from('enrollment_billing_months')
+              .select('enrollment_id')
+              .in('enrollment_id', enrollmentIds)
+              .eq('primary_paid', false)
+              .gte('due_date', todayDateISO);
+            if (retailerId) {
+              duesQuery = duesQuery.eq('retailer_id', retailerId);
+            }
+            return duesQuery;
+          })()
+        : Promise.resolve({ data: [], error: null });
 
-        if (retailerId) {
-          duesQuery = duesQuery.eq('retailer_id', retailerId);
-        }
-
-        duesResult = await duesQuery;
-      }
-
-      let overdueResult: any = { count: 0, error: null };
-      if (enrollmentIds.length > 0) {
-        let overdueQuery = supabase
-          .from('enrollment_billing_months')
-          .select('enrollment_id', { count: 'exact', head: true })
-          .in('enrollment_id', enrollmentIds)
-          .eq('primary_paid', false)
-          .lt('due_date', todayDateISO);
-
-        if (retailerId) {
-          overdueQuery = overdueQuery.eq('retailer_id', retailerId);
-        }
-
-        overdueResult = await overdueQuery;
-      }
+      const overduePromise = enrollmentIds.length > 0
+        ? (() => {
+            let overdueQuery = supabase
+              .from('enrollment_billing_months')
+              .select('enrollment_id', { count: 'exact', head: true })
+              .in('enrollment_id', enrollmentIds)
+              .eq('primary_paid', false)
+              .lt('due_date', todayDateISO);
+            if (retailerId) {
+              overdueQuery = overdueQuery.eq('retailer_id', retailerId);
+            }
+            return overdueQuery;
+          })()
+        : Promise.resolve({ count: 0, error: null });
 
       // Calculate total scheme value
       let totalSchemeValue = 0;
@@ -265,12 +309,18 @@ export default function CustomerPulsePage() {
         return query.maybeSingle();
       };
 
-      const [rate18Result, rate22Result, rate24Result, rateSilverResult] = await Promise.all([
+      const [txnsResult, allTimeTxns, duesResult, overdueResult, rate18Result, rate22Result, rate24Result, rateSilverResult] = await Promise.all([
+        txnsPromise,
+        allTimePromise,
+        duesPromise,
+        overduePromise,
         rateBaseQuery('18K'),
         rateBaseQuery('22K'),
         rateBaseQuery('24K'),
         rateBaseQuery('SILVER'),
       ]);
+
+      if (txnsResult.error) console.error('Transactions error:', txnsResult.error);
 
       const currentRates = {
         k18: rate18Result.data ? { rate: safeNumber(rate18Result.data.rate_per_gram), validFrom: rate18Result.data.effective_from } : null,
@@ -288,7 +338,7 @@ export default function CustomerPulsePage() {
         }
       });
 
-      setMetrics({
+      const nextMetrics = {
         totalCollections,
         goldAllocated,
         silverAllocated,
@@ -297,7 +347,9 @@ export default function CustomerPulsePage() {
         totalSchemeValue,
         activeEnrollments: (enrollments || []).filter((e: any) => e.status === 'ACTIVE').length,
         currentRates,
-      });
+      } as CustomerMetrics;
+
+      setMetrics(nextMetrics);
 
       // Format transactions for display
       const formattedTxns = (txnsResult.data || []).map((t: any) => ({
@@ -305,6 +357,11 @@ export default function CustomerPulsePage() {
         scheme_name: enrollmentSchemeMap.get(t.enrollment_id) || 'Unknown',
       }));
       setTransactions(formattedTxns);
+
+      if (customer?.id) {
+        const cacheKey = `customer:pulse:${customer.id}:${timeFilter}:${customStart || 'na'}:${customEnd || 'na'}`;
+        writeCustomerCache(cacheKey, { metrics: nextMetrics, transactions: formattedTxns });
+      }
 
     } catch (error) {
       console.error('Dashboard load error:', error);
@@ -314,11 +371,7 @@ export default function CustomerPulsePage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gold-500"></div>
-      </div>
-    );
+    return <CustomerLoadingSkeleton title="Loading dashboard..." />;
   }
 
   return (
