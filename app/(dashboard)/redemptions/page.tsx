@@ -158,17 +158,18 @@ export default function RedemptionsPage() {
       if (error) throw error;
 
       const rawRows = data || [];
-      const enrollmentIds = Array.from(
-        new Set(rawRows.map((row: any) => row.enrollment_id).filter(Boolean))
+      const processedByIds = Array.from(
+        new Set(rawRows.map((row: any) => row.processed_by).filter(Boolean))
       ) as string[];
-      const enrollmentMap = new Map<string, any>();
-      const planMap = new Map<string, string>();
-      const customerMap = new Map<string, { full_name: string; phone: string }>();
+      const processedByMap = new Map<string, string>();
 
-      if (enrollmentIds.length > 0) {
-        const { data: enrollmentsData, error: enrollmentsError } = await supabase
-          .from('enrollments')
-          .select('id, karat, customer_id, plan_id')
+      if (processedByIds.length > 0) {
+        const { data: processedByProfiles, error: processedByError } = await supabase
+          .from('user_profiles')
+          .select('id, full_name')
+          .in('id', processedByIds);
+
+        if (processedByError) {
           console.error('Processed by lookup error:', processedByError);
         } else {
           (processedByProfiles || []).forEach((p: any) => {
