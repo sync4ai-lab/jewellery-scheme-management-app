@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   TrendingUp,
   Users,
+  UserCheck,
   Coins,
   AlertCircle,
   Clock,
@@ -45,8 +46,12 @@ type DashboardMetrics = {
   dues24K: number;
   duesSilver: number;
   overdueCount: number;
-  newEnrollmentsPeriod: number;
-  activeCustomers: number;
+  totalEnrollmentsPeriod: number;
+  activeEnrollmentsPeriod: number;
+  totalCustomersPeriod: number;
+  activeCustomersPeriod: number;
+  readyToRedeemPeriod: number;
+  completedRedemptionsPeriod: number;
   planAmountTotal: number;
   totalActiveEnrollmentsAllTime: number;
   currentRates: {
@@ -153,19 +158,6 @@ export default function PulseDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analyticsFilter, analyticsStart, analyticsEnd, metalTypeFilter]);
 
-  async function safeCountCustomers(retailerId: string): Promise<number> {
-    const { count, error } = await supabase
-      .from('customers')
-      .select('id', { count: 'exact', head: true })
-      .eq('retailer_id', retailerId);
-
-    if (error) {
-      console.error('Error counting customers:', error);
-      return 0;
-    }
-    return count || 0;
-  }
-
   async function loadDashboard() {
     if (!profile?.retailer_id) return;
 
@@ -227,13 +219,13 @@ export default function PulseDashboard() {
         rate24Result,
         rateSilverResult,
         txnsResult,
-        duesResult,
-        overdueResult,
-        enrollmentsResult,
-        customersCount,
+        duesBillingResult,
+        totalEnrollmentsResult,
+        activeEnrollmentsResult,
         staffResult,
         activeEnrollmentsAll,
-        schemesAll,
+        customersPeriodResult,
+        completedRedemptionsResult,
       ] = await Promise.all([
         supabase
           .from('gold_rates')
@@ -280,26 +272,24 @@ export default function PulseDashboard() {
           .from('enrollment_billing_months')
           .select('enrollment_id')
           .eq('retailer_id', retailerId)
-          .gte('due_date', startISO.split('T')[0])
-          .lt('due_date', endISO.split('T')[0])
-          .eq('primary_paid', false)
-          .limit(500),
-        supabase
-          .from('enrollment_billing_months')
-          .select('enrollment_id', { count: 'exact', head: true })
-          .eq('retailer_id', retailerId)
           .lt('due_date', todayDateISO)
           .eq('primary_paid', false)
+          .limit(5000),
+        supabase
+          .from('enrollments')
+          .select('id', { count: 'exact', head: true })
+          .eq('retailer_id', retailerId)
+          .gte('created_at', startISO)
+          .lt('created_at', endISO)
           .limit(500),
         supabase
           .from('enrollments')
           .select('id', { count: 'exact', head: true })
           .eq('retailer_id', retailerId)
-          .eq('status', 'ACTIVE')
+          .or('status.eq.ACTIVE,status.is.null')
           .gte('created_at', startISO)
           .lt('created_at', endISO)
           .limit(500),
-        safeCountCustomers(retailerId),
         supabase.rpc('get_staff_leaderboard', { period_days: 30 }),
         supabase
           .from('enrollments')
@@ -308,10 +298,19 @@ export default function PulseDashboard() {
           .eq('status', 'ACTIVE')
           .limit(500),
         supabase
-          .from('scheme_templates')
-          .select('id, installment_amount, duration_months')
+          .from('customers')
+          .select('id')
           .eq('retailer_id', retailerId)
-          .limit(100),
+          .gte('created_at', startISO)
+          .lt('created_at', endISO)
+          .limit(500),
+        supabase
+          .from('redemptions')
+          .select('id', { count: 'exact', head: true })
+          .eq('retailer_id', retailerId)
+          .eq('redemption_status', 'COMPLETED')
+          .gte('redemption_date', startISO)
+          .lt('redemption_date', endISO),
       ]);
 
       // Log any errors from the parallel queries
@@ -320,11 +319,12 @@ export default function PulseDashboard() {
       if (rate24Result.error) console.error('Gold rate 24K error:', rate24Result.error);
       if (rateSilverResult.error) console.error('Silver rate error:', rateSilverResult.error);
       if (txnsResult.error) console.error('Transactions error:', txnsResult.error);
-      if (duesResult.error) console.error('Dues error:', duesResult.error);
-      if (overdueResult.error) console.error('Overdue error:', overdueResult.error);
-      if (enrollmentsResult.error) console.error('Enrollments count error:', enrollmentsResult.error);
+      if (duesBillingResult.error) console.error('Dues error:', duesBillingResult.error);
+      if (totalEnrollmentsResult.error) console.error('Enrollments count error:', totalEnrollmentsResult.error);
+      if (activeEnrollmentsResult.error) console.error('Active enrollments count error:', activeEnrollmentsResult.error);
       if (activeEnrollmentsAll.error) console.error('Active enrollments error:', activeEnrollmentsAll.error);
-      if (schemesAll.error) console.error('Schemes error:', schemesAll.error);
+      if (customersPeriodResult.error) console.error('Customers period error:', customersPeriodResult.error);
+      if (completedRedemptionsResult.error) console.error('Completed redemptions error:', completedRedemptionsResult.error);
 
       const currentRates = {
         k18: rate18Result.data
@@ -352,6 +352,105 @@ export default function PulseDashboard() {
             }
           : null,
       };
+
+      const periodCustomers = customersPeriodResult.data || [];
+      const totalCustomersPeriod = periodCustomers.length;
+      let activeCustomersPeriod = 0;
+
+      if (periodCustomers.length > 0) {
+        const customerIds = periodCustomers.map((c: any) => c.id);
+        const { data: activeCustomerEnrollments, error: activeCustomerEnrollmentsError } = await supabase
+          .from('enrollments')
+          .select('id, customer_id, status')
+          .eq('retailer_id', retailerId)
+          .in('customer_id', customerIds)
+          .or('status.eq.ACTIVE,status.is.null')
+          .limit(1000);
+
+        if (activeCustomerEnrollmentsError) {
+          console.error('Active customers error:', activeCustomerEnrollmentsError);
+        } else {
+          const activeCustomerIds = new Set((activeCustomerEnrollments || []).map((e: any) => e.customer_id));
+          activeCustomersPeriod = activeCustomerIds.size;
+        }
+      }
+
+      let readyToRedeemPeriod = 0;
+      try {
+        const { data: eligibleEnrollmentsData, error: eligibleEnrollmentsError } = await supabase
+          .from('enrollments')
+          .select('id, created_at, maturity_date, commitment_amount, scheme_templates(duration_months)')
+          .eq('retailer_id', retailerId)
+          .eq('status', 'ACTIVE');
+
+        if (eligibleEnrollmentsError) {
+          console.error('Eligible enrollments error:', eligibleEnrollmentsError);
+        } else if (eligibleEnrollmentsData && eligibleEnrollmentsData.length > 0) {
+          const enrollmentIds = eligibleEnrollmentsData.map((e: any) => e.id);
+          const { data: redemptionTxnData, error: redemptionTxnError } = await supabase
+            .from('transactions')
+            .select('enrollment_id, grams_allocated_snapshot, amount_paid, txn_type')
+            .eq('retailer_id', retailerId)
+            .in('enrollment_id', enrollmentIds)
+            .eq('payment_status', 'SUCCESS');
+
+          if (redemptionTxnError) {
+            console.error('Eligible enrollments transactions error:', redemptionTxnError);
+          } else {
+            const gramsMap = new Map<string, { grams: number; paid: number; primaryPaid: number }>();
+            (redemptionTxnData || []).forEach((t: any) => {
+              const current = gramsMap.get(t.enrollment_id) || { grams: 0, paid: 0, primaryPaid: 0 };
+              const paid = t.amount_paid || 0;
+              const isPrimary = t.txn_type === 'PRIMARY_INSTALLMENT';
+              gramsMap.set(t.enrollment_id, {
+                grams: current.grams + (t.grams_allocated_snapshot || 0),
+                paid: current.paid + paid,
+                primaryPaid: current.primaryPaid + (isPrimary ? paid : 0),
+              });
+            });
+
+            const periodStart = new Date(startISO);
+            const periodEnd = new Date(endISO);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            readyToRedeemPeriod = eligibleEnrollmentsData.filter((e: any) => {
+              const durationMonths = e.scheme_templates?.duration_months || 0;
+              const commitmentAmount = e.commitment_amount || 0;
+              const requiredDue = commitmentAmount * durationMonths;
+
+              if (!durationMonths || !commitmentAmount || !requiredDue) return false;
+
+              const maturityBase = e.maturity_date
+                ? new Date(e.maturity_date)
+                : e.created_at
+                  ? new Date(e.created_at)
+                  : null;
+
+              if (!maturityBase) return false;
+
+              if (!e.maturity_date && durationMonths) {
+                maturityBase.setMonth(maturityBase.getMonth() + durationMonths);
+              }
+
+              maturityBase.setHours(0, 0, 0, 0);
+              if (maturityBase > today) return false;
+
+              const totals = gramsMap.get(e.id) || { grams: 0, paid: 0, primaryPaid: 0 };
+              if (totals.grams <= 0) return false;
+              if (totals.primaryPaid < requiredDue) return false;
+
+              if (maturityBase < periodStart || maturityBase >= periodEnd) return false;
+
+              return true;
+            }).length;
+          }
+        }
+      } catch (error) {
+        console.error('Error computing ready-to-redeem count:', error);
+      }
+
+      const completedRedemptionsPeriod = completedRedemptionsResult.count || 0;
 
       // Fetch all enrollments to get karat information
       // Fetch ALL enrollments for the retailer (not just ACTIVE)
@@ -406,45 +505,47 @@ export default function PulseDashboard() {
       // We need to fetch enrollment details for unpaid billing months
       let dues18K = 0, dues22K = 0, dues24K = 0, duesSilver = 0;
       
-      if (duesResult.data && duesResult.data.length > 0) {
-        const dueEnrollmentIds = duesResult.data.map((d: any) => d.enrollment_id);
+      const dueRows = duesBillingResult.data || [];
+      const dueEnrollmentIds = Array.from(new Set(dueRows.map((d: any) => d.enrollment_id)));
+      const overdueCount = dueRows.length;
+
+      if (dueEnrollmentIds.length > 0) {
         const { data: dueEnrollments } = await supabase
           .from('enrollments')
-          .select('id, karat, commitment_amount')
+          .select('id, karat, commitment_amount, scheme_templates(installment_amount)')
           .eq('retailer_id', retailerId)
           .in('id', dueEnrollmentIds);
-        
+
+        const enrollmentMap = new Map<string, { karat: string; monthly_amount: number }>();
         (dueEnrollments || []).forEach((e: any) => {
-          const amt = safeNumber(e.commitment_amount);
-          
-          if (e.karat === '18K') {
+          const monthlyAmount =
+            (typeof e.commitment_amount === 'number' && e.commitment_amount > 0
+              ? e.commitment_amount
+              : e.scheme_templates?.installment_amount) ?? 0;
+          enrollmentMap.set(e.id, {
+            karat: e.karat || '22K',
+            monthly_amount: safeNumber(monthlyAmount),
+          });
+        });
+
+        dueRows.forEach((row: any) => {
+          const enrollment = enrollmentMap.get(row.enrollment_id);
+          if (!enrollment) return;
+          const amt = enrollment.monthly_amount;
+          if (enrollment.karat === '18K') {
             dues18K += amt;
-          } else if (e.karat === '22K') {
+          } else if (enrollment.karat === '22K') {
             dues22K += amt;
-          } else if (e.karat === '24K') {
+          } else if (enrollment.karat === '24K') {
             dues24K += amt;
-          } else if (e.karat === 'SILVER') {
+          } else if (enrollment.karat === 'SILVER') {
             duesSilver += amt;
           }
         });
       }
 
       const duesOutstanding = dues18K + dues22K + dues24K + duesSilver;
-
-
-      // Compute plan total = sum(installment_amount * duration_months) for each active enrollment
-      const schemesMap = new Map<string, { installment_amount: number; duration_months: number }>();
-      (schemesAll.data || []).forEach((s: any) => {
-        schemesMap.set(String(s.id), {
-          installment_amount: safeNumber(s.installment_amount),
-          duration_months: safeNumber(s.duration_months),
-        });
-      });
-      const planAmountTotal = (activeEnrollmentsAll.data || []).reduce((sum: number, e: any) => {
-        const s = schemesMap.get(String(e.plan_id));
-        if (!s) return sum;
-        return sum + s.installment_amount * s.duration_months;
-      }, 0);
+      const planAmountTotal = periodCollections;
 
       setMetrics({
         periodCollections,
@@ -462,9 +563,13 @@ export default function PulseDashboard() {
         dues22K,
         dues24K,
         duesSilver,
-        overdueCount: overdueResult.count || 0,
-        newEnrollmentsPeriod: enrollmentsResult.count || 0,
-        activeCustomers: customersCount || 0,
+        overdueCount,
+        totalEnrollmentsPeriod: totalEnrollmentsResult.count || 0,
+        activeEnrollmentsPeriod: activeEnrollmentsResult.count || 0,
+        totalCustomersPeriod,
+        activeCustomersPeriod,
+        readyToRedeemPeriod,
+        completedRedemptionsPeriod,
         planAmountTotal,
         totalActiveEnrollmentsAllTime: (activeEnrollmentsAll.data || []).length,
         currentRates,
@@ -1071,17 +1176,17 @@ export default function PulseDashboard() {
             </div>
             <div className="p-4 rounded-2xl bg-gradient-to-br from-orange-100 to-orange-50 dark:from-orange-900/30 dark:to-orange-800/20">
               <p className="text-xs text-muted-foreground mb-1">Total Dues & Overdue</p>
-              <p className="text-2xl font-bold text-orange-600">{(metrics?.duesOutstanding ?? 0) + (metrics?.overdueCount ?? 0)}</p>
+              <p className="text-2xl font-bold text-orange-600">{(metrics?.duesOutstanding ?? 0).toLocaleString()}</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="jewel-card">
           <CardHeader>
-            <CardTitle>New Enrollments</CardTitle>
-            <CardDescription>{periodLabel} customer acquisitions</CardDescription>
+            <CardTitle>Enrollments</CardTitle>
+            <CardDescription>{periodLabel} enrollment activity</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-4">
@@ -1089,10 +1194,18 @@ export default function PulseDashboard() {
                 <Users className="w-10 h-10 text-blue-600" />
               </div>
               <div>
-                <div className="text-4xl font-bold">{metrics?.newEnrollmentsPeriod || 0}</div>
-                <p className="text-sm text-muted-foreground">
-                  New enrollments • Active customers: {metrics?.activeCustomers || 0}
-                </p>
+                <div className="text-4xl font-bold">{metrics?.totalEnrollmentsPeriod || 0}</div>
+                <p className="text-sm text-muted-foreground">Total enrollments</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="p-3 rounded-xl bg-muted/40">
+                <p className="text-xs text-muted-foreground">Total Enrollments</p>
+                <p className="text-lg font-semibold">{metrics?.totalEnrollmentsPeriod || 0}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-muted/40">
+                <p className="text-xs text-muted-foreground">Active Enrollments</p>
+                <p className="text-lg font-semibold">{metrics?.activeEnrollmentsPeriod || 0}</p>
               </div>
             </div>
             <Button onClick={() => router.push('/enroll')} className="w-full mt-4 jewel-gradient text-white hover:opacity-90">
@@ -1102,6 +1215,70 @@ export default function PulseDashboard() {
           </CardContent>
         </Card>
 
+        <Card className="jewel-card">
+          <CardHeader>
+            <CardTitle>Customers</CardTitle>
+            <CardDescription>{periodLabel} customer activity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-900/30 dark:to-emerald-800/20 flex items-center justify-center">
+                <UserCheck className="w-10 h-10 text-emerald-600" />
+              </div>
+              <div>
+                <div className="text-4xl font-bold">{metrics?.totalCustomersPeriod || 0}</div>
+                <p className="text-sm text-muted-foreground">Total customers</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="p-3 rounded-xl bg-muted/40">
+                <p className="text-xs text-muted-foreground">Total Customers</p>
+                <p className="text-lg font-semibold">{metrics?.totalCustomersPeriod || 0}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-muted/40">
+                <p className="text-xs text-muted-foreground">Active Customers</p>
+                <p className="text-lg font-semibold">{metrics?.activeCustomersPeriod || 0}</p>
+              </div>
+            </div>
+            <Button variant="outline" className="w-full mt-4" onClick={() => router.push('/dashboard/customers')}>
+              View Customers
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="jewel-card">
+          <CardHeader>
+            <CardTitle>Redemptions</CardTitle>
+            <CardDescription>{periodLabel} redemption activity</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-rose-100 to-rose-50 dark:from-rose-900/30 dark:to-rose-800/20 flex items-center justify-center">
+                <Coins className="w-10 h-10 text-rose-600" />
+              </div>
+              <div>
+                <div className="text-4xl font-bold">{metrics?.readyToRedeemPeriod || 0}</div>
+                <p className="text-sm text-muted-foreground">Ready to redeem</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="p-3 rounded-xl bg-muted/40">
+                <p className="text-xs text-muted-foreground">Ready to Redeem</p>
+                <p className="text-lg font-semibold">{metrics?.readyToRedeemPeriod || 0}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-muted/40">
+                <p className="text-xs text-muted-foreground">Completed</p>
+                <p className="text-lg font-semibold">{metrics?.completedRedemptionsPeriod || 0}</p>
+              </div>
+            </div>
+            <Button variant="outline" className="w-full mt-4" onClick={() => router.push('/dashboard/redemptions')}>
+              View Redemptions
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6">
         <Card className="jewel-card">
           <CardHeader>
             <div className="flex items-center justify-between">
