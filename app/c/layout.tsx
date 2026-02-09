@@ -45,17 +45,17 @@ function CustomerGuard({ children }: { children: React.ReactNode }) {
 
 
 export default function CustomerLayout({ children }: { children: React.ReactNode }) {
-  const CustomerTopBar = require('@/components/customer/top-bar').CustomerTopBar;
-  const CustomerMobileNav = require('@/components/customer/mobile-nav').CustomerMobileNav;
-  const BrandingProvider = require('@/lib/contexts/branding-context').BrandingProvider;
   const pathname = usePathname();
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => { setMounted(true); }, []);
   const isLoginPage = pathname === '/c/login';
   // Hydration guard: only render on client
-  if (!mounted) return null;
+  if (!mounted) {
+    return <div className="min-h-screen" />;
+  }
   // Only render login page (no nav/top-bar/mobile-nav) until authenticated
   if (isLoginPage) {
+    const BrandingProvider = require('@/lib/contexts/branding-context').BrandingProvider;
     return (
       <CustomerAuthProvider>
         <AbortErrorBoundary>
@@ -69,6 +69,9 @@ export default function CustomerLayout({ children }: { children: React.ReactNode
     );
   }
   // Authenticated: show full layout
+  const CustomerTopBar = require('@/components/customer/top-bar').CustomerTopBar;
+  const CustomerMobileNav = require('@/components/customer/mobile-nav').CustomerMobileNav;
+  const BrandingProvider = require('@/lib/contexts/branding-context').BrandingProvider;
   return (
     <CustomerAuthProvider>
       <AbortErrorBoundary>
