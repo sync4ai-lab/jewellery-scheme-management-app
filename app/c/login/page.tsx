@@ -43,27 +43,31 @@ export default function CustomerLoginPage() {
 
 
   useEffect(() => {
-    // Clear any customer bypass values on login page mount
-    try {
-      localStorage.removeItem('customer_phone_bypass');
-      localStorage.removeItem('customer_retailer_bypass');
-      localStorage.removeItem('customer_bypass_payload');
-    } catch (storageError) {
-      console.warn('[CustomerLogin] localStorage unavailable', storageError);
-    }
-    try {
-      sessionStorage.removeItem('customer_phone_bypass');
-      sessionStorage.removeItem('customer_retailer_bypass');
-      sessionStorage.removeItem('customer_bypass_payload');
-    } catch (storageError) {
-      console.warn('[CustomerLogin] sessionStorage unavailable', storageError);
-    }
-    document.cookie = 'customer_phone_bypass=; path=/; max-age=0';
-    document.cookie = 'customer_retailer_bypass=; path=/; max-age=0';
-    document.cookie = 'customer_bypass_payload=; path=/; max-age=0';
-    // Ensure any previous customer session is cleared before logging in a new customer
-    void supabase.auth.signOut();
-    setMounted(true);
+    const resetLoginState = async () => {
+      // Clear any customer bypass values on login page mount
+      try {
+        localStorage.removeItem('customer_phone_bypass');
+        localStorage.removeItem('customer_retailer_bypass');
+        localStorage.removeItem('customer_bypass_payload');
+      } catch (storageError) {
+        console.warn('[CustomerLogin] localStorage unavailable', storageError);
+      }
+      try {
+        sessionStorage.removeItem('customer_phone_bypass');
+        sessionStorage.removeItem('customer_retailer_bypass');
+        sessionStorage.removeItem('customer_bypass_payload');
+      } catch (storageError) {
+        console.warn('[CustomerLogin] sessionStorage unavailable', storageError);
+      }
+      document.cookie = 'customer_phone_bypass=; path=/; max-age=0';
+      document.cookie = 'customer_retailer_bypass=; path=/; max-age=0';
+      document.cookie = 'customer_bypass_payload=; path=/; max-age=0';
+      // Ensure any previous customer session is cleared before logging in a new customer
+      await supabase.auth.signOut();
+      setMounted(true);
+    };
+
+    void resetLoginState();
   }, []);
 
   useEffect(() => {

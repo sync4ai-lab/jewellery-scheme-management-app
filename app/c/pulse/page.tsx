@@ -67,9 +67,10 @@ type PortfolioPoint = {
 
 type AvgPricePoint = {
   date: string;
-  avgBuyPrice: number;
-  marketPrice: number;
-  metalLabel: 'GOLD' | 'SILVER';
+  avgBuyGold?: number;
+  marketGold?: number;
+  avgBuySilver?: number;
+  marketSilver?: number;
 };
 
 type EfficiencyPoint = {
@@ -85,6 +86,13 @@ type CustomerPulseCache = {
   efficiencySeries: EfficiencyPoint[];
   growthRate: number | null;
   portfolioValue: number;
+};
+
+type SchemeOption = {
+  id: string;
+  name: string;
+  karat: string;
+  status: string;
 };
 
 function safeNumber(v: unknown): number {
@@ -145,6 +153,8 @@ export default function CustomerPulsePage() {
   const [efficiencySeries, setEfficiencySeries] = useState<EfficiencyPoint[]>([]);
   const [growthRate, setGrowthRate] = useState<number | null>(null);
   const [portfolioValue, setPortfolioValue] = useState<number>(0);
+  const [schemeOptions, setSchemeOptions] = useState<SchemeOption[]>([]);
+  const [schemeFilter, setSchemeFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
   const [timeFilter, setTimeFilter] = useState<'DAY' | 'WEEK' | 'MONTH' | 'YEAR' | 'RANGE'>('MONTH');
   const [customStart, setCustomStart] = useState<string>('');
@@ -162,7 +172,7 @@ export default function CustomerPulsePage() {
 
   useEffect(() => {
     if (!customer?.id) return;
-    const cacheKey = `customer:pulse:${customer.id}:${timeFilter}:${customStart || 'na'}:${customEnd || 'na'}`;
+    const cacheKey = `customer:pulse:${customer.id}:${schemeFilter}:${timeFilter}:${customStart || 'na'}:${customEnd || 'na'}`;
     const cached = readCustomerCache<CustomerPulseCache>(cacheKey);
     if (cached) {
       setMetrics(cached.metrics);
@@ -178,7 +188,7 @@ export default function CustomerPulsePage() {
     }
     void loadDashboard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer?.id, timeFilter, customStart, customEnd]);
+  }, [customer?.id, schemeFilter, timeFilter, customStart, customEnd]);
 
   async function loadDashboard(silent = false) {
     if (!customer?.id && !user?.id) return;
@@ -236,6 +246,8 @@ export default function CustomerPulsePage() {
       }
 
       const todayDateISO = startOfDayUTC.toISOString().split('T')[0];
+      const rangeStartKey = toDateKey(startISO);
+      const rangeEndKey = toDateKey(new Date(new Date(endISO).getTime() - 1));
 
       if (customer?.id) {
         const { data: snapshot, error: snapshotError } = await supabase.rpc('get_customer_pulse_snapshot', {
@@ -299,6 +311,17 @@ export default function CustomerPulsePage() {
         enrollmentSchemeMap.set(e.id, e.scheme_templates?.name || 'Unknown');
         if (e.status === 'ACTIVE') activeEnrollmentIds.add(e.id);
       });
+
+      const nextSchemeOptions = (enrollments || []).map((e: any) => ({
+        id: e.id,
+        name: e.scheme_templates?.name || 'Unknown',
+        karat: e.karat,
+        status: e.status,
+      }));
+      setSchemeOptions(nextSchemeOptions);
+      if (schemeFilter !== 'ALL' && !nextSchemeOptions.some((opt) => opt.id === schemeFilter)) {
+        setSchemeFilter('ALL');
+      }
 
       const txnsPromise = enrollmentIds.length > 0
         ? (() => {
@@ -473,14 +496,24 @@ export default function CustomerPulsePage() {
         console.error('Rate history error:', rateHistoryResult.error);
       }
 
-      const activeTxns = (allTimeTxns.data || []).filter((t: any) => activeEnrollmentIds.has(t.enrollment_id));
+      const selectedEnrollmentIds = schemeFilter === 'ALL'
+        ? activeEnrollmentIds
+        : new Set([schemeFilter]);
+      const selectedTxns = (allTimeTxns.data || []).filter((t: any) => selectedEnrollmentIds.has(t.enrollment_id));
+      const activeTxns = selectedTxns;
       if (activeTxns.length > 0 && (rateHistoryResult.data || []).length > 0) {
         const contributionsByDate = new Map<string, number>();
         const contributionsByDateMetal = new Map<string, { gold: number; silver: number }>();
         const gramsByDate = new Map<string, Record<string, number>>();
-        let minDateKey = toDateKey(activeTxns[0].paid_at);
+        let minDateKey = rangeStartKey;
 
-        activeTxns.forEach((t: any) => {
+        const preRangeTxns = activeTxns.filter((t: any) => toDateKey(t.paid_at) < rangeStartKey);
+        const inRangeTxns = activeTxns.filter((t: any) => {
+          const dateKey = toDateKey(t.paid_at);
+          return dateKey >= rangeStartKey && dateKey <= rangeEndKey;
+        });
+
+        inRangeTxns.forEach((t: any) => {
           const dateKey = toDateKey(t.paid_at);
           if (dateKey < minDateKey) minDateKey = dateKey;
           const amountPaid = safeNumber(t.amount_paid);
@@ -522,15 +555,30 @@ export default function CustomerPulsePage() {
           return rate;
         };
 
-        const todayKey = toDateKey(startOfDayUTC);
-        const startDate = new Date(`${minDateKey}T00:00:00Z`);
-        const endDate = new Date(`${todayKey}T00:00:00Z`);
+        const startDate = new Date(`${rangeStartKey}T00:00:00Z`);
+        const endDate = new Date(`${rangeEndKey}T00:00:00Z`);
         const cumulativeGrams: Record<string, number> = { '18K': 0, '22K': 0, '24K': 0, 'SILVER': 0 };
         const rateIndexes: Record<string, number> = { '18K': 0, '22K': 0, '24K': 0, 'SILVER': 0 };
         const currentRatesByKarat: Record<string, number> = { '18K': 0, '22K': 0, '24K': 0, 'SILVER': 0 };
         let cumulativeContributions = 0;
         let cumulativeGoldInvested = 0;
         let cumulativeSilverInvested = 0;
+
+        preRangeTxns.forEach((t: any) => {
+          const karat = enrollmentKaratMap.get(t.enrollment_id);
+          if (!karat) return;
+          const amountPaid = safeNumber(t.amount_paid);
+          const grams = safeNumber(t.grams_allocated_snapshot);
+          cumulativeContributions += amountPaid;
+          if (karat === 'SILVER') {
+            cumulativeSilverInvested += amountPaid;
+          } else {
+            cumulativeGoldInvested += amountPaid;
+          }
+          if (typeof cumulativeGrams[karat] === 'number') {
+            cumulativeGrams[karat] += grams;
+          }
+        });
 
         for (let d = new Date(startDate); d <= endDate; d.setUTCDate(d.getUTCDate() + 1)) {
           const dateKey = toDateKey(d);
@@ -564,22 +612,23 @@ export default function CustomerPulsePage() {
 
           const goldGrams = (cumulativeGrams['18K'] || 0) + (cumulativeGrams['22K'] || 0) + (cumulativeGrams['24K'] || 0);
           const silverGrams = cumulativeGrams['SILVER'] || 0;
-          const dominantMetal: 'GOLD' | 'SILVER' = goldGrams >= silverGrams ? 'GOLD' : 'SILVER';
-          let avgBuyPrice = 0;
-          let marketPrice = 0;
+          let avgBuyGold: number | undefined;
+          let marketGold: number | undefined;
+          let avgBuySilver: number | undefined;
+          let marketSilver: number | undefined;
 
-          if (dominantMetal === 'GOLD' && goldGrams > 0) {
-            avgBuyPrice = cumulativeGoldInvested / goldGrams;
+          if (goldGrams > 0) {
+            avgBuyGold = cumulativeGoldInvested / goldGrams;
             const weightedGoldValue =
               (cumulativeGrams['18K'] || 0) * (currentRatesByKarat['18K'] || 0) +
               (cumulativeGrams['22K'] || 0) * (currentRatesByKarat['22K'] || 0) +
               (cumulativeGrams['24K'] || 0) * (currentRatesByKarat['24K'] || 0);
-            marketPrice = weightedGoldValue / goldGrams;
+            marketGold = weightedGoldValue / goldGrams;
           }
 
-          if (dominantMetal === 'SILVER' && silverGrams > 0) {
-            avgBuyPrice = cumulativeSilverInvested / silverGrams;
-            marketPrice = currentRatesByKarat['SILVER'] || 0;
+          if (silverGrams > 0) {
+            avgBuySilver = cumulativeSilverInvested / silverGrams;
+            marketSilver = currentRatesByKarat['SILVER'] || 0;
           }
 
           nextPortfolioSeries.push({
@@ -588,18 +637,19 @@ export default function CustomerPulsePage() {
             value: portfolio,
           });
 
-          if (avgBuyPrice > 0 && marketPrice > 0) {
+          if ((avgBuyGold && marketGold) || (avgBuySilver && marketSilver)) {
             nextAvgPriceSeries.push({
               date: dateKey,
-              avgBuyPrice,
-              marketPrice,
-              metalLabel: dominantMetal,
+              avgBuyGold,
+              marketGold,
+              avgBuySilver,
+              marketSilver,
             });
           }
         }
 
         const efficiencyByMonth = new Map<string, { weightedSum: number; total: number }>();
-        activeTxns.forEach((t: any) => {
+        inRangeTxns.forEach((t: any) => {
           const dateKey = toDateKey(t.paid_at);
           const monthKey = dateKey.slice(0, 7);
           const karat = enrollmentKaratMap.get(t.enrollment_id);
@@ -630,7 +680,7 @@ export default function CustomerPulsePage() {
           date: t.paid_at,
         }));
         if (nextPortfolioValue > 0) {
-          cashflows.push({ amount: nextPortfolioValue, date: `${todayKey}T00:00:00Z` });
+          cashflows.push({ amount: nextPortfolioValue, date: `${rangeEndKey}T00:00:00Z` });
         }
         const xirr = computeXirr(cashflows);
         nextGrowthRate = xirr !== null ? xirr * 100 : null;
@@ -643,7 +693,7 @@ export default function CustomerPulsePage() {
       setGrowthRate(nextGrowthRate);
 
       if (customer?.id) {
-        const cacheKey = `customer:pulse:${customer.id}:${timeFilter}:${customStart || 'na'}:${customEnd || 'na'}`;
+        const cacheKey = `customer:pulse:${customer.id}:${schemeFilter}:${timeFilter}:${customStart || 'na'}:${customEnd || 'na'}`;
         writeCustomerCache(cacheKey, {
           metrics: nextMetrics,
           transactions: formattedTxns,
@@ -678,7 +728,7 @@ export default function CustomerPulsePage() {
         </div>
         
         {/* Time Filter */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Select value={timeFilter} onValueChange={(v) => setTimeFilter(v as any)}>
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Filter by" />
@@ -709,6 +759,31 @@ export default function CustomerPulsePage() {
               />
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+        <div>
+          <h2 className="text-xl md:text-2xl font-semibold text-foreground">My Portfolio Analytics</h2>
+          <p className="text-sm text-muted-foreground">
+            Track performance by scheme and metal over your selected period
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label className="text-xs text-muted-foreground">Scheme</Label>
+          <Select value={schemeFilter} onValueChange={setSchemeFilter}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="All schemes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Schemes</SelectItem>
+              {schemeOptions.map((scheme) => (
+                <SelectItem key={scheme.id} value={scheme.id}>
+                  {scheme.name} • {scheme.karat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -854,7 +929,7 @@ export default function CustomerPulsePage() {
             Portfolio Growth vs Contributions
           </CardTitle>
           <CardDescription>
-            Cumulative contributions vs portfolio market value across active schemes
+            Cumulative contributions vs portfolio market value for selected schemes
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -934,31 +1009,68 @@ export default function CustomerPulsePage() {
                     width={90}
                   />
                   <Tooltip
-                    formatter={(value, name, item) => {
-                      const label = name === 'avgBuyPrice' ? 'Avg Buy Price' : 'Market Price';
-                      const metal = (item?.payload as AvgPricePoint | undefined)?.metalLabel;
-                      const suffix = metal ? ` (${metal})` : '';
-                      return [formatCurrency(Number(value)), `${label}${suffix}`];
+                    formatter={(value, name) => {
+                      const labelMap: Record<string, string> = {
+                        avgBuyGold: 'Avg Buy Price (Gold)',
+                        marketGold: 'Market Price (Gold)',
+                        avgBuySilver: 'Avg Buy Price (Silver)',
+                        marketSilver: 'Market Price (Silver)',
+                      };
+                      return [formatCurrency(Number(value)), labelMap[String(name)] || String(name)];
                     }}
                     labelFormatter={(label) => new Date(label).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                   />
-                  <Legend formatter={(value) => (value === 'avgBuyPrice' ? 'Avg Buy Price' : 'Market Price')} />
-                  <Line
-                    type="monotone"
-                    dataKey="avgBuyPrice"
-                    name="avgBuyPrice"
-                    stroke="#f59e0b"
-                    strokeWidth={2}
-                    dot={false}
+                  <Legend
+                    formatter={(value) => {
+                      const labelMap: Record<string, string> = {
+                        avgBuyGold: 'Avg Buy Price (Gold)',
+                        marketGold: 'Market Price (Gold)',
+                        avgBuySilver: 'Avg Buy Price (Silver)',
+                        marketSilver: 'Market Price (Silver)',
+                      };
+                      return labelMap[String(value)] || String(value);
+                    }}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="marketPrice"
-                    name="marketPrice"
-                    stroke="#2563eb"
-                    strokeWidth={2}
-                    dot={false}
-                  />
+                  {avgPriceSeries.some((point) => point.avgBuyGold) && (
+                    <Line
+                      type="monotone"
+                      dataKey="avgBuyGold"
+                      name="avgBuyGold"
+                      stroke="#f59e0b"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  )}
+                  {avgPriceSeries.some((point) => point.marketGold) && (
+                    <Line
+                      type="monotone"
+                      dataKey="marketGold"
+                      name="marketGold"
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  )}
+                  {avgPriceSeries.some((point) => point.avgBuySilver) && (
+                    <Line
+                      type="monotone"
+                      dataKey="avgBuySilver"
+                      name="avgBuySilver"
+                      stroke="#94a3b8"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  )}
+                  {avgPriceSeries.some((point) => point.marketSilver) && (
+                    <Line
+                      type="monotone"
+                      dataKey="marketSilver"
+                      name="marketSilver"
+                      stroke="#0f172a"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </div>
