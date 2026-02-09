@@ -27,6 +27,20 @@ export default function CustomerLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
+  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(timeoutMessage));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  };
+
 
   useEffect(() => {
     // Clear any customer bypass values on login page mount
@@ -55,13 +69,23 @@ export default function CustomerLoginPage() {
   useEffect(() => {
     if (!mounted) return;
     async function fetchRetailers() {
-      const { data, error } = await supabase.from('retailers').select('id, business_name').order('business_name');
-      if (error) {
+      try {
+        const { data, error } = await withTimeout(
+          supabase.from('retailers').select('id, business_name').order('business_name'),
+          10000,
+          'Retailer list request timed out'
+        );
+        if (error) {
+          setError('Failed to load retailers');
+          setRetailers([]);
+          return;
+        }
+        setRetailers(data || []);
+      } catch (err) {
+        console.error('[CustomerLogin] Retailer load failed', err);
         setError('Failed to load retailers');
         setRetailers([]);
-        return;
       }
-      setRetailers(data || []);
     }
     fetchRetailers();
   }, [mounted]);
@@ -72,7 +96,18 @@ export default function CustomerLoginPage() {
     setLoading(true);
     const normalizedPhone = phone.replace(/\D/g, '');
     console.log('[CustomerLogin] PIN login attempt', { phone: normalizedPhone || phone });
-    const result = await signInWithPhone(normalizedPhone || phone, pin);
+    let result: { success: boolean; error?: string };
+    try {
+      result = await withTimeout(
+        signInWithPhone(normalizedPhone || phone, pin),
+        15000,
+        'Login timed out. Please try again.'
+      );
+    } catch (err: any) {
+      setError(err?.message || 'Login failed. Please try again.');
+      setLoading(false);
+      return;
+    }
     if (!result.success) {
       setError(result.error || 'Login failed. Please try again.');
       setLoading(false);
