@@ -47,6 +47,11 @@ type EligibleEnrollment = {
   total_paid: number;
 };
 
+function safeNumber(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default function RedemptionsPage() {
   const { profile } = useAuth();
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
@@ -126,18 +131,71 @@ export default function RedemptionsPage() {
     if (!profile?.retailer_id) return;
 
     try {
-      // Note: redemption_summary view/table doesn't exist yet
-      // For now, return empty array until migration is created
-      setRedemptions([]);
-      
-      // TODO: Create redemptions table and summary view
-      // const { data, error } = await supabase
-      //   .from('redemption_summary')
-      //   .select('*')
-      //   .eq('retailer_id', profile.retailer_id)
-      //   .order('redemption_date', { ascending: false });
-      // if (error) throw error;
-      // setRedemptions((data || []) as Redemption[]);
+      const { data, error } = await supabase
+        .from('redemptions')
+        .select(`
+          id,
+          customer_id,
+          enrollment_id,
+          redemption_status,
+          redemption_date,
+          processed_by,
+          processed_at,
+          total_redemption_value,
+          gold_18k_grams,
+          gold_22k_grams,
+          gold_24k_grams,
+          silver_grams,
+          enrollments(
+            karat,
+            customers(full_name, phone),
+            scheme_templates(name)
+          )
+        `)
+        .eq('retailer_id', profile.retailer_id)
+        .order('redemption_date', { ascending: false });
+
+      if (error) throw error;
+
+      const rawRows = data || [];
+      const processedByIds = Array.from(
+        new Set(rawRows.map((row: any) => row.processed_by).filter(Boolean))
+      ) as string[];
+      const processedByMap = new Map<string, string>();
+
+      if (processedByIds.length > 0) {
+        const { data: processedByProfiles, error: processedByError } = await supabase
+          .from('user_profiles')
+          .select('id, full_name')
+          .in('id', processedByIds);
+
+        if (processedByError) {
+          console.error('Processed by lookup error:', processedByError);
+        } else {
+          (processedByProfiles || []).forEach((p: any) => {
+            processedByMap.set(p.id, p.full_name);
+          });
+        }
+      }
+
+      const rows = rawRows.map((row: any) => ({
+        id: row.id,
+        customer_name: row.enrollments?.customers?.full_name || 'Unknown',
+        customer_phone: row.enrollments?.customers?.phone || '',
+        enrollment_karat: row.enrollments?.karat || '22K',
+        scheme_name: row.enrollments?.scheme_templates?.name || 'Unknown Plan',
+        gold_18k_grams: safeNumber(row.gold_18k_grams),
+        gold_22k_grams: safeNumber(row.gold_22k_grams),
+        gold_24k_grams: safeNumber(row.gold_24k_grams),
+        silver_grams: safeNumber(row.silver_grams),
+        total_redemption_value: safeNumber(row.total_redemption_value),
+        redemption_status: row.redemption_status || 'PENDING',
+        redemption_date: row.redemption_date,
+        processed_by_name: processedByMap.get(row.processed_by) || null,
+        processed_at: row.processed_at || null,
+      }));
+
+      setRedemptions(rows as Redemption[]);
     } catch (error) {
       console.error('Error loading redemptions:', error);
       toast.error('Failed to load redemptions');

@@ -212,6 +212,8 @@ export default function PulseDashboard() {
       }
 
       todayDateISO = startOfDayUTC.toISOString().split('T')[0];
+      const startDateISO = startISO.split('T')[0];
+      const endDateISO = endISO.split('T')[0];
 
       const [
         rate18Result,
@@ -272,6 +274,8 @@ export default function PulseDashboard() {
           .from('enrollment_billing_months')
           .select('enrollment_id')
           .eq('retailer_id', retailerId)
+          .gte('due_date', startDateISO)
+          .lt('due_date', endDateISO)
           .lt('due_date', todayDateISO)
           .eq('primary_paid', false)
           .limit(5000),
