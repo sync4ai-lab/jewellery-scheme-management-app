@@ -288,10 +288,14 @@ export function CustomerDetailModal({ customerId, open, onClose }: CustomerDetai
               <Button variant="ghost" size="icon" onClick={onClose}>
                 <X className="w-5 h-5" />
               </Button>
-            </div>
-          </div>
-        </DialogHeader>
-
+                  <div>
+                    <p className="text-sm text-muted-foreground">PAN Number</p>
+                    <p className="font-medium">
+                      {customer.pan_number
+                        ? customer.pan_number.replace(/.(?=.{4})/g, '*')
+                        : 'N/A'}
+                    </p>
+                  </div>
         {loading ? (
           <div className="py-12 text-center">
             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-current border-r-transparent"></div>

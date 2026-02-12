@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthProvider, useAuth } from '@/lib/contexts/auth-context';
+import { ReactQueryProvider } from '@/lib/contexts/react-query-provider';
 import { BrandingProvider } from '@/lib/contexts/branding-context';
 import { TopBar } from '@/components/retailer/top-bar';
 import { IconDock } from '@/components/retailer/icon-dock';
@@ -61,10 +62,12 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <AuthProvider>
-      <BrandingProvider>
-        <DashboardContent>{children}</DashboardContent>
-      </BrandingProvider>
-    </AuthProvider>
+    <ReactQueryProvider>
+      <AuthProvider>
+        <BrandingProvider>
+          <DashboardContent>{children}</DashboardContent>
+        </BrandingProvider>
+      </AuthProvider>
+    </ReactQueryProvider>
   );
 }

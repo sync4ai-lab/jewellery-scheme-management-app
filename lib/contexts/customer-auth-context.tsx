@@ -26,6 +26,7 @@ type CustomerAuthContextType = {
 const CustomerAuthContext = createContext<CustomerAuthContextType | undefined>(undefined);
 
 export function CustomerAuthProvider({ children }: { children: React.ReactNode }) {
+    const [signOutLock, setSignOutLock] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [customer, setCustomer] = useState<CustomerProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -425,30 +426,34 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
   };
 
   const signOut = async () => {
-    await supabaseCustomer.auth.signOut();
-    setUser(null);
-    setCustomer(null);
+    if (signOutLock) return;
+    setSignOutLock(true);
+    setLoading(true);
     try {
-      localStorage.removeItem('customer_phone_bypass');
-      localStorage.removeItem('customer_retailer_bypass');
-      localStorage.removeItem('customer_bypass_payload');
-    } catch {
-      // ignore
+      await supabaseCustomer.auth.signOut();
+      setUser(null);
+      setCustomer(null);
+      // Clear all bypass values
+      try {
+        localStorage.removeItem('customer_phone_bypass');
+        localStorage.removeItem('customer_retailer_bypass');
+        localStorage.removeItem('customer_bypass_payload');
+      } catch {}
+      try {
+        sessionStorage.removeItem('customer_phone_bypass');
+        sessionStorage.removeItem('customer_retailer_bypass');
+        sessionStorage.removeItem('customer_bypass_payload');
+      } catch {}
+      if (typeof document !== 'undefined') {
+        document.cookie = 'customer_phone_bypass=; path=/; max-age=0';
+        document.cookie = 'customer_retailer_bypass=; path=/; max-age=0';
+        document.cookie = 'customer_bypass_payload=; path=/; max-age=0';
+      }
+      setLoading(false);
+      router.replace('/c/login');
+    } finally {
+      setSignOutLock(false);
     }
-    try {
-      sessionStorage.removeItem('customer_phone_bypass');
-      sessionStorage.removeItem('customer_retailer_bypass');
-      sessionStorage.removeItem('customer_bypass_payload');
-    } catch {
-      // ignore
-    }
-    if (typeof document !== 'undefined') {
-      document.cookie = 'customer_phone_bypass=; path=/; max-age=0';
-      document.cookie = 'customer_retailer_bypass=; path=/; max-age=0';
-      document.cookie = 'customer_bypass_payload=; path=/; max-age=0';
-    }
-    // Do NOT clear retailer_id from localStorage on sign out
-    router.replace('/c/login');
   };
 
   return (
