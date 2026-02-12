@@ -456,12 +456,13 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     }
   };
 
+  if (loading) {
+    return <div className="flex items-center justify-center min-h-screen text-muted-foreground">Loading authentication...</div>;
+  }
   return (
     <CustomerAuthContext.Provider
       value={{ user, customer, loading, sendOTP, verifyOTP, signInWithPhone, signOut }}
     >
-      {/* Only show error if customer is logged in, not on login page */}
-      {/* Removed pre-login error banner as per requirements */}
       {children}
     </CustomerAuthContext.Provider>
   );
