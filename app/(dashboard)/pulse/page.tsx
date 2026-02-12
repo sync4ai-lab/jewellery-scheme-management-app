@@ -149,35 +149,6 @@ export default async function PulseDashboard() {
       {/* ...other dashboard sections to be modularized next... */}
     </div>
   );
-          .eq('retailer_id', retailerId)
-          .eq('karat', '18K')
-          .order('effective_from', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('gold_rates')
-          .select('rate_per_gram, karat, effective_from')
-          .eq('retailer_id', retailerId)
-          .eq('karat', '22K')
-          .order('effective_from', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('gold_rates')
-          .select('rate_per_gram, karat, effective_from')
-          .eq('retailer_id', retailerId)
-          .eq('karat', '24K')
-          .order('effective_from', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('gold_rates')
-          .select('rate_per_gram, karat, effective_from')
-          .eq('retailer_id', retailerId)
-          .eq('karat', 'SILVER')
-          .order('effective_from', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
         supabase
           .from('transactions')
           .select('amount_paid, grams_allocated_snapshot, paid_at, enrollment_id, txn_type')

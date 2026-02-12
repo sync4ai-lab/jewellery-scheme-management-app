@@ -18,9 +18,15 @@ export async function POST(request: Request) {
     const { phone, otp, retailer_id } = await request.json();
 
     if (!phone || !otp) {
-      return NextResponse.json(
-        { error: 'Phone number and OTP are required' },
-        { status: 400 }
+      return new NextResponse(
+        JSON.stringify({ error: 'Phone number and OTP are required' }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'public, max-age=60, stale-while-revalidate=120',
+          },
+        }
       );
     }
 
@@ -35,9 +41,15 @@ export async function POST(request: Request) {
         .single();
       
       if (retailerError || !retailer) {
-        return NextResponse.json(
-          { error: 'No retailer found. Please contact support.' },
-          { status: 500 }
+        return new NextResponse(
+          JSON.stringify({ error: 'No retailer found. Please contact support.' }),
+          {
+            status: 500,
+            headers: {
+              'Content-Type': 'application/json',
+              'Cache-Control': 'public, max-age=60, stale-while-revalidate=120',
+            },
+          }
         );
       }
       
