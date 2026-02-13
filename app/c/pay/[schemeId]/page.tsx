@@ -18,6 +18,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
+import { readCustomerCache, writeCustomerCache } from '../../components/cacheUtils';
+// ...existing code...
 
 type Plan = {
   id: string;

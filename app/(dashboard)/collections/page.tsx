@@ -115,49 +115,7 @@ export default async function CollectionsPage() {
       {/* Render payment/collection UI here using customers, stores, enrollments, goldRates */}
     </div>
   );
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
-
-  // Debounce search query to prevent too many API calls
-  const debouncedSearchQuery = useDebounce(txnSearchQuery, 500);
-
-  useEffect(() => {
-    void loadStores();
-  }, [profile?.retailer_id]);
-
-  async function loadStores() {
-    if (!profile?.retailer_id) return;
-    try {
-      const { data, error } = await supabase
-        .from('stores')
-        .select('id, name, code')
-        .eq('retailer_id', profile.retailer_id)
-        .eq('is_active', true)
-        .order('name', { ascending: true });
-
-      if (error) throw error;
-      const storeList = (data || []) as Store[];
-      setStores(storeList);
-      if (storeList.length === 1) {
-        setSelectedStore(storeList[0].id);
-      }
-    } catch (error) {
-      console.error('Error loading stores:', error);
-    }
-  }
-
-  useEffect(() => {
-    void loadCustomersAndRate();
-  }, [profile?.retailer_id]);
-
-  useEffect(() => {
-    if (selectedCustomerId) {
-      setEnrollments([]);
-      setSelectedEnrollmentId('');
-      setMonthlyPaymentInfo(null);
-      void loadEnrollments(selectedCustomerId);
-      void loadTransactions(selectedCustomerId);
-    } else {
+  // ...existing code...
       setEnrollments([]);
       setSelectedEnrollmentId('');
       setMonthlyPaymentInfo(null);

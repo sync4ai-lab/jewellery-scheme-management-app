@@ -15,6 +15,8 @@ import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { createNotification } from '@/lib/utils/notifications';
 import { fireCelebrationConfetti } from '@/lib/utils/confetti';
 import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
+import { readCustomerCache, writeCustomerCache } from '../components/cacheUtils';
+// ...existing code...
 
 type Plan = {
   id: string;

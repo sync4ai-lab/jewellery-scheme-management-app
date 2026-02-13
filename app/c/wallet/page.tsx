@@ -17,8 +17,9 @@ import { useToast } from '@/hooks/use-toast';
 import { createNotification } from '@/lib/utils/notifications';
 import { fireCelebrationConfetti } from '@/lib/utils/confetti';
 import { TrendingUp } from 'lucide-react';
-import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { readCustomerCache, writeCustomerCache } from '../components/cacheUtils';
 import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
+// ...existing code...
 
 type Plan = {
   id: string;

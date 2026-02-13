@@ -11,26 +11,11 @@ import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { readCustomerCache, writeCustomerCache } from '../components/cacheUtils';
 import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
-
-type DueRow = {
-	id: string;
-	enrollment_id: string;
-	billing_month: string;
-	due_date: string | null;
-	status: string | null;
-	days_overdue: number;
-	amount_due: number;
-	enrollments: {
-		commitment_amount: number | null;
-		scheme_templates: {
-			name: string;
-			installment_amount?: number | null;
-		} | null;
-		status?: string | null;
-	} | null;
-};
+import { toDateKey } from '../components/dateUtils';
+import { formatCurrency } from '../components/currencyUtils';
+// ...existing code...
 
 export default function CustomerDuesPage() {
 	const { customer, user, loading: authLoading } = useCustomerAuth();

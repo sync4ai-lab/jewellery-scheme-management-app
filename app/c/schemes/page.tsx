@@ -13,6 +13,8 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
 import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
+import { readCustomerCache, writeCustomerCache } from '../components/cacheUtils';
+// ...existing code...
 
 
 type Plan = {

@@ -9,21 +9,9 @@ import { Badge } from '@/components/ui/badge';
 import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
-import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { readCustomerCache, writeCustomerCache } from '../components/cacheUtils';
 import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
-
-type RedemptionRow = {
-	id: string;
-	redemption_date: string;
-	redemption_status: string;
-	redemption_type: string;
-	total_redemption_value: number;
-	enrollments: {
-		scheme_templates: {
-			name: string;
-		} | null;
-	} | null;
-};
+// ...existing code...
 
 export default function CustomerRedemptionsPage() {
 	const { customer, user, loading: authLoading } = useCustomerAuth();

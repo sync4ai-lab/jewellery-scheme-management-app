@@ -12,8 +12,9 @@ import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
+import { readCustomerCache, writeCustomerCache } from '../../components/cacheUtils';
 import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
+// ...existing code...
 
 type TransactionRow = {
   id: string;

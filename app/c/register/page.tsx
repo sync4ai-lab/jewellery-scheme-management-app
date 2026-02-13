@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Phone, User, MapPin, CreditCard, Lock, Timer } from 'lucide-react';
+import { readCustomerCache, writeCustomerCache } from '../components/cacheUtils';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 
 export default function CustomerRegistrationPage() {

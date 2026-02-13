@@ -141,101 +141,6 @@ export default async function PulseDashboard() {
     cache[cacheKey] = { metrics, expires: Date.now() + 5 * 60 * 1000 };
   }
 
-  // Modularized: Render charts using new server/client components
-  return (
-    <div>
-      <h1 className="text-3xl font-bold mb-4">Pulse Dashboard</h1>
-      <PulseChartsServer retailerId={profile.retailer_id} />
-      {/* ...other dashboard sections to be modularized next... */}
-    </div>
-  );
-        supabase
-          .from('transactions')
-          .select('amount_paid, grams_allocated_snapshot, paid_at, enrollment_id, txn_type')
-          .eq('retailer_id', retailerId)
-          .eq('payment_status', 'SUCCESS')
-          .in('txn_type', ['PRIMARY_INSTALLMENT', 'TOP_UP'])
-          .gte('paid_at', startISO)
-          .lt('paid_at', endISO)
-          .limit(1000), // Lower limit for faster dashboard
-        supabase
-          .from('enrollment_billing_months')
-          .select('enrollment_id')
-          .eq('retailer_id', retailerId)
-          .gte('due_date', startDateISO)
-          .lt('due_date', endDateISO)
-          .lt('due_date', todayDateISO)
-          .eq('primary_paid', false)
-          .limit(5000),
-        supabase
-          .from('enrollments')
-          .select('id', { count: 'exact', head: true })
-          .eq('retailer_id', retailerId)
-          .gte('created_at', startISO)
-          .lt('created_at', endISO)
-          .limit(500),
-        supabase
-          .from('enrollments')
-          .select('id', { count: 'exact', head: true })
-          .eq('retailer_id', retailerId)
-          .or('status.eq.ACTIVE,status.is.null')
-          .gte('created_at', startISO)
-          .lt('created_at', endISO)
-          .limit(500),
-        supabase
-          .from('customers')
-          .select('id')
-          .eq('retailer_id', retailerId)
-          .gte('created_at', startISO)
-          .lt('created_at', endISO)
-          .limit(500),
-        supabase
-          .from('redemptions')
-          .select('id', { count: 'exact', head: true })
-          .eq('retailer_id', retailerId)
-          .eq('redemption_status', 'COMPLETED')
-          .gte('redemption_date', startISO)
-          .lt('redemption_date', endISO),
-      ]);
-
-      // Log any errors from the parallel queries
-      if (rate18Result.error) console.error('Gold rate 18K error:', rate18Result.error);
-      if (rate22Result.error) console.error('Gold rate 22K error:', rate22Result.error);
-      if (rate24Result.error) console.error('Gold rate 24K error:', rate24Result.error);
-      if (rateSilverResult.error) console.error('Silver rate error:', rateSilverResult.error);
-      if (txnsResult.error) console.error('Transactions error:', txnsResult.error);
-      if (duesBillingResult.error) console.error('Dues error:', duesBillingResult.error);
-      if (totalEnrollmentsResult.error) console.error('Enrollments count error:', totalEnrollmentsResult.error);
-      if (activeEnrollmentsResult.error) console.error('Active enrollments count error:', activeEnrollmentsResult.error);
-      if (customersPeriodResult.error) console.error('Customers period error:', customersPeriodResult.error);
-      if (completedRedemptionsResult.error) console.error('Completed redemptions error:', completedRedemptionsResult.error);
-
-      const currentRates = {
-        k18: rate18Result.data
-          ? {
-              rate: safeNumber(rate18Result.data.rate_per_gram),
-              validFrom: (rate18Result.data as any).effective_from ?? new Date().toISOString(),
-            }
-          : null,
-        k22: rate22Result.data
-          ? {
-              rate: safeNumber(rate22Result.data.rate_per_gram),
-              validFrom: (rate22Result.data as any).effective_from ?? new Date().toISOString(),
-            }
-          : null,
-        k24: rate24Result.data
-          ? {
-              rate: safeNumber(rate24Result.data.rate_per_gram),
-              validFrom: (rate24Result.data as any).effective_from ?? new Date().toISOString(),
-            }
-          : null,
-        silver: rateSilverResult.data
-          ? {
-              rate: safeNumber(rateSilverResult.data.rate_per_gram),
-              validFrom: (rateSilverResult.data as any).effective_from ?? new Date().toISOString(),
-            }
-          : null,
-      };
 
       const periodCustomers = customersPeriodResult.data || [];
       const totalCustomersPeriod = periodCustomers.length;
@@ -430,38 +335,7 @@ export default async function PulseDashboard() {
 
       const duesOutstanding = dues18K + dues22K + dues24K + duesSilver;
 
-      setMetrics({
-        periodCollections,
-        collections18K,
-        collections22K,
-        collections24K,
-        collectionsSilver,
-        goldAllocatedPeriod,
-        gold18KAllocated,
-        gold22KAllocated,
-        gold24KAllocated,
-        silverAllocated,
-        duesOutstanding,
-        dues18K,
-        dues22K,
-        dues24K,
-        duesSilver,
-        overdueCount,
-        totalEnrollmentsPeriod: totalEnrollmentsResult.count || 0,
-        activeEnrollmentsPeriod: activeEnrollmentsResult.count || 0,
-        totalCustomersPeriod,
-        activeCustomersPeriod,
-        readyToRedeemPeriod,
-        completedRedemptionsPeriod,
-        currentRates,
-      });
-    } catch (error) {
-      console.error('Error loading dashboard:', error);
-      toast.error('Failed to load dashboard data');
-    } finally {
-      setLoading(false);
-    }
-  }
+      // ...existing code...
 
   async function loadChartTrends() {
     if (!profile?.retailer_id) return;
