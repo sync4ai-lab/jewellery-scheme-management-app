@@ -71,27 +71,32 @@ function safeNumber(v: unknown): number {
 
 export default async function PulseDashboard() {
   // Get current user's retailerId from user_profiles
+
   const { createServerClient } = await import('@supabase/ssr');
   const { cookies } = await import('next/headers');
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
+  // Next.js 14+ cookies API: use get if available, else getAll
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (name) => cookieStore.get(name)?.value,
-        set: (name, value, options) => cookieStore.set({ name, value, ...options }),
-        remove: (name, options) => cookieStore.set({ name, value: '', ...options }),
+        get: (name) => typeof cookieStore.get === 'function' ? cookieStore.get(name)?.value : Array.from(cookieStore.getAll()).find(c => c.name === name)?.value,
+        set: (name, value, options) => cookieStore.set ? cookieStore.set({ name, value, ...options }) : undefined,
+        remove: (name, options) => cookieStore.set ? cookieStore.set({ name, value: '', ...options }) : undefined,
       },
     }
   );
-  const { data: profiles } = await supabase
+  // Get the current authenticated user from the session
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return <div>Access denied</div>;
+  // Fetch the profile for this user
+  const { data: profile } = await supabase
     .from('user_profiles')
     .select('id, retailer_id, role')
-    .in('role', ['ADMIN', 'STAFF'])
-    .limit(1);
-  const profile = profiles?.[0];
-  if (!profile) return <div>Access denied</div>;
+    .eq('id', user.id)
+    .maybeSingle();
+  if (!profile || !['ADMIN', 'STAFF'].includes(profile.role)) return <div>Access denied</div>;
 
   const retailerId = profile.retailer_id;
   const period = { start: '2023-01-01', end: new Date().toISOString().split('T')[0] };

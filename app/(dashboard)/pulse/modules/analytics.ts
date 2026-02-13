@@ -4,15 +4,15 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 export async function getPulseAnalytics(retailerId: string, period: { start: string, end: string }) {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (name) => cookieStore.get(name)?.value,
-        set: (name, value, options) => cookieStore.set({ name, value, ...options }),
-        remove: (name, options) => cookieStore.set({ name, value: '', ...options }),
+        get: (name) => typeof cookieStore.get === 'function' ? cookieStore.get(name)?.value : Array.from(cookieStore.getAll()).find(c => c.name === name)?.value,
+        set: (name, value, options) => cookieStore.set ? cookieStore.set({ name, value, ...options }) : undefined,
+        remove: (name, options) => cookieStore.set ? cookieStore.set({ name, value: '', ...options }) : undefined,
       },
     }
   );
