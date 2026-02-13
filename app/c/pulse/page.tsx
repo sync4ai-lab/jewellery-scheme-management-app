@@ -12,23 +12,14 @@ import {
   Wallet,
   Gift,
 } from 'lucide-react';
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from 'recharts';
+import PortfolioChart from '../components/PortfolioChart';
+import AvgPriceChart from '../components/AvgPriceChart';
+import EfficiencyChart from '../components/EfficiencyChart';
+import TransactionsTable from '../components/TransactionsTable';
 import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+// Table now imported via TransactionsTable component
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { readCustomerCache, writeCustomerCache } from '@/lib/utils/customer-cache';
