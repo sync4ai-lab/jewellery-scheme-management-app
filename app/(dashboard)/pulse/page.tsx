@@ -81,9 +81,9 @@ export default async function PulseDashboard() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (name) => typeof cookieStore.get === 'function' ? cookieStore.get(name)?.value : Array.from(cookieStore.getAll()).find(c => c.name === name)?.value,
-        set: (name, value, options) => cookieStore.set ? cookieStore.set({ name, value, ...options }) : undefined,
-        remove: (name, options) => cookieStore.set ? cookieStore.set({ name, value: '', ...options }) : undefined,
+        get: (name) => typeof cookieStore.get === 'function'
+          ? cookieStore.get(name)?.value
+          : Array.from(cookieStore.getAll()).find(c => c.name === name)?.value,
       },
     }
   );
