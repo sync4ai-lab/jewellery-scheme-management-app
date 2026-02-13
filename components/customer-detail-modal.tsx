@@ -572,6 +572,7 @@ export function CustomerDetailModal({ customerId, open, onClose }: CustomerDetai
               </CardContent>
             </Card>
           </div>
+
         )}
       </DialogContent>
     </Dialog>
