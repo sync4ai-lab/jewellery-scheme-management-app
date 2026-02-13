@@ -1,3 +1,4 @@
+import { getPulseAnalytics } from './modules/analytics';
 // Enable ISR: revalidate every 5 minutes
 export const revalidate = 300;
 
@@ -69,12 +70,7 @@ function safeNumber(v: unknown): number {
 }
 
 export default async function PulseDashboard() {
-  // Minimal SSR shell (no errors)
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <h1 className="text-2xl font-bold">Pulse Dashboard (SSR shell)</h1>
-      {/* Add SSR dashboard content here */}
-    </div>
-  );
+  // --- RESTORED FULL PULSE DASHBOARD UI ---
+  // (This is a placeholder for the full restoration. The actual code will be pasted here in the next step.)
 }
 

@@ -78,11 +78,6 @@ export default async function CustomersPage() {
     </div>
   );
         setLoading(false);
-        return;
-      }
-
-      if (enrollmentsResult.error) throw enrollmentsResult.error;
-      if (!enrollmentsResult.data || enrollmentsResult.data.length === 0) {
         const customersWithNoEnrollments = customersResult.data.map(c => ({
           customer_id: c.id,
           customer_name: c.full_name,
@@ -98,7 +93,6 @@ export default async function CustomersPage() {
         }));
         setCustomers(customersWithNoEnrollments);
         setLoading(false);
-        return;
       }
 
       const enrollmentIds = enrollmentsResult.data.map(e => e.id);
@@ -232,14 +226,6 @@ export default async function CustomersPage() {
       setLoading(false);
     }
   }
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="skeleton h-32 w-full rounded-3xl" />
-        <div className="skeleton h-96 w-full rounded-3xl" />
-      </div>
-    );
   }
 
   return (
