@@ -43,7 +43,11 @@ export default async function CustomersPage() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookies: () => cookies(),
+      cookies: {
+        get: (name) => cookies().get(name)?.value,
+        set: (name, value, options) => cookies().set({ name, value, ...options }),
+        remove: (name, options) => cookies().set({ name, value: '', ...options }),
+      },
     }
   );
   // Simulate getting the current user's profile (replace with actual logic as needed)

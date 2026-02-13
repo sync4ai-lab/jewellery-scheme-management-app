@@ -30,7 +30,7 @@ import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/auth-context';
-import PulseChartsServer from './components/PulseChartsServer';
+import PulseChart from './components/PulseChart';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 type DashboardMetrics = {
@@ -70,7 +70,140 @@ function safeNumber(v: unknown): number {
 }
 
 export default async function PulseDashboard() {
-  // --- RESTORED FULL PULSE DASHBOARD UI ---
-  // (This is a placeholder for the full restoration. The actual code will be pasted here in the next step.)
+  // Get current user's retailerId from user_profiles
+  const { createServerClient } = await import('@supabase/ssr');
+  const { cookies } = await import('next/headers');
+  const cookieStore = cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (name) => cookieStore.get(name)?.value,
+        set: (name, value, options) => cookieStore.set({ name, value, ...options }),
+        remove: (name, options) => cookieStore.set({ name, value: '', ...options }),
+      },
+    }
+  );
+  const { data: profiles } = await supabase
+    .from('user_profiles')
+    .select('id, retailer_id, role')
+    .in('role', ['ADMIN', 'STAFF'])
+    .limit(1);
+  const profile = profiles?.[0];
+  if (!profile) return <div>Access denied</div>;
+
+  const retailerId = profile.retailer_id;
+  const period = { start: '2023-01-01', end: new Date().toISOString().split('T')[0] };
+  const analytics = await getPulseAnalytics(retailerId, period);
+
+  // Example period label
+  const periodLabel = `${period.start} to ${period.end}`;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Pulse</h1>
+          <p className="text-muted-foreground">Business snapshot</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm px-4 py-2 bg-muted rounded-lg">
+            {new Date().toLocaleDateString('en-IN', {
+              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+            })}
+          </span>
+        </div>
+      </div>
+
+      {/* Metric Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Payments */}
+        <div className="jewel-card p-6 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100/50 border-2 border-amber-200/50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold">Payments</span>
+            <span className="text-green-600 font-bold">₹{analytics.revenueByMetal.reduce((sum, d) => sum + (d.total || 0), 0).toLocaleString()}</span>
+          </div>
+          <div className="text-xs text-muted-foreground">{periodLabel}</div>
+        </div>
+        {/* Gold Allocated */}
+        <div className="jewel-card p-6 rounded-2xl bg-gradient-to-br from-gold-50 to-gold-100/50 border-2 border-gold-200/50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold">Gold Allocated</span>
+            <span className="gold-text font-bold">{analytics.goldAllocationTrend.reduce((sum, d) => sum + (d.k18 + d.k22 + d.k24), 0).toFixed(4)} g</span>
+          </div>
+          <div className="text-xs text-muted-foreground">{periodLabel}</div>
+        </div>
+        {/* Silver Allocated */}
+        <div className="jewel-card p-6 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100/50 border-2 border-slate-200/50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold">Silver Allocated</span>
+            <span className="text-slate-600 font-bold">{analytics.goldAllocationTrend.reduce((sum, d) => sum + d.silver, 0).toFixed(4)} g</span>
+          </div>
+          <div className="text-xs text-muted-foreground">{periodLabel}</div>
+        </div>
+        {/* Customers */}
+        <div className="jewel-card p-6 rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-2 border-emerald-200/50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold">Customers</span>
+            <span className="text-emerald-600 font-bold">{analytics.customerMetrics.reduce((sum, d) => sum + (d.newEnrollments || 0), 0)}</span>
+          </div>
+          <div className="text-xs text-muted-foreground">{periodLabel}</div>
+        </div>
+      </div>
+
+      {/* Charts Section */}
+      <div className="space-y-8 mt-8">
+        {/* Revenue & Collection Trends Chart */}
+        <div>
+          <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Revenue & Collection Trends</h2>
+          <PulseChart
+            chartType="revenue"
+            data={analytics.revenueByMetal}
+          />
+        </div>
+        {/* Gold & Silver Allocation Trends Chart */}
+        <div>
+          <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Gold & Silver Allocation Trends</h2>
+          <PulseChart
+            chartType="allocation"
+            data={analytics.goldAllocationTrend}
+          />
+        </div>
+        {/* Customer Metrics Chart */}
+        <div>
+          <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Customer Metrics</h2>
+          <PulseChart
+            chartType="customers"
+            data={analytics.customerMetrics}
+          />
+        </div>
+        {/* Payment Behavior Chart */}
+        <div>
+          <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Payment Behavior</h2>
+          <PulseChart
+            chartType="payment"
+            data={analytics.paymentBehavior}
+          />
+        </div>
+        {/* Scheme Health Chart */}
+        <div>
+          <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Scheme Health</h2>
+          <PulseChart
+            chartType="scheme"
+            data={analytics.schemeHealth}
+          />
+        </div>
+        {/* Staff Performance Chart */}
+        <div>
+          <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Staff Performance</h2>
+          <PulseChart
+            chartType="staff"
+            data={analytics.staffPerformance}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
