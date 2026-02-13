@@ -21,14 +21,20 @@ type Store = {
   is_active: boolean;
 };
 const COLORS = ['#FCD34D', '#FBBF24', '#F59E0B', '#D97706', '#B45309'];
-import { createServerComponentSupabaseClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 const COLORS = ['#FCD34D', '#FBBF24', '#F59E0B', '#D97706', '#B45309'];
 
 export default async function PlansPage() {
-  const supabase = createServerComponentSupabaseClient({ cookies });
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: () => cookies(),
+    }
+  );
   // Simulate getting the current user's profile (replace with actual logic as needed)
   const { data: profiles } = await supabase
     .from('user_profiles')

@@ -15,6 +15,8 @@ import { readCustomerCache, writeCustomerCache } from '../components/cacheUtils'
 import { CustomerLoadingSkeleton } from '@/components/customer/loading-skeleton';
 import { toDateKey } from '../components/dateUtils';
 import { formatCurrency } from '../components/currencyUtils';
+import { DuesSummary } from '../components/DuesSummary';
+import { DuesTable } from '../components/DuesTable';
 // ...existing code...
 
 export default function CustomerDuesPage() {
@@ -155,43 +157,7 @@ export default function CustomerDuesPage() {
 					</div>
 				</div>
 
-				<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-					<Card className="glass-card">
-						<CardContent className="pt-6">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm text-muted-foreground mb-1">Total Overdue</p>
-									<p className="text-3xl font-bold text-orange-600">{summary.totalOverdue}</p>
-								</div>
-								<AlertCircle className="w-10 h-10 text-orange-600 opacity-50" />
-							</div>
-						</CardContent>
-					</Card>
-
-					<Card className="glass-card">
-						<CardContent className="pt-6">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm text-muted-foreground mb-1">Amount Due</p>
-									<p className="text-3xl font-bold">₹{summary.totalDueAmount.toLocaleString()}</p>
-								</div>
-								<Calendar className="w-10 h-10 text-primary opacity-50" />
-							</div>
-						</CardContent>
-					</Card>
-
-					<Card className="glass-card">
-						<CardContent className="pt-6">
-							<div className="flex items-center justify-between">
-								<div>
-									<p className="text-sm text-muted-foreground mb-1">Critical (14+ days)</p>
-									<p className="text-3xl font-bold text-red-600">{summary.criticalOverdue}</p>
-								</div>
-								<AlertCircle className="w-10 h-10 text-red-600 opacity-50" />
-							</div>
-						</CardContent>
-					</Card>
-				</div>
+				<DuesSummary summary={summary} />
 
 				{dues.length === 0 ? (
 					<div className="text-center text-muted-foreground py-12">
@@ -200,66 +166,7 @@ export default function CustomerDuesPage() {
 						<p className="text-sm">You are on track to build your wealth and have made all payments due so far.</p>
 					</div>
 				) : (
-					<div className="space-y-3">
-						{dues.map((row) => {
-							const dueDate = row.due_date ? new Date(row.due_date) : null;
-							const schemeName = row.enrollments?.scheme_templates?.name || 'Gold Plan';
-							const isOverdue = row.days_overdue > 0;
-							const isCritical = row.days_overdue > 14;
-							return (
-								<Card
-									key={row.id}
-									className={`glass-card border-2 ${
-										isCritical
-											? 'border-red-200 bg-red-50/60'
-											: isOverdue
-											? 'border-orange-100 bg-orange-50/40'
-											: 'border-yellow-100'
-									}`}
-								>
-									<CardHeader className="pb-3">
-										<CardTitle className="text-lg flex items-center gap-2">
-											<AlertCircle className="w-4 h-4 text-orange-500" />
-											{schemeName}
-											{isCritical && (
-												<Badge className="bg-red-100 text-red-800">Critical</Badge>
-											)}
-										</CardTitle>
-										<CardDescription>
-											Due {dueDate ? dueDate.toLocaleDateString('en-IN') : '—'}
-										</CardDescription>
-									</CardHeader>
-									<CardContent className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-										<div>
-											<p className="text-sm text-muted-foreground">Amount</p>
-											<p className="text-2xl font-bold">₹{Number(row.amount_due || 0).toLocaleString()}</p>
-											{isOverdue ? (
-												<p className="text-sm text-muted-foreground mt-1">
-													Overdue by {row.days_overdue} day{row.days_overdue === 1 ? '' : 's'}
-												</p>
-											) : (
-												<p className="text-sm text-muted-foreground mt-1">Due today</p>
-											)}
-										</div>
-										<div className="flex items-center gap-3">
-											<Badge variant={isOverdue ? 'destructive' : 'secondary'}>
-												{isOverdue ? 'Overdue' : 'Due'}
-											</Badge>
-											<Button
-												onClick={() =>
-													router.push(
-														buildPaymentUrl(Number(row.amount_due || 0), row.enrollment_id)
-													)
-												}
-											>
-												Pay Now
-											</Button>
-										</div>
-									</CardContent>
-								</Card>
-							);
-						})}
-					</div>
+					<DuesTable dues={dues} buildPaymentUrl={buildPaymentUrl} />
 				)}
 			</div>
 		</div>

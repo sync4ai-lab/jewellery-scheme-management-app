@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { useAuth } from '@/lib/contexts/auth-context';
-import { createServerComponentSupabaseClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,13 @@ type CustomerEnrollment = {
 };
 
 export default async function CustomersPage() {
-  const supabase = createServerComponentSupabaseClient({ cookies });
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: () => cookies(),
+    }
+  );
   // Simulate getting the current user's profile (replace with actual logic as needed)
   const { data: profiles } = await supabase
     .from('user_profiles')

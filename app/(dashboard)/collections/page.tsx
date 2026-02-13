@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { createServerComponentSupabaseClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { useAuth } from '@/lib/contexts/auth-context';
 import { toast } from 'sonner';
@@ -75,7 +75,13 @@ type MonthlyPaymentInfo = {
 const QUICK_AMOUNTS = [3000, 5000, 10000, 25000];
 
 export default async function CollectionsPage() {
-  const supabase = createServerComponentSupabaseClient({ cookies });
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: () => cookies(),
+    }
+  );
   // Simulate getting the current user's profile (replace with actual logic as needed)
   const { data: profiles } = await supabase
     .from('user_profiles')
