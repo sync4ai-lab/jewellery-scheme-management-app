@@ -3,35 +3,13 @@ import { getPulseAnalytics } from './modules/analytics';
 export const revalidate = 300;
 
 
-import { useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  TrendingUp,
-  Users,
-  UserCheck,
-  Coins,
-  AlertCircle,
-  Clock,
-  Edit,
-  Trophy,
-  ArrowRight,
-  Search,
-  Download,
-  Calendar,
-} from 'lucide-react';
-import { createServerClient } from '@supabase/ssr';
+import dynamic from 'next/dynamic';
 import { cookies } from 'next/headers';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
-import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/contexts/auth-context';
-import PulseChart from './components/PulseChart';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { createServerClient } from '@supabase/ssr';
+const PeriodFilter = dynamic(() => import('./components/PeriodFilter'), { ssr: false });
+const GoldRatesCard = dynamic(() => import('./components/GoldRatesCard'), { ssr: false });
+const MetricCards = dynamic(() => import('./components/MetricCards'), { ssr: false });
+const PulseChart = dynamic(() => import('./components/PulseChart'), { ssr: false });
 
 type DashboardMetrics = {
   periodCollections: number;
@@ -99,12 +77,36 @@ export default async function PulseDashboard() {
   if (!profile || !['ADMIN', 'STAFF'].includes(profile.role)) return <div>Access denied</div>;
 
   const retailerId = profile.retailer_id;
-  const period = { start: '2023-01-01', end: new Date().toISOString().split('T')[0] };
-  const analytics = await getPulseAnalytics(retailerId, period);
+  // The main UI is now composed of modular client components for period filter, rates, metrics, and charts.
+  // The period filter and analytics fetching will be handled in a client wrapper for interactivity.
+  const todayLabel = new Date().toLocaleDateString('en-IN', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+  return (
+    <PulseDashboardClient
+      initialAnalytics={analytics}
+      initialRates={analytics.currentRates}
+      todayLabel={todayLabel}
+    />
+  );
+}
 
-  // Example period label
-  const periodLabel = `${period.start} to ${period.end}`;
+// Client wrapper for Pulse dashboard interactivity
+"use client";
+import React, { useState, useCallback } from 'react';
+import { PeriodFilter } from './components/PeriodFilter';
+import { GoldRatesCard } from './components/GoldRatesCard';
+import { MetricCards } from './components/MetricCards';
+import PulseChart from './components/PulseChart';
 
+function PulseDashboardClient({ initialAnalytics, initialRates, todayLabel }) {
+  const [analytics, setAnalytics] = useState(initialAnalytics);
+  const [rates, setRates] = useState(initialRates);
+  const [periodType, setPeriodType] = useState('MONTH');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+  // TODO: Add logic to refetch analytics/rates on period change
+  const periodLabel = '...'; // TODO: Compute from periodType/customStart/customEnd
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -113,99 +115,46 @@ export default async function PulseDashboard() {
           <p className="text-muted-foreground">Business snapshot</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm px-4 py-2 bg-muted rounded-lg">
-            {new Date().toLocaleDateString('en-IN', {
-              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-            })}
-          </span>
+          <span className="text-sm px-4 py-2 bg-muted rounded-lg">{todayLabel}</span>
         </div>
       </div>
-
-      {/* Metric Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Payments */}
-        <div className="jewel-card p-6 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100/50 border-2 border-amber-200/50">
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold">Payments</span>
-            <span className="text-green-600 font-bold">₹{analytics.revenueByMetal.reduce((sum, d) => sum + (d.total || 0), 0).toLocaleString()}</span>
-          </div>
-          <div className="text-xs text-muted-foreground">{periodLabel}</div>
-        </div>
-        {/* Gold Allocated */}
-        <div className="jewel-card p-6 rounded-2xl bg-gradient-to-br from-gold-50 to-gold-100/50 border-2 border-gold-200/50">
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold">Gold Allocated</span>
-            <span className="gold-text font-bold">{analytics.goldAllocationTrend.reduce((sum, d) => sum + (d.k18 + d.k22 + d.k24), 0).toFixed(4)} g</span>
-          </div>
-          <div className="text-xs text-muted-foreground">{periodLabel}</div>
-        </div>
-        {/* Silver Allocated */}
-        <div className="jewel-card p-6 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100/50 border-2 border-slate-200/50">
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold">Silver Allocated</span>
-            <span className="text-slate-600 font-bold">{analytics.goldAllocationTrend.reduce((sum, d) => sum + d.silver, 0).toFixed(4)} g</span>
-          </div>
-          <div className="text-xs text-muted-foreground">{periodLabel}</div>
-        </div>
-        {/* Customers */}
-        <div className="jewel-card p-6 rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-2 border-emerald-200/50">
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold">Customers</span>
-            <span className="text-emerald-600 font-bold">{analytics.customerMetrics.reduce((sum, d) => sum + (d.newEnrollments || 0), 0)}</span>
-          </div>
-          <div className="text-xs text-muted-foreground">{periodLabel}</div>
-        </div>
+      <div className="flex items-center gap-4">
+        <PeriodFilter
+          periodType={periodType}
+          setPeriodType={setPeriodType}
+          customStart={customStart}
+          setCustomStart={setCustomStart}
+          customEnd={customEnd}
+          setCustomEnd={setCustomEnd}
+        />
       </div>
-
+      <GoldRatesCard currentRates={rates} onUpdate={() => {}} />
+      <MetricCards metrics={analytics} periodLabel={periodLabel} />
       {/* Charts Section */}
       <div className="space-y-8 mt-8">
-        {/* Revenue & Collection Trends Chart */}
         <div>
           <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Revenue & Collection Trends</h2>
-          <PulseChart
-            chartType="revenue"
-            data={analytics.revenueByMetal}
-          />
+          <PulseChart chartType="revenue" data={analytics.revenueByMetal} />
         </div>
-        {/* Gold & Silver Allocation Trends Chart */}
         <div>
           <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Gold & Silver Allocation Trends</h2>
-          <PulseChart
-            chartType="allocation"
-            data={analytics.goldAllocationTrend}
-          />
+          <PulseChart chartType="allocation" data={analytics.goldAllocationTrend} />
         </div>
-        {/* Customer Metrics Chart */}
         <div>
           <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Customer Metrics</h2>
-          <PulseChart
-            chartType="customers"
-            data={analytics.customerMetrics}
-          />
+          <PulseChart chartType="customers" data={analytics.customerMetrics} />
         </div>
-        {/* Payment Behavior Chart */}
         <div>
           <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Payment Behavior</h2>
-          <PulseChart
-            chartType="payment"
-            data={analytics.paymentBehavior}
-          />
+          <PulseChart chartType="payment" data={analytics.paymentBehavior} />
         </div>
-        {/* Scheme Health Chart */}
         <div>
           <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Scheme Health</h2>
-          <PulseChart
-            chartType="scheme"
-            data={analytics.schemeHealth}
-          />
+          <PulseChart chartType="scheme" data={analytics.schemeHealth} />
         </div>
-        {/* Staff Performance Chart */}
         <div>
           <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">Staff Performance</h2>
-          <PulseChart
-            chartType="staff"
-            data={analytics.staffPerformance}
-          />
+          <PulseChart chartType="staff" data={analytics.staffPerformance} />
         </div>
       </div>
     </div>
