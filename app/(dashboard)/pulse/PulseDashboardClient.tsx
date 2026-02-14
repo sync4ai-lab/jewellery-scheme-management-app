@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
 import { PeriodFilter } from './components/PeriodFilter';
 import type { PeriodType } from './components/PeriodFilter';
 import { GoldRatesCard } from './components/GoldRatesCard';
@@ -20,15 +21,15 @@ type PulseDashboardClientProps = {
   todayLabel: string;
 };
 
-export default function PulseDashboardClient({ initialAnalytics, initialRates, todayLabel }: PulseDashboardClientProps) {
-    const [showRateDialog, setShowRateDialog] = useState(false);
-    const [rateForm, setRateForm] = useState({ karat: 'k18', rate: '' });
-    const [updating, setUpdating] = useState(false);
+  const [showRateDialog, setShowRateDialog] = useState(false);
+  const [rateForm, setRateForm] = useState<{ karat: 'k18' | 'k22' | 'k24' | 'silver'; rate: string }>({ karat: 'k18', rate: '' });
+  const [updating, setUpdating] = useState(false);
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [rates, setRates] = useState(initialRates);
   const [periodType, setPeriodType] = useState<PeriodType>('MONTH');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const { toast } = useToast();
   // TODO: Add logic to refetch analytics/rates on period change
   const periodLabel = '...'; // TODO: Compute from periodType/customStart/customEnd
   return (
@@ -66,24 +67,53 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
                 k22: '22K',
                 k24: '24K',
                 silver: 'SILVER',
-              };
+              } as const;
               const res = await fetch('/api/gold-rates/update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  karat: karatMap[rateForm.karat] || '18K',
+                  karat: karatMap[rateForm.karat as keyof typeof karatMap],
                   rate_per_gram: parseFloat(rateForm.rate),
                 }),
               });
-              setUpdating(false);
               if (res.ok) {
+                // Fetch latest rates only (not all analytics)
+                const karat = karatMap[rateForm.karat as keyof typeof karatMap];
+                // Refetch all rates in parallel
+                const fetchRate = async (karat: string) => {
+                  const resp = await fetch(`/api/gold-rates/latest?karat=${karat}`);
+                  if (!resp.ok) return null;
+                  return await resp.json();
+                };
+                const [k18, k22, k24, silver] = await Promise.all([
+                  fetchRate('18K'),
+                  fetchRate('22K'),
+                  fetchRate('24K'),
+                  fetchRate('SILVER'),
+                ]);
+                setRates({
+                  k18: k18?.rate ? { rate: k18.rate, validFrom: k18.effective_from } : null,
+                  k22: k22?.rate ? { rate: k22.rate, validFrom: k22.effective_from } : null,
+                  k24: k24?.rate ? { rate: k24.rate, validFrom: k24.effective_from } : null,
+                  silver: silver?.rate ? { rate: silver.rate, validFrom: silver.effective_from } : null,
+                });
                 setShowRateDialog(false);
-                window.location.reload();
+                toast({
+                  title: 'Rate updated!',
+                  description: `${karat} rate updated successfully`,
+                  // green/positive styling
+                  // You can add variant: 'success' if your toast supports it
+                });
               } else {
                 const errText = await res.text();
                 console.error('Rate update error:', errText);
-                alert('Failed to update rate: ' + errText);
+                toast({
+                  title: 'Failed to update rate',
+                  description: errText,
+                  // variant: 'destructive',
+                });
               }
+              setUpdating(false);
             }}
             className="space-y-4"
           >
@@ -92,7 +122,7 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
               <select
                 className="w-full border rounded p-2"
                 value={rateForm.karat}
-                onChange={e => setRateForm(f => ({ ...f, karat: e.target.value }))}
+                onChange={e => setRateForm(f => ({ ...f, karat: (e.target.value as 'k18' | 'k22' | 'k24' | 'silver') }))}
                 required
               >
                 <option value="k18">18K</option>

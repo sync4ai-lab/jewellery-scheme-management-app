@@ -16,6 +16,25 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
   );
 
   // 1. Gold/Silver allocation
+    // Fetch latest gold/silver rates for each karat
+    const karats = ['18K', '22K', '24K', 'SILVER'];
+    const currentRates: Record<string, { rate: number; validFrom: string } | null> = { k18: null, k22: null, k24: null, silver: null };
+    for (const karat of karats) {
+      const { data: rateRow } = await supabase
+        .from('gold_rates')
+        .select('rate_per_gram, effective_from')
+        .eq('retailer_id', retailerId)
+        .eq('karat', karat)
+        .order('effective_from', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (rateRow) {
+        if (karat === '18K') currentRates.k18 = { rate: rateRow.rate_per_gram, validFrom: rateRow.effective_from };
+        if (karat === '22K') currentRates.k22 = { rate: rateRow.rate_per_gram, validFrom: rateRow.effective_from };
+        if (karat === '24K') currentRates.k24 = { rate: rateRow.rate_per_gram, validFrom: rateRow.effective_from };
+        if (karat === 'SILVER') currentRates.silver = { rate: rateRow.rate_per_gram, validFrom: rateRow.effective_from };
+      }
+    }
   const { data: txnData } = await supabase
     .from('transactions')
     .select('paid_at, amount_paid, grams_allocated_snapshot, enrollment_id')
@@ -158,6 +177,7 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
     paymentBehavior,
     schemeHealth,
     staffPerformance,
+    currentRates,
     // Add more as needed
   };
 }

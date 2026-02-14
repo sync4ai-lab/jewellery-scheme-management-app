@@ -8,28 +8,12 @@ import { createServerClient } from '@supabase/ssr';
 import PulseDashboardClient from './PulseDashboardClient';
 
 type DashboardMetrics = {
-  periodCollections: number;
-  collections18K: number;
-  collections22K: number;
-  collections24K: number;
-  collectionsSilver: number;
-  goldAllocatedPeriod: number;
-  gold18KAllocated: number;
-  gold22KAllocated: number;
-  gold24KAllocated: number;
-  silverAllocated: number;
-  duesOutstanding: number;
-  dues18K: number;
-  dues22K: number;
-  dues24K: number;
-  duesSilver: number;
-  overdueCount: number;
-  totalEnrollmentsPeriod: number;
-  activeEnrollmentsPeriod: number;
-  totalCustomersPeriod: number;
-  activeCustomersPeriod: number;
-  readyToRedeemPeriod: number;
-  completedRedemptionsPeriod: number;
+  revenueByMetal: any[];
+  goldAllocationTrend: any[];
+  customerMetrics: any[];
+  paymentBehavior: any[];
+  schemeHealth: any[];
+  staffPerformance: any[];
   currentRates: {
     k18: { rate: number; validFrom: string } | null;
     k22: { rate: number; validFrom: string } | null;
