@@ -10,9 +10,7 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (name) => typeof cookieStore.get === 'function'
-          ? cookieStore.get(name)?.value
-          : Array.from(cookieStore.getAll()).find(c => c.name === name)?.value,
+        getAll: () => typeof cookieStore.getAll === 'function' ? cookieStore.getAll() : [],
       },
     }
   );

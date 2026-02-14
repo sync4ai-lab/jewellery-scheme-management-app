@@ -6,7 +6,7 @@ import { Edit } from 'lucide-react';
 import React from 'react';
 
 export function GoldRatesCard({
-  currentRates,
+  currentRates = { k18: null, k22: null, k24: null, silver: null },
   onUpdate,
 }: {
   currentRates: {
