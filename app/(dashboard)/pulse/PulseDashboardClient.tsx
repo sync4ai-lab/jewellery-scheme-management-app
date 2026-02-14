@@ -21,15 +21,16 @@ type PulseDashboardClientProps = {
   todayLabel: string;
 };
 
+export default function PulseDashboardClient({ initialAnalytics, initialRates, todayLabel }: PulseDashboardClientProps) {
   const [showRateDialog, setShowRateDialog] = useState(false);
   const [rateForm, setRateForm] = useState<{ karat: 'k18' | 'k22' | 'k24' | 'silver'; rate: string }>({ karat: 'k18', rate: '' });
   const [updating, setUpdating] = useState(false);
+  const { toast } = useToast();
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [rates, setRates] = useState(initialRates);
   const [periodType, setPeriodType] = useState<PeriodType>('MONTH');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-  const { toast } = useToast();
   // TODO: Add logic to refetch analytics/rates on period change
   const periodLabel = '...'; // TODO: Compute from periodType/customStart/customEnd
   return (
