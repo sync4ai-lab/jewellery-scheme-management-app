@@ -80,7 +80,9 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
                 setShowRateDialog(false);
                 window.location.reload();
               } else {
-                alert('Failed to update rate');
+                const errText = await res.text();
+                console.error('Rate update error:', errText);
+                alert('Failed to update rate: ' + errText);
               }
             }}
             className="space-y-4"
