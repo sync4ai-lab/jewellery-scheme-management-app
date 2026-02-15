@@ -1,8 +1,16 @@
 
-import { createSupabaseServerClientWithSetAll } from '@/lib/supabase/server-client';
 
-export async function POST(req: NextRequest) {
-  const supabase = createSupabaseServerClientWithSetAll();
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { createSupabaseServerClientWithSetAll } from '@/lib/supabase/server-client';
+import { getPulseAnalytics } from '@/app/(dashboard)/pulse/modules/analytics';
+
+  // Log incoming cookies for diagnostics
+  const cookieStore = await cookies();
+  const allCookies = cookieStore.getAll();
+  console.log('[Pulse API] Incoming cookies:', allCookies);
+
+  const supabase = await createSupabaseServerClientWithSetAll();
   // Get the current authenticated user from the session
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError) {
@@ -39,7 +47,10 @@ export async function POST(req: NextRequest) {
     end: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0],
   };
   const analytics = await getPulseAnalytics(profile.retailer_id, period);
-  return NextResponse.json({ analytics, todayLabel: now.toLocaleDateString('en-IN', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  }) });
+  return NextResponse.json({
+    analytics,
+    todayLabel: now.toLocaleDateString('en-IN', {
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    })
+  });
 }
