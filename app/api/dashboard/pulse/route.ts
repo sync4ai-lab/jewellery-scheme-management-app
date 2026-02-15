@@ -1,10 +1,12 @@
 
 
+
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClientWithSetAll } from '@/lib/supabase/server-client';
 import { getPulseAnalytics } from '@/app/(dashboard)/pulse/modules/analytics';
 
+export async function POST() {
   // Log incoming cookies for diagnostics
   const cookieStore = await cookies();
   const allCookies = cookieStore.getAll();
