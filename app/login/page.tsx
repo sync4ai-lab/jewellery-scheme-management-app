@@ -33,6 +33,12 @@ function LoginFormInner() {
       });
 
       if (error) throw error;
+      // Wait for session cookie to be set
+      await new Promise(resolve => setTimeout(resolve, 500));
+      // Diagnostic: log session cookie
+      if (typeof document !== 'undefined') {
+        console.log('Cookies after login:', document.cookie);
+      }
       router.push('/pulse');
     } catch (err: any) {
       setError(err?.message ?? 'Failed to sign in');

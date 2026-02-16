@@ -31,8 +31,48 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
   const [periodType, setPeriodType] = useState<PeriodType>('MONTH');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-  // TODO: Add logic to refetch analytics/rates on period change
-  const periodLabel = '...'; // TODO: Compute from periodType/customStart/customEnd
+  // Add logic to refetch analytics/rates on period change
+  const [period, setPeriod] = useState<{ start: string; end: string }>(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
+    };
+  });
+  const periodLabel = `${period.start} to ${period.end}`;
+
+  // Refetch analytics/rates when period changes
+  const handlePeriodChange = async (type: PeriodType, start: string, end: string) => {
+    setPeriodType(type);
+    setCustomStart(start);
+    setCustomEnd(end);
+    let newPeriod = period;
+    if (type === 'CUSTOM' && start && end) {
+      newPeriod = { start, end };
+    } else if (type === 'MONTH') {
+      const now = new Date();
+      const s = new Date(now.getFullYear(), now.getMonth(), 1);
+      const e = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      newPeriod = {
+        start: s.toISOString().split('T')[0],
+        end: e.toISOString().split('T')[0],
+      };
+    }
+    setPeriod(newPeriod);
+    // Fetch analytics for new period
+    const res = await fetch(`/api/pulse/analytics?start=${newPeriod.start}&end=${newPeriod.end}`);
+    if (res.ok) {
+      const data = await res.json();
+      setAnalytics(data);
+      setRates(data.currentRates);
+    } else {
+      toast({ title: 'Failed to fetch analytics', description: 'Please try again.' });
+    }
+  };
+
+  // ...existing code...
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -46,12 +86,12 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
       </div>
       <div className="flex items-center gap-4">
         <PeriodFilter
-          periodType={periodType}
-          setPeriodType={setPeriodType}
-          customStart={customStart}
-          setCustomStart={setCustomStart}
-          customEnd={customEnd}
-          setCustomEnd={setCustomEnd}
+           periodType={periodType}
+           setPeriodType={(type) => handlePeriodChange(type, customStart, customEnd)}
+           customStart={customStart}
+           setCustomStart={(start) => handlePeriodChange(periodType, start, customEnd)}
+           customEnd={customEnd}
+           setCustomEnd={(end) => handlePeriodChange(periodType, customStart, end)}
         />
       </div>
       <GoldRatesCard currentRates={rates} onUpdate={() => setShowRateDialog(true)} />

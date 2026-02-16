@@ -46,16 +46,14 @@ const noOpLock = async <R>(
   return await fn();
 };
 
-// Direct client creation with lock disabled to prevent AbortError
+// Staff/Admin client: PKCE flow with default storage (cookie-based for SSR)
 export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    // Disable the Web Locks API to prevent AbortError
-    lock: noOpLock,
-    // Use localStorage directly without locking
-    flowType: 'implicit',
+    flowType: 'pkce', // PKCE flow enables cookie-based SSR auth
+    // lock: noOpLock, // Only needed if you see AbortError in browser
   },
   global: {
     headers: {
