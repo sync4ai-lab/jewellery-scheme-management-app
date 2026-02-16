@@ -48,7 +48,7 @@ export async function getPaymentsData(retailer_id: string) {
   const supabase = await createSupabaseServerClient();
   const { data: txns } = await supabase
     .from('transactions')
-    .select('id, amount_paid, paid_at, payment_status, mode, grams_allocated_snapshot')
+    .select('id, amount_paid, paid_at, payment_status, mode, grams_allocated_snapshot, enrollment_id')
     .eq('retailer_id', retailer_id);
   return txns || [];
 }

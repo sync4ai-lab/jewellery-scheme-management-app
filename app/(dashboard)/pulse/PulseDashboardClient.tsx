@@ -27,6 +27,7 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
   const [updating, setUpdating] = useState(false);
   const { toast } = useToast();
   const [analytics, setAnalytics] = useState(initialAnalytics);
+  const [diagnostics, setDiagnostics] = useState<any>(null);
   const [rates, setRates] = useState(initialRates);
   const [periodType, setPeriodType] = useState<PeriodType>('MONTH');
   const [customStart, setCustomStart] = useState('');
@@ -62,11 +63,21 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
     }
     setPeriod(newPeriod);
     // Fetch analytics for new period
-    const res = await fetch(`/api/pulse/analytics?start=${newPeriod.start}&end=${newPeriod.end}`);
+    const res = await fetch(`/api/dashboard/pulse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start: newPeriod.start, end: newPeriod.end })
+    });
     if (res.ok) {
-      const data = await res.json();
-      setAnalytics(data);
-      setRates(data.currentRates);
+      const result = await res.json();
+      setAnalytics(result.analytics);
+      setRates(result.analytics.currentRates);
+      if (result.diagnostics || result.__pulseDiagnostics) {
+        setDiagnostics({
+          ...result.diagnostics,
+          __pulseDiagnostics: result.__pulseDiagnostics,
+        });
+      }
     } else {
       toast({ title: 'Failed to fetch analytics', description: 'Please try again.' });
     }
@@ -75,6 +86,12 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
   // ...existing code...
   return (
     <div className="space-y-6">
+      {diagnostics && (
+        <div className="bg-rose-50 border border-rose-200 rounded p-4 text-xs text-rose-700 mb-4">
+          <strong>Diagnostics:</strong>
+          <pre className="whitespace-pre-wrap">{JSON.stringify(diagnostics, null, 2)}</pre>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Pulse</h1>

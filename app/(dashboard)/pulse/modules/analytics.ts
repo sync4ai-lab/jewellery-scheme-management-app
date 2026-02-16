@@ -15,6 +15,12 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
   const enrollments = await getEnrollmentsData(retailerId);
   const payments = await getPaymentsData(retailerId);
   const redemptions = await getRedemptionsData(retailerId);
+  // Diagnostics: log raw DB results
+  globalThis.__pulseDiagnostics = globalThis.__pulseDiagnostics || {};
+  globalThis.__pulseDiagnostics.customers = customers;
+  globalThis.__pulseDiagnostics.enrollments = enrollments;
+  globalThis.__pulseDiagnostics.payments = payments;
+  globalThis.__pulseDiagnostics.redemptions = redemptions;
 
   // Filter by period
   const startDate = new Date(period.start);
@@ -95,27 +101,113 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
   // Ready to redeem logic
   const readyToRedeemPeriod = enrollmentsPeriod.filter(e => e.status === 'READY_TO_REDEEM').length;
 
-  return {
-    totalCustomersPeriod,
-    activeCustomersPeriod,
-    totalEnrollmentsPeriod,
-    activeEnrollmentsPeriod,
-    completedRedemptionsPeriod,
-    periodCollections,
-    collections18K,
-    collections22K,
-    collections24K,
-    collectionsSilver,
-    goldAllocatedPeriod,
-    gold18KAllocated,
-    gold22KAllocated,
-    gold24KAllocated,
-    silverAllocated,
-    duesOutstanding,
-    overdueCount,
-    readyToRedeemPeriod,
-    // Add more as needed
-  };
+    // Chart data generation
+    // Revenue by metal (monthly)
+    const revenueByMetal = [];
+    const allocationTrend = [];
+    const customerMetrics = [];
+    const paymentBehavior = [];
+    const schemeHealth = [];
+    const staffPerformance = [];
+
+    // Example: group payments by month and karat
+    const paymentsByMonth = {};
+    paymentsPeriod.forEach(p => {
+      const paidAt = new Date(p.paid_at);
+      const monthKey = `${paidAt.getFullYear()}-${paidAt.getMonth() + 1}`;
+      if (!paymentsByMonth[monthKey]) paymentsByMonth[monthKey] = { k18: 0, k22: 0, k24: 0, silver: 0, total: 0, date: monthKey };
+      const enrollment = enrollments.find(e => e.id === p.enrollment_id);
+      if (!enrollment) return;
+      if (enrollment.karat === '18K') paymentsByMonth[monthKey].k18 += p.amount_paid;
+      else if (enrollment.karat === '22K') paymentsByMonth[monthKey].k22 += p.amount_paid;
+      else if (enrollment.karat === '24K') paymentsByMonth[monthKey].k24 += p.amount_paid;
+      else if (enrollment.karat === 'SILVER') paymentsByMonth[monthKey].silver += p.amount_paid;
+      paymentsByMonth[monthKey].total += p.amount_paid;
+    });
+    revenueByMetal.push(...Object.values(paymentsByMonth));
+
+    // Gold/Silver allocation trend (monthly)
+    const allocationByMonth = {};
+    paymentsPeriod.forEach(p => {
+      const paidAt = new Date(p.paid_at);
+      const monthKey = `${paidAt.getFullYear()}-${paidAt.getMonth() + 1}`;
+      if (!allocationByMonth[monthKey]) allocationByMonth[monthKey] = { k18: 0, k22: 0, k24: 0, silver: 0, date: monthKey };
+      const enrollment = enrollments.find(e => e.id === p.enrollment_id);
+      if (!enrollment) return;
+      if (enrollment.karat === '18K') allocationByMonth[monthKey].k18 += p.grams_allocated_snapshot || 0;
+      else if (enrollment.karat === '22K') allocationByMonth[monthKey].k22 += p.grams_allocated_snapshot || 0;
+      else if (enrollment.karat === '24K') allocationByMonth[monthKey].k24 += p.grams_allocated_snapshot || 0;
+      else if (enrollment.karat === 'SILVER') allocationByMonth[monthKey].silver += p.grams_allocated_snapshot || 0;
+    });
+    allocationTrend.push(...Object.values(allocationByMonth));
+
+    // Customer metrics (monthly)
+    const customersByMonth = {};
+    enrollmentsPeriod.forEach(e => {
+      const createdAt = new Date(e.created_at);
+      const monthKey = `${createdAt.getFullYear()}-${createdAt.getMonth() + 1}`;
+      if (!customersByMonth[monthKey]) customersByMonth[monthKey] = { newEnrollments: 0, activeCustomers: 0, date: monthKey };
+      customersByMonth[monthKey].newEnrollments += 1;
+    });
+    customersByMonth[Object.keys(customersByMonth)[0]].activeCustomers = activeCustomersPeriod;
+    customerMetrics.push(...Object.values(customersByMonth));
+
+    // Payment behavior (monthly)
+    const paymentBehaviorByMonth = {};
+    paymentsPeriod.forEach(p => {
+      const paidAt = new Date(p.paid_at);
+      const monthKey = `${paidAt.getFullYear()}-${paidAt.getMonth() + 1}`;
+      if (!paymentBehaviorByMonth[monthKey]) paymentBehaviorByMonth[monthKey] = { payments: 0, date: monthKey };
+      paymentBehaviorByMonth[monthKey].payments += 1;
+    });
+    paymentBehavior.push(...Object.values(paymentBehaviorByMonth));
+
+    // Scheme health (monthly)
+    const schemeHealthByMonth = {};
+    enrollmentsPeriod.forEach(e => {
+      const createdAt = new Date(e.created_at);
+      const monthKey = `${createdAt.getFullYear()}-${createdAt.getMonth() + 1}`;
+      if (!schemeHealthByMonth[monthKey]) schemeHealthByMonth[monthKey] = { enrollments: 0, date: monthKey };
+      schemeHealthByMonth[monthKey].enrollments += 1;
+    });
+    schemeHealth.push(...Object.values(schemeHealthByMonth));
+
+    // Staff performance (stub)
+    staffPerformance.push({ date: period.start, performance: 0 });
+
+    return {
+      __pulseDiagnostics: {
+        customers,
+        enrollments,
+        payments,
+        redemptions,
+      },
+      totalCustomersPeriod,
+      activeCustomersPeriod,
+      totalEnrollmentsPeriod,
+      activeEnrollmentsPeriod,
+      completedRedemptionsPeriod,
+      periodCollections,
+      collections18K,
+      collections22K,
+      collections24K,
+      collectionsSilver,
+      goldAllocatedPeriod,
+      gold18KAllocated,
+      gold22KAllocated,
+      gold24KAllocated,
+      silverAllocated,
+      duesOutstanding,
+      overdueCount,
+      readyToRedeemPeriod,
+      // Chart data
+      revenueByMetal,
+      goldAllocationTrend: allocationTrend,
+      customerMetrics,
+      paymentBehavior,
+      schemeHealth,
+      staffPerformance,
+    };
 }
 
 // Add more utility functions as needed
