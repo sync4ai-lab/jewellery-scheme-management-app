@@ -11,8 +11,11 @@ export default async function PulseDashboard() {
   const supabase = await createSupabaseServerClientWithSetAll();
   // Get the current authenticated user from the session
   const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) {
-    return <div>Access denied</div>;
+  if (userError) {
+    return <div style={{color:'red'}}><b>Access denied (userError):</b> {JSON.stringify(userError)}</div>;
+  }
+  if (!user) {
+    return <div style={{color:'red'}}><b>Access denied (no user in session)</b></div>;
   }
   // Fetch the profile for this user
   const { data: profile, error: profileError } = await supabase
@@ -20,8 +23,14 @@ export default async function PulseDashboard() {
     .select('id, retailer_id, role')
     .eq('id', user.id)
     .maybeSingle();
-  if (profileError || !profile || !['ADMIN', 'STAFF'].includes(profile.role)) {
-    return <div>Access denied</div>;
+  if (profileError) {
+    return <div style={{color:'red'}}><b>Access denied (profileError):</b> {JSON.stringify(profileError)}</div>;
+  }
+  if (!profile) {
+    return <div style={{color:'red'}}><b>Access denied (no profile found for user):</b> {user.id}</div>;
+  }
+  if (!['ADMIN', 'STAFF'].includes(profile.role)) {
+    return <div style={{color:'red'}}><b>Access denied (insufficient role):</b> {profile.role}</div>;
   }
   // Default period: current month
   const now = new Date();
