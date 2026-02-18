@@ -15,7 +15,7 @@ import { PublicBrandingProvider, usePublicBranding } from '@/lib/contexts/public
 
 function LoginFormInner() {
   const { user, profile, loading } = useAuth();
-  const router = useRouter();
+  // router already declared above; remove duplicate
 
   useEffect(() => {
     if (!loading && user && profile) {
