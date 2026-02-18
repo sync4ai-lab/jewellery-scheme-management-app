@@ -8,8 +8,32 @@ import {
   getPaymentsData,
   getRedemptionsData,
 } from '@/lib/dashboard-metrics';
+import { createServerClient } from '@supabase/ssr';
 
 export async function getPulseAnalytics(retailerId: string, period: { start: string, end: string }) {
+    // Fetch current gold/silver rates
+    let currentRates = { k18: null, k22: null, k24: null, silver: null };
+    try {
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+      const { data: rates } = await supabase
+        .from('gold_rates')
+        .select('karat, rate_per_gram, effective_from')
+        .order('effective_from', { ascending: false })
+        .limit(20);
+      if (rates && Array.isArray(rates)) {
+        for (const r of rates) {
+          if (r.karat === '18K' && !currentRates.k18) currentRates.k18 = { rate: r.rate_per_gram, validFrom: r.effective_from };
+          if (r.karat === '22K' && !currentRates.k22) currentRates.k22 = { rate: r.rate_per_gram, validFrom: r.effective_from };
+          if (r.karat === '24K' && !currentRates.k24) currentRates.k24 = { rate: r.rate_per_gram, validFrom: r.effective_from };
+          if (r.karat === 'SILVER' && !currentRates.silver) currentRates.silver = { rate: r.rate_per_gram, validFrom: r.effective_from };
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
   // Use shared utilities for all metrics
   const customers = await getCustomersData(retailerId);
   const enrollments = await getEnrollmentsData(retailerId);
@@ -74,14 +98,16 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
     else if (enrollment.karat === 'SILVER') collectionsSilver += p.amount_paid;
   }
 
-  // Dues and overdue logic
+
+  // Dues and overdue logic (robust: check all enrollments, not just filtered period)
   let duesOutstanding = 0, overdueCount = 0;
   const today = new Date();
-  for (const e of enrollmentsPeriod) {
-    // Find payments for this enrollment in period
-    const enrollmentPayments = paymentsPeriod.filter(p => p.enrollment_id === e.id);
+  for (const e of enrollments) {
+    if (e.status !== 'ACTIVE') continue;
+    // Find all payments for this enrollment in the period
+    const enrollmentPayments = payments.filter(p => p.enrollment_id === e.id && p.paid_at && new Date(p.paid_at) >= startDate && new Date(p.paid_at) <= endDate);
     // Assume monthly_amount is available in e (or fetch from scheme_templates if needed)
-    const monthlyAmount = e.commitment_amount || (e.scheme_templates?.installment_amount ?? 0);
+    const monthlyAmount = e.commitment_amount || (e.scheme_templates?.installment_amount ?? 0) || 1000; // fallback
     // Count months in period
     const months = Math.max(1, (endDate.getFullYear() - startDate.getFullYear()) * 12 + endDate.getMonth() - startDate.getMonth() + 1);
     // Count paid months
@@ -91,89 +117,115 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
     }));
     // Dues: months in period minus paid months
     const dueMonths = months - paidMonths.size;
-    if (dueMonths > 0 && e.status === 'ACTIVE') {
+    if (dueMonths > 0) {
       duesOutstanding += dueMonths * monthlyAmount;
       // Overdue: if endDate is past today and dues exist
       if (endDate < today) overdueCount += 1;
     }
   }
 
-  // Ready to redeem logic
-  const readyToRedeemPeriod = enrollmentsPeriod.filter(e => e.status === 'READY_TO_REDEEM').length;
+  // Redemptions logic (count completed in period)
+  // (already declared above, do not redeclare)
 
-    // Chart data generation
+  // Ready to redeem logic (count eligible enrollments)
+  const readyToRedeemPeriod = enrollments.filter(e => e.status === 'READY_TO_REDEEM').length;
+
+
+    // --- Time series generation helpers ---
+    function getMonthKeys(startDate: Date, endDate: Date) {
+      const keys = [];
+      const d = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+      const end = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+      while (d <= end) {
+        keys.push(`${d.getFullYear()}-${d.getMonth() + 1}`);
+        d.setMonth(d.getMonth() + 1);
+      }
+      return keys;
+    }
+    const monthKeys = getMonthKeys(startDate, endDate);
+
     // Revenue by metal (monthly)
-    const revenueByMetal = [];
-    const allocationTrend = [];
-    const customerMetrics = [];
-    const paymentBehavior = [];
-    const schemeHealth = [];
-    const staffPerformance = [];
-
-    // Example: group payments by month and karat
     const paymentsByMonth = {};
-    paymentsPeriod.forEach(p => {
+    for (const key of monthKeys) {
+      paymentsByMonth[key] = { k18: 0, k22: 0, k24: 0, silver: 0, total: 0, date: key };
+    }
+    payments.forEach(p => {
+      if (!p.paid_at) return;
       const paidAt = new Date(p.paid_at);
       const monthKey = `${paidAt.getFullYear()}-${paidAt.getMonth() + 1}`;
-      if (!paymentsByMonth[monthKey]) paymentsByMonth[monthKey] = { k18: 0, k22: 0, k24: 0, silver: 0, total: 0, date: monthKey };
       const enrollment = enrollments.find(e => e.id === p.enrollment_id);
-      if (!enrollment) return;
+      if (!enrollment || !paymentsByMonth[monthKey]) return;
       if (enrollment.karat === '18K') paymentsByMonth[monthKey].k18 += p.amount_paid;
       else if (enrollment.karat === '22K') paymentsByMonth[monthKey].k22 += p.amount_paid;
       else if (enrollment.karat === '24K') paymentsByMonth[monthKey].k24 += p.amount_paid;
       else if (enrollment.karat === 'SILVER') paymentsByMonth[monthKey].silver += p.amount_paid;
       paymentsByMonth[monthKey].total += p.amount_paid;
     });
-    revenueByMetal.push(...Object.values(paymentsByMonth));
+    const revenueByMetal = monthKeys.map(key => paymentsByMonth[key]);
 
     // Gold/Silver allocation trend (monthly)
     const allocationByMonth = {};
-    paymentsPeriod.forEach(p => {
+    for (const key of monthKeys) {
+      allocationByMonth[key] = { k18: 0, k22: 0, k24: 0, silver: 0, date: key };
+    }
+    payments.forEach(p => {
+      if (!p.paid_at) return;
       const paidAt = new Date(p.paid_at);
       const monthKey = `${paidAt.getFullYear()}-${paidAt.getMonth() + 1}`;
-      if (!allocationByMonth[monthKey]) allocationByMonth[monthKey] = { k18: 0, k22: 0, k24: 0, silver: 0, date: monthKey };
       const enrollment = enrollments.find(e => e.id === p.enrollment_id);
-      if (!enrollment) return;
+      if (!enrollment || !allocationByMonth[monthKey]) return;
       if (enrollment.karat === '18K') allocationByMonth[monthKey].k18 += p.grams_allocated_snapshot || 0;
       else if (enrollment.karat === '22K') allocationByMonth[monthKey].k22 += p.grams_allocated_snapshot || 0;
       else if (enrollment.karat === '24K') allocationByMonth[monthKey].k24 += p.grams_allocated_snapshot || 0;
       else if (enrollment.karat === 'SILVER') allocationByMonth[monthKey].silver += p.grams_allocated_snapshot || 0;
     });
-    allocationTrend.push(...Object.values(allocationByMonth));
+    const allocationTrend = monthKeys.map(key => allocationByMonth[key]);
 
     // Customer metrics (monthly)
     const customersByMonth = {};
-    enrollmentsPeriod.forEach(e => {
+    for (const key of monthKeys) {
+      customersByMonth[key] = { newEnrollments: 0, activeCustomers: 0, date: key };
+    }
+    enrollments.forEach(e => {
+      if (!e.created_at) return;
       const createdAt = new Date(e.created_at);
       const monthKey = `${createdAt.getFullYear()}-${createdAt.getMonth() + 1}`;
-      if (!customersByMonth[monthKey]) customersByMonth[monthKey] = { newEnrollments: 0, activeCustomers: 0, date: monthKey };
-      customersByMonth[monthKey].newEnrollments += 1;
+      if (customersByMonth[monthKey]) customersByMonth[monthKey].newEnrollments += 1;
     });
-    customersByMonth[Object.keys(customersByMonth)[0]].activeCustomers = activeCustomersPeriod;
-    customerMetrics.push(...Object.values(customersByMonth));
+    // Set activeCustomers only for the last month in range
+    if (monthKeys.length > 0) {
+      customersByMonth[monthKeys[monthKeys.length - 1]].activeCustomers = activeCustomersPeriod;
+    }
+    const customerMetrics = monthKeys.map(key => customersByMonth[key]);
 
     // Payment behavior (monthly)
     const paymentBehaviorByMonth = {};
-    paymentsPeriod.forEach(p => {
+    for (const key of monthKeys) {
+      paymentBehaviorByMonth[key] = { payments: 0, date: key };
+    }
+    payments.forEach(p => {
+      if (!p.paid_at) return;
       const paidAt = new Date(p.paid_at);
       const monthKey = `${paidAt.getFullYear()}-${paidAt.getMonth() + 1}`;
-      if (!paymentBehaviorByMonth[monthKey]) paymentBehaviorByMonth[monthKey] = { payments: 0, date: monthKey };
-      paymentBehaviorByMonth[monthKey].payments += 1;
+      if (paymentBehaviorByMonth[monthKey]) paymentBehaviorByMonth[monthKey].payments += 1;
     });
-    paymentBehavior.push(...Object.values(paymentBehaviorByMonth));
+    const paymentBehavior = monthKeys.map(key => paymentBehaviorByMonth[key]);
 
     // Scheme health (monthly)
     const schemeHealthByMonth = {};
-    enrollmentsPeriod.forEach(e => {
+    for (const key of monthKeys) {
+      schemeHealthByMonth[key] = { enrollments: 0, date: key };
+    }
+    enrollments.forEach(e => {
+      if (!e.created_at) return;
       const createdAt = new Date(e.created_at);
       const monthKey = `${createdAt.getFullYear()}-${createdAt.getMonth() + 1}`;
-      if (!schemeHealthByMonth[monthKey]) schemeHealthByMonth[monthKey] = { enrollments: 0, date: monthKey };
-      schemeHealthByMonth[monthKey].enrollments += 1;
+      if (schemeHealthByMonth[monthKey]) schemeHealthByMonth[monthKey].enrollments += 1;
     });
-    schemeHealth.push(...Object.values(schemeHealthByMonth));
+    const schemeHealth = monthKeys.map(key => schemeHealthByMonth[key]);
 
     // Staff performance (stub)
-    staffPerformance.push({ date: period.start, performance: 0 });
+    const staffPerformance = monthKeys.map(key => ({ date: key, performance: 0 }));
 
     return {
       __pulseDiagnostics: {
@@ -207,6 +259,7 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
       paymentBehavior,
       schemeHealth,
       staffPerformance,
+      currentRates,
     };
 }
 

@@ -29,10 +29,10 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [diagnostics, setDiagnostics] = useState<any>(null);
   const [rates, setRates] = useState(initialRates);
+  // Main dashboard period filter
   const [periodType, setPeriodType] = useState<PeriodType>('MONTH');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-  // Add logic to refetch analytics/rates on period change
   const [period, setPeriod] = useState<{ start: string; end: string }>(() => {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -44,43 +44,108 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
   });
   const periodLabel = `${period.start} to ${period.end}`;
 
-  // Refetch analytics/rates when period changes
-  const handlePeriodChange = async (type: PeriodType, start: string, end: string) => {
+  // Separate graph period filter
+  const [graphPeriodType, setGraphPeriodType] = useState<PeriodType>('MONTH');
+  const [graphCustomStart, setGraphCustomStart] = useState('');
+  const [graphCustomEnd, setGraphCustomEnd] = useState('');
+  const [graphPeriod, setGraphPeriod] = useState<{ start: string; end: string }>(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
+    };
+  });
+
+  // Helper to get start/end for each period type
+  function getPeriodByType(type: PeriodType, customStart: string, customEnd: string) {
+    const now = new Date();
+    let start: Date, end: Date;
+    switch (type) {
+      case 'DAY':
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case 'WEEK': {
+        const day = now.getDay();
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday as first day
+        start = new Date(now.getFullYear(), now.getMonth(), diff);
+        end = new Date(start);
+        end.setDate(start.getDate() + 6);
+        break;
+      }
+      case 'MONTH':
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        break;
+      case 'YEAR':
+        start = new Date(now.getFullYear(), 0, 1);
+        end = new Date(now.getFullYear(), 11, 31);
+        break;
+      case 'RANGE':
+        if (customStart && customEnd) {
+          start = new Date(customStart);
+          end = new Date(customEnd);
+        } else {
+          start = new Date(now.getFullYear(), now.getMonth(), 1);
+          end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        }
+        break;
+      default:
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    }
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
+    };
+  }
+
+
+  // Unified: Refetch all analytics and chart data when either filter changes
+  React.useEffect(() => {
+    const fetchAll = async () => {
+      const res = await fetch(`/api/dashboard/pulse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          start: period.start,
+          end: period.end,
+          chartStart: graphPeriod.start,
+          chartEnd: graphPeriod.end
+        })
+      });
+      if (res.ok) {
+        const result = await res.json();
+        setAnalytics(result.analytics);
+        setRates(result.analytics.currentRates);
+        if (result.diagnostics || result.__pulseDiagnostics) {
+          setDiagnostics({
+            ...result.diagnostics,
+            __pulseDiagnostics: result.__pulseDiagnostics,
+          });
+        }
+      }
+    };
+    fetchAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period.start, period.end, graphPeriod.start, graphPeriod.end]);
+
+  // Handlers for filter changes
+  const handlePeriodChange = (type: PeriodType, start: string, end: string) => {
     setPeriodType(type);
     setCustomStart(start);
     setCustomEnd(end);
-    let newPeriod = period;
-    if (type === 'CUSTOM' && start && end) {
-      newPeriod = { start, end };
-    } else if (type === 'MONTH') {
-      const now = new Date();
-      const s = new Date(now.getFullYear(), now.getMonth(), 1);
-      const e = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      newPeriod = {
-        start: s.toISOString().split('T')[0],
-        end: e.toISOString().split('T')[0],
-      };
-    }
-    setPeriod(newPeriod);
-    // Fetch analytics for new period
-    const res = await fetch(`/api/dashboard/pulse`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ start: newPeriod.start, end: newPeriod.end })
-    });
-    if (res.ok) {
-      const result = await res.json();
-      setAnalytics(result.analytics);
-      setRates(result.analytics.currentRates);
-      if (result.diagnostics || result.__pulseDiagnostics) {
-        setDiagnostics({
-          ...result.diagnostics,
-          __pulseDiagnostics: result.__pulseDiagnostics,
-        });
-      }
-    } else {
-      toast({ title: 'Failed to fetch analytics', description: 'Please try again.' });
-    }
+    setPeriod(getPeriodByType(type, start, end));
+  };
+
+  // Handler for graph period filter
+  const handleGraphPeriodChange = (type: PeriodType, start: string, end: string) => {
+    setGraphPeriodType(type);
+    setGraphCustomStart(start);
+    setGraphCustomEnd(end);
+    setGraphPeriod(getPeriodByType(type, start, end));
   };
 
   // ...existing code...
@@ -92,6 +157,7 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
           <pre className="whitespace-pre-wrap">{JSON.stringify(diagnostics, null, 2)}</pre>
         </div>
       )}
+      {/* Top section: Pulse title, today, and period filter */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-gold-600 via-gold-500 to-rose-500 bg-clip-text text-transparent">Pulse</h1>
@@ -99,22 +165,50 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm px-4 py-2 bg-muted rounded-lg">{todayLabel}</span>
+          <div className="min-w-[220px]">
+            <PeriodFilter
+              periodType={periodType}
+              setPeriodType={(type) => handlePeriodChange(type, customStart, customEnd)}
+              customStart={customStart}
+              setCustomStart={(start) => handlePeriodChange(periodType, start, customEnd)}
+              customEnd={customEnd}
+              setCustomEnd={(end) => handlePeriodChange(periodType, customStart, end)}
+            />
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-4">
-        <PeriodFilter
-           periodType={periodType}
-           setPeriodType={(type) => handlePeriodChange(type, customStart, customEnd)}
-           customStart={customStart}
-           setCustomStart={(start) => handlePeriodChange(periodType, start, customEnd)}
-           customEnd={customEnd}
-           setCustomEnd={(end) => handlePeriodChange(periodType, customStart, end)}
-        />
-      </div>
+
+      {/* Move GoldRatesCard above MetricCards as requested */}
       <GoldRatesCard currentRates={rates} onUpdate={() => setShowRateDialog(true)} />
+
+      {/* Metric Cards */}
+      <MetricCards
+        metrics={analytics}
+        periodLabel={periodLabel}
+        onPaymentsClick={() => {}}
+        onDuesClick={() => {}}
+        onEnrollClick={() => {}}
+        onCustomersClick={() => {}}
+      />
+
+      {/* Business Analytics heading and graph filter aligned right */}
+      <div className="flex items-center justify-between mt-8 mb-2">
+        <h2 className="text-xl font-semibold">Business Analytics</h2>
+        <div className="flex items-center gap-3 min-w-[220px]">
+          <PeriodFilter
+            periodType={graphPeriodType}
+            setPeriodType={(type) => handleGraphPeriodChange(type, graphCustomStart, graphCustomEnd)}
+            customStart={graphCustomStart}
+            setCustomStart={(start) => handleGraphPeriodChange(graphPeriodType, start, graphCustomEnd)}
+            customEnd={graphCustomEnd}
+            setCustomEnd={(end) => handleGraphPeriodChange(graphPeriodType, graphCustomStart, end)}
+          />
+        </div>
+      </div>
+
       <Dialog open={showRateDialog} onOpenChange={setShowRateDialog}>
         <DialogContent>
-          <DialogHeader>Update Gold/Silver Rate</DialogHeader>
+          <DialogTitle>Update Gold/Silver Rate</DialogTitle>
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -135,32 +229,27 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
                 }),
               });
               if (res.ok) {
-                // Fetch latest rates only (not all analytics)
-                const karat = karatMap[rateForm.karat as keyof typeof karatMap];
-                // Refetch all rates in parallel
-                const fetchRate = async (karat: string) => {
-                  const resp = await fetch(`/api/gold-rates/latest?karat=${karat}`);
-                  if (!resp.ok) return null;
-                  return await resp.json();
-                };
-                const [k18, k22, k24, silver] = await Promise.all([
-                  fetchRate('18K'),
-                  fetchRate('22K'),
-                  fetchRate('24K'),
-                  fetchRate('SILVER'),
-                ]);
-                setRates({
-                  k18: k18?.rate ? { rate: k18.rate, validFrom: k18.effective_from } : null,
-                  k22: k22?.rate ? { rate: k22.rate, validFrom: k22.effective_from } : null,
-                  k24: k24?.rate ? { rate: k24.rate, validFrom: k24.effective_from } : null,
-                  silver: silver?.rate ? { rate: silver.rate, validFrom: silver.effective_from } : null,
+                // Refetch all analytics and rates after update
+                const analyticsRes = await fetch(`/api/dashboard/pulse`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ start: period.start, end: period.end })
                 });
+                if (analyticsRes.ok) {
+                  const result = await analyticsRes.json();
+                  setAnalytics(result.analytics);
+                  setRates(result.analytics.currentRates);
+                  if (result.diagnostics || result.__pulseDiagnostics) {
+                    setDiagnostics({
+                      ...result.diagnostics,
+                      __pulseDiagnostics: result.__pulseDiagnostics,
+                    });
+                  }
+                }
                 setShowRateDialog(false);
                 toast({
                   title: 'Rate updated!',
-                  description: `${karat} rate updated successfully`,
-                  // green/positive styling
-                  // You can add variant: 'success' if your toast supports it
+                  description: `${karatMap[rateForm.karat as keyof typeof karatMap]} rate updated successfully`,
                 });
               } else {
                 const errText = await res.text();
@@ -206,14 +295,7 @@ export default function PulseDashboardClient({ initialAnalytics, initialRates, t
           </form>
         </DialogContent>
       </Dialog>
-      <MetricCards
-        metrics={analytics}
-        periodLabel={periodLabel}
-        onPaymentsClick={() => {}}
-        onDuesClick={() => {}}
-        onEnrollClick={() => {}}
-        onCustomersClick={() => {}}
-      />
+
       {/* Charts Section */}
       <div className="space-y-8 mt-8">
         <div>

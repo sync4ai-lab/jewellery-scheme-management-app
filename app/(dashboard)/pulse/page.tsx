@@ -2,20 +2,25 @@
 
 
 import PulseDashboardClient from './PulseDashboardClient';
-import { createSupabaseServerClientWithSetAll } from '@/lib/supabase/server-client';
+import { createSupabaseServerClient } from '@/lib/supabase/server-client';
 import { getPulseAnalytics } from '@/app/(dashboard)/pulse/modules/analytics';
 
 
 export default async function PulseDashboard() {
   // Use Supabase SSR client directly in server component
-  const supabase = await createSupabaseServerClientWithSetAll();
+  const supabase = await createSupabaseServerClient();
   // Get the current authenticated user from the session
   const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError) {
-    return <div style={{color:'red'}}><b>Access denied (userError):</b> {JSON.stringify(userError)}</div>;
-  }
-  if (!user) {
-    return <div style={{color:'red'}}><b>Access denied (no user in session)</b></div>;
+  if (userError || !user) {
+    // Show a retry button for session sync issues
+    return (
+      <div style={{ color: 'red', padding: 24 }}>
+        <b>Access denied (userError):</b> {JSON.stringify(userError)}
+        <span style={{ display: 'block', marginTop: 16, color: '#888' }}>
+          Please reload the page or log in again.
+        </span>
+      </div>
+    );
   }
   // Fetch the profile for this user
   const { data: profile, error: profileError } = await supabase
@@ -50,5 +55,10 @@ export default async function PulseDashboard() {
     />
   );
 }
+
+
+
+
+
 
 

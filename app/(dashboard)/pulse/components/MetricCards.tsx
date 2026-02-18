@@ -4,7 +4,16 @@ import { Badge } from '@/components/ui/badge';
 import { TrendingUp, Users, UserCheck, Coins, Clock } from 'lucide-react';
 import React from 'react';
 
-export function MetricCards({ metrics, periodLabel, onPaymentsClick, onDuesClick, onEnrollClick, onCustomersClick }) {
+type MetricCardsProps = {
+  metrics: any;
+  periodLabel: string;
+  onPaymentsClick: () => void;
+  onDuesClick: () => void;
+  onEnrollClick: () => void;
+  onCustomersClick: () => void;
+};
+
+export function MetricCards({ metrics, periodLabel, onPaymentsClick, onDuesClick, onEnrollClick, onCustomersClick }: MetricCardsProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       {/* Payments */}
@@ -81,6 +90,66 @@ export function MetricCards({ metrics, periodLabel, onPaymentsClick, onDuesClick
           </div>
         </CardContent>
       </Card>
+      {/* Dues Outstanding */}
+      <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={onDuesClick}>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">Dues Outstanding</CardTitle>
+            <Clock className="w-5 h-5 text-rose-600" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="text-3xl font-bold text-rose-600">₹{(metrics?.duesOutstanding ?? 0).toLocaleString()}</div>
+          <p className="text-xs text-muted-foreground mt-1">{periodLabel}</p>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs">Overdue:</span>
+            <span className="font-semibold text-rose-700">{metrics?.overdueCount || 0}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Redemptions */}
+      <Card className="jewel-card hover:scale-105 transition-transform">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">Redemptions</CardTitle>
+            <TrendingUp className="w-5 h-5 text-indigo-600" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="text-3xl font-bold text-indigo-600">{metrics?.completedRedemptionsPeriod || 0}</div>
+          <p className="text-xs text-muted-foreground mt-1">{periodLabel}</p>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs">Eligible to Redeem:</span>
+            <span className="font-semibold text-emerald-700">{metrics?.readyToRedeemPeriod || 0}</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Enrollments */}
+      <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={onEnrollClick}>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-medium">Enrollments</CardTitle>
+            <Users className="w-5 h-5 text-blue-600" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="text-3xl font-bold text-blue-600">{metrics?.totalEnrollmentsPeriod || 0}</div>
+          <p className="text-xs text-muted-foreground mt-1">{periodLabel}</p>
+          <div className="flex items-center gap-4 mt-2">
+            <div>
+              <span className="text-xs">All:</span>
+              <span className="font-semibold text-blue-700 ml-1">{metrics?.totalEnrollmentsPeriod || 0}</span>
+            </div>
+            <div>
+              <span className="text-xs">Active:</span>
+              <span className="font-semibold text-emerald-700 ml-1">{metrics?.activeEnrollmentsPeriod || 0}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Customers */}
       <Card className="jewel-card hover:scale-105 transition-transform cursor-pointer" onClick={onCustomersClick}>
         <CardHeader>

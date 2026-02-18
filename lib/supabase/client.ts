@@ -1,4 +1,5 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 
 // =====================================================
 // CRITICAL: Suppress AbortError at the module level
@@ -46,20 +47,9 @@ const noOpLock = async <R>(
   return await fn();
 };
 
-// Staff/Admin client: PKCE flow with default storage (cookie-based for SSR)
-export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    flowType: 'pkce', // PKCE flow enables cookie-based SSR auth
-    // lock: noOpLock, // Only needed if you see AbortError in browser
-  },
-  global: {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  },
+// Staff/Admin client: use @supabase/ssr for unified SSR/CSR session management (force PKCE flow)
+export const supabase = createBrowserClient(supabaseUrl!, supabaseAnonKey!, {
+  auth: { flowType: 'pkce' }
 });
 
 // Separate client for customer auth/data (isolated session storage)

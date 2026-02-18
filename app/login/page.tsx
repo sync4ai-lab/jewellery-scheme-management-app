@@ -39,7 +39,7 @@ function LoginFormInner() {
       if (typeof document !== 'undefined') {
         console.log('Cookies after login:', document.cookie);
       }
-      router.push('/pulse');
+      window.location.href = '/pulse';
     } catch (err: any) {
       setError(err?.message ?? 'Failed to sign in');
     } finally {

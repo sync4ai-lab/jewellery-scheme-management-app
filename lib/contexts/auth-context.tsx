@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase/client';
+import { supabase } from '@/lib/supabase/client'; // Now uses @supabase/ssr createBrowserClient
 import { useRouter } from 'next/navigation';
 
 type UserProfile = {
@@ -122,7 +122,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!data?.user) {
         throw new Error('No user returned from Supabase.');
       }
-      router.push('/pulse');
+      // Reload page to propagate session cookie for SSR
+      window.location.href = '/pulse';
     } catch (err: any) {
       // Bubble up error for UI to display
       throw err;
