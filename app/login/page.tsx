@@ -39,7 +39,7 @@ function LoginFormInner() {
       if (typeof document !== 'undefined') {
         console.log('Cookies after login:', document.cookie);
       }
-      window.location.href = '/pulse';
+      router.push('/pulse');
     } catch (err: any) {
       setError(err?.message ?? 'Failed to sign in');
     } finally {
@@ -112,7 +112,7 @@ function LoginFormInner() {
                 />
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full" disabled={loading}>      
                 {loading ? 'Signing in…' : 'Sign In'}
               </Button>
             </form>
