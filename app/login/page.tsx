@@ -17,9 +17,11 @@ function LoginFormInner() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   const router = useRouter();
   const { branding, loading: brandingLoading } = usePublicBranding();
+
 
   async function handleLogin(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -33,15 +35,30 @@ function LoginFormInner() {
       });
 
       if (error) throw error;
-      // Wait for session cookie to be set
-      await new Promise(resolve => setTimeout(resolve, 500));
-      // Diagnostic: log session cookie
-      if (typeof document !== 'undefined') {
-        console.log('Cookies after login:', document.cookie);
-      }
       router.push('/pulse');
     } catch (err: any) {
       setError(err?.message ?? 'Failed to sign in');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleMagicLink(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    setMagicLinkSent(false);
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: true,
+        },
+      });
+      if (error) throw error;
+      setMagicLinkSent(true);
+    } catch (err: any) {
+      setError(err?.message ?? 'Failed to send magic link');
     } finally {
       setLoading(false);
     }
@@ -112,9 +129,25 @@ function LoginFormInner() {
                 />
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading}>      
+              <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Signing in…' : 'Sign In'}
               </Button>
+              <Button
+                type="button"
+                className="w-full mt-2"
+                variant="outline"
+                disabled={loading}
+                onClick={handleMagicLink}
+              >
+                {loading ? 'Sending magic link…' : 'Send Magic Link (Email Login)'}
+              </Button>
+              {magicLinkSent && (
+                <Alert variant="success">
+                  <AlertDescription>
+                    Magic link sent! Please check your email.
+                  </AlertDescription>
+                </Alert>
+              )}
             </form>
           </CardContent>
         </Card>
