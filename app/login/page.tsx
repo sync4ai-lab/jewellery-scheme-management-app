@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import { Sparkles, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,13 +9,26 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/contexts/auth-context';
 import { AnimatedLogo } from '@/components/ui/animated-logo';
 import { PublicBrandingProvider, usePublicBranding } from '@/lib/contexts/public-branding-context';
 
 function LoginFormInner() {
+  const { user, profile, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && user && profile) {
+      if (profile.role === 'ADMIN' || profile.role === 'STAFF') {
+        router.replace('/pulse');
+      } else if (profile.role === 'CUSTOMER') {
+        router.replace('/c/schemes');
+      }
+    }
+  }, [user, profile, loading, router]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  // Remove duplicate loading declaration; use loading from useAuth
   const [error, setError] = useState('');
   const [magicLinkSent, setMagicLinkSent] = useState(false);
 
