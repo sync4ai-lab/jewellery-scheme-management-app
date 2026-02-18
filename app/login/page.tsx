@@ -9,13 +9,13 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/contexts/auth-context';
+import { useAuth, AuthProvider } from '@/lib/contexts/auth-context';
 import { AnimatedLogo } from '@/components/ui/animated-logo';
 import { PublicBrandingProvider, usePublicBranding } from '@/lib/contexts/public-branding-context';
 
 function LoginFormInner() {
   const { user, profile, loading } = useAuth();
-  // Remove duplicate router declaration; use the existing router instance
+  const router = useRouter();
 
   useEffect(() => {
     if (!loading && user && profile) {
@@ -176,7 +176,9 @@ function LoginFormInner() {
 export default function LoginPage() {
   return (
     <PublicBrandingProvider>
-      <LoginFormInner />
+      <AuthProvider>
+        <LoginFormInner />
+      </AuthProvider>
     </PublicBrandingProvider>
   );
 }
