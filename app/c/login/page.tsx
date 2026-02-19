@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseCustomer as supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
+import { useAuth } from '@/lib/contexts/auth-context';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -16,7 +17,7 @@ type Retailer = {
   business_name: string;
 };
 
-export default function CustomerLoginPage() {
+  const { user, profile, loading } = useAuth();
   const router = useRouter();
   const { signInWithPhone } = useCustomerAuth();
   const [retailers, setRetailers] = useState<Retailer[] | null>(null);
@@ -43,6 +44,13 @@ export default function CustomerLoginPage() {
 
 
   useEffect(() => {
+    // Role-based redirect for authenticated users
+    if (!loading && user && profile) {
+      if (profile.role === 'ADMIN' || profile.role === 'STAFF') {
+        window.location.assign('/pulse');
+      }
+    }
+    // Customer login reset logic
     const resetLoginState = async () => {
       // Clear any customer bypass values on login page mount
       try {
@@ -66,9 +74,8 @@ export default function CustomerLoginPage() {
       await supabase.auth.signOut();
       setMounted(true);
     };
-
     void resetLoginState();
-  }, []);
+  }, [user, profile, loading]);
 
   useEffect(() => {
     if (!mounted) return;

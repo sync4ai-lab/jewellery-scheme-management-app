@@ -15,7 +15,7 @@ import { PublicBrandingProvider, usePublicBranding } from '@/lib/contexts/public
 
 function LoginFormInner() {
   const { user, profile, loading } = useAuth();
-  // router already declared above; remove duplicate
+  const router = useRouter();
 
   useEffect(() => {
     if (!loading && user && profile) {
@@ -28,18 +28,15 @@ function LoginFormInner() {
   }, [user, profile, loading, router]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  // Remove duplicate loading declaration; use loading from useAuth
   const [error, setError] = useState('');
   const [magicLinkSent, setMagicLinkSent] = useState(false);
-
-  const router = useRouter();
   const { branding, loading: brandingLoading } = usePublicBranding();
 
 
   async function handleLogin(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError('');
-    setLoading(true);
+    // setLoading not defined; rely on loading from useAuth
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
@@ -52,14 +49,14 @@ function LoginFormInner() {
     } catch (err: any) {
       setError(err?.message ?? 'Failed to sign in');
     } finally {
-      setLoading(false);
+      // No setLoading; loading state handled by useAuth
     }
   }
 
   async function handleMagicLink(e: FormEvent) {
     e.preventDefault();
     setError('');
-    setLoading(true);
+    // setLoading not defined; loading state handled by useAuth
     setMagicLinkSent(false);
     try {
       const { error } = await supabase.auth.signInWithOtp({
@@ -73,7 +70,7 @@ function LoginFormInner() {
     } catch (err: any) {
       setError(err?.message ?? 'Failed to send magic link');
     } finally {
-      setLoading(false);
+      // No setLoading; loading state handled by useAuth
     }
   }
 
