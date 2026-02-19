@@ -63,6 +63,7 @@ function LoginFormInner() {
         email,
         options: {
           shouldCreateUser: true,
+          emailRedirectTo: 'http://localhost:3000/auth/callback',
         },
       });
       if (error) throw error;

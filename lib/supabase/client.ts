@@ -1,73 +1,11 @@
+"use client";
 import { createBrowserClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
 
-// =====================================================
-// CRITICAL: Suppress AbortError at the module level
-// This MUST run before any Supabase client is created
-// The error comes from @supabase/gotrue-js using Web Locks API
-// =====================================================
-if (typeof window !== 'undefined') {
-  // Suppress unhandled AbortError rejections globally
-  window.addEventListener('unhandledrejection', (event) => {
-    if (event.reason?.name === 'AbortError') {
-      event.preventDefault();
-      event.stopPropagation();
-      // Silent suppression - this is expected during HMR/navigation
-      return false;
-    }
-  });
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  // Also suppress uncaught errors for AbortError
-  window.addEventListener('error', (event) => {
-    if (event.error?.name === 'AbortError' || event.message?.includes('AbortError')) {
-      event.preventDefault();
-      event.stopPropagation();
-      return false;
-    }
-  });
-}
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase environment variables:', {
-    hasUrl: !!supabaseUrl,
-    hasKey: !!supabaseAnonKey,
-  });
-}
-
-// Custom lock implementation that never aborts - prevents AbortError entirely
-const noOpLock = async <R>(
-  _name: string,
-  _acquireTimeout: number,
-  fn: () => Promise<R>
-): Promise<R> => {
-  // Simply execute the function without any locking
-  return await fn();
-};
-
-// Staff/Admin client: use @supabase/ssr for unified SSR/CSR session management (force PKCE flow)
-export const supabase = createBrowserClient(supabaseUrl!, supabaseAnonKey!, {
-  auth: { flowType: 'pkce' }
-});
-
-// Separate client for customer auth/data (isolated session storage)
-export const supabaseCustomer = createClient(supabaseUrl!, supabaseAnonKey!, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    lock: noOpLock,
-    flowType: 'implicit',
-    storageKey: 'goldsaver-customer-auth',
-  },
-  global: {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  },
-});
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
 
 export type Database = {
   public: {

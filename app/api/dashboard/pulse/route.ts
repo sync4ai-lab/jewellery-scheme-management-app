@@ -1,6 +1,3 @@
-
-
-
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createSupabaseServerClient } from '@/lib/supabase/server-client';
@@ -12,7 +9,7 @@ export async function POST() {
   const allCookies = cookieStore.getAll();
   console.log('[Pulse API] Incoming cookies:', allCookies);
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   // Diagnostics object
   let diagnostics = {};
   // Get the current authenticated user from the session
