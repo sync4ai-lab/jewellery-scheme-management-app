@@ -1,4 +1,3 @@
-
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -17,7 +16,9 @@ type Retailer = {
   business_name: string;
 };
 
-  const { user, profile, loading } = useAuth();
+export default function CustomerLoginPage() {
+
+  const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
   const { signInWithPhone } = useCustomerAuth();
   const [retailers, setRetailers] = useState<Retailer[] | null>(null);
@@ -42,17 +43,14 @@ type Retailer = {
     }
   };
 
-
   useEffect(() => {
-    // Role-based redirect for authenticated users
-    if (!loading && user && profile) {
+    if (!authLoading && user && profile) {
       if (profile.role === 'ADMIN' || profile.role === 'STAFF') {
         window.location.assign('/pulse');
       }
     }
-    // Customer login reset logic
+
     const resetLoginState = async () => {
-      // Clear any customer bypass values on login page mount
       try {
         localStorage.removeItem('customer_phone_bypass');
         localStorage.removeItem('customer_retailer_bypass');
@@ -67,18 +65,21 @@ type Retailer = {
       } catch (storageError) {
         console.warn('[CustomerLogin] sessionStorage unavailable', storageError);
       }
+
       document.cookie = 'customer_phone_bypass=; path=/; max-age=0';
       document.cookie = 'customer_retailer_bypass=; path=/; max-age=0';
       document.cookie = 'customer_bypass_payload=; path=/; max-age=0';
-      // Ensure any previous customer session is cleared before logging in a new customer
+
       await supabase.auth.signOut();
       setMounted(true);
     };
+
     void resetLoginState();
-  }, [user, profile, loading]);
+  }, [user, profile, authLoading]);
 
   useEffect(() => {
     if (!mounted) return;
+
     async function fetchRetailers() {
       try {
         const { data, error } = await withTimeout(
@@ -86,11 +87,13 @@ type Retailer = {
           10000,
           'Retailer list request timed out'
         );
+
         if (error) {
           setError('Failed to load retailers');
           setRetailers([]);
           return;
         }
+
         setRetailers(data || []);
       } catch (err) {
         console.error('[CustomerLogin] Retailer load failed', err);
@@ -98,6 +101,7 @@ type Retailer = {
         setRetailers([]);
       }
     }
+
     fetchRetailers();
   }, [mounted]);
 
@@ -105,9 +109,12 @@ type Retailer = {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
     const normalizedPhone = phone.replace(/\D/g, '');
     console.log('[CustomerLogin] PIN login attempt', { phone: normalizedPhone || phone });
+
     let result: { success: boolean; error?: string };
+
     try {
       result = await withTimeout(
         signInWithPhone(normalizedPhone || phone, pin),
@@ -119,11 +126,13 @@ type Retailer = {
       setLoading(false);
       return;
     }
+
     if (!result.success) {
       setError(result.error || 'Login failed. Please try again.');
       setLoading(false);
       return;
     }
+
     setLoading(false);
     window.location.assign('/c/pulse');
   };
@@ -132,6 +141,7 @@ type Retailer = {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
     const normalizedPhone = phone.replace(/\D/g, '');
     console.log('[CustomerLogin] Dev bypass login attempt', { retailerId, phone, normalizedPhone });
 
@@ -181,7 +191,6 @@ type Retailer = {
     }
   };
 
-  // Hydration guard: only render on client
   if (!mounted || retailers === null) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-gold-50/20 to-background">
@@ -196,7 +205,7 @@ type Retailer = {
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-gold-50/20 to-background">
       <div className="w-full max-w-md space-y-6">
-        {/* Branding header */}
+
         <div className="text-center space-y-2">
           <div className="flex justify-center mb-4">
             <AnimatedLogo logoUrl={null} size="lg" showAnimation />
@@ -224,6 +233,7 @@ type Retailer = {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}
+
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">Select Retailer</label>
                 <select
@@ -237,6 +247,7 @@ type Retailer = {
                   ))}
                 </select>
               </div>
+
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">Mobile Number</label>
                 <Input
@@ -252,6 +263,7 @@ type Retailer = {
                   autoFocus
                 />
               </div>
+
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">6-digit PIN</label>
                 <Input
@@ -266,9 +278,11 @@ type Retailer = {
                   className="mb-2"
                 />
               </div>
+
               <Button type="submit" className="w-full" disabled={loading || phone.length !== 10 || pin.length !== 6}>
                 {loading ? 'Logging in…' : 'Login with PIN'}
               </Button>
+
               {process.env.NODE_ENV !== 'production' && (
                 <Button
                   type="button"
@@ -287,6 +301,7 @@ type Retailer = {
         <p className="text-center text-sm text-muted-foreground">
           © 2026 Jai Rajendra Jewel Palace
         </p>
+
       </div>
     </div>
   );
