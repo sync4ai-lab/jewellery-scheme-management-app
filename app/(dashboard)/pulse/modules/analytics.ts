@@ -11,24 +11,37 @@ import {
 import { createServerClient } from '@supabase/ssr';
 
 export async function getPulseAnalytics(retailerId: string, period: { start: string, end: string }) {
-    // Fetch current gold/silver rates
+    // Fetch current gold/silver rates for this retailer only
     let currentRates = { k18: null, k22: null, k24: null, silver: null };
     try {
       const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       );
+      // Fetch all rates for this retailer, order by karat and effective_from desc
       const { data: rates } = await supabase
         .from('gold_rates')
         .select('karat, rate_per_gram, effective_from')
-        .order('effective_from', { ascending: false })
-        .limit(20);
+        .eq('retailer_id', retailerId)
+        .order('karat', { ascending: true })
+        .order('effective_from', { ascending: false });
+      globalThis.__pulseDiagnostics = globalThis.__pulseDiagnostics || {};
+      globalThis.__pulseDiagnostics.gold_rates = rates;
       if (rates && Array.isArray(rates)) {
-        for (const r of rates) {
-          if (r.karat === '18K' && !currentRates.k18) currentRates.k18 = { rate: r.rate_per_gram, validFrom: r.effective_from };
-          if (r.karat === '22K' && !currentRates.k22) currentRates.k22 = { rate: r.rate_per_gram, validFrom: r.effective_from };
-          if (r.karat === '24K' && !currentRates.k24) currentRates.k24 = { rate: r.rate_per_gram, validFrom: r.effective_from };
-          if (r.karat === 'SILVER' && !currentRates.silver) currentRates.silver = { rate: r.rate_per_gram, validFrom: r.effective_from };
+        // Map DB enum values to frontend keys
+        const karatMap = {
+          '18K': 'k18',
+          '22K': 'k22',
+          '24K': 'k24',
+          'SILVER': 'silver',
+        } as const;
+        // For each karat, pick the first (latest) entry
+        for (const dbKarat of ['18K', '22K', '24K', 'SILVER']) {
+          const found = rates.find(r => r.karat === dbKarat);
+          if (found) {
+            const key = karatMap[dbKarat];
+            currentRates[key] = { rate: found.rate_per_gram, validFrom: found.effective_from };
+          }
         }
       }
     } catch (e) {
@@ -233,6 +246,7 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
         enrollments,
         payments,
         redemptions,
+        gold_rates: globalThis.__pulseDiagnostics?.gold_rates ?? null,
       },
       totalCustomersPeriod,
       activeCustomersPeriod,

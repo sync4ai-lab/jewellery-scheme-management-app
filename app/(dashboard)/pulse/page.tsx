@@ -1,14 +1,11 @@
-
-
-
 import PulseDashboardClient from './PulseDashboardClient';
-import { createSupabaseServerClient } from '@/lib/supabase/server-client';
+import { createSupabaseServerComponentClient } from '@/lib/supabase/ssr-clients';
 import { getPulseAnalytics } from '@/app/(dashboard)/pulse/modules/analytics';
 
 
 export default async function PulseDashboard() {
   // Use Supabase SSR client directly in server component
-  const supabase = await createSupabaseServerClient();
+  const supabase = await createSupabaseServerComponentClient();
   // Get the current authenticated user from the session
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) {

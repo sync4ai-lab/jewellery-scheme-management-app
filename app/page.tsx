@@ -1,8 +1,8 @@
-import { createSupabaseServerClient } from '@/lib/supabase/server-client';
+import { createSupabaseServerComponentClient } from '@/lib/supabase/ssr-clients';
 import { redirect } from 'next/navigation';
 
 export default async function Home() {
-  const supabase = await createSupabaseServerClient();
+  const supabase = await createSupabaseServerComponentClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (user) {
     const { data: profile } = await supabase

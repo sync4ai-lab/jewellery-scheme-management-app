@@ -1,4 +1,6 @@
-'use client';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+import DueClient from './DueClient';
 
 import { useEffect, useState } from 'react';
 import { Calendar, AlertCircle, Phone, Search, Filter } from 'lucide-react';
@@ -33,71 +35,32 @@ type OverdueEnrollment = {
   monthly_amount: number;
 };
 
-export default function DuePage() {
-  const { user } = useAuth();
-  const [overdues, setOverdues] = useState<OverdueEnrollment[]>([]);
-  const [filtered, setFiltered] = useState<OverdueEnrollment[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [loading, setLoading] = useState(true);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const [reminderDialogOpen, setReminderDialogOpen] = useState(false);
-  const [reminderTarget, setReminderTarget] = useState<OverdueEnrollment | null>(null);
-  const router = useRouter();
-
-  const reminderMessage =
-    'Dear Customer, This is a gentle reminder as your payments are now due. Kindly make the payment to enjoy the benefits from your enrolled Schemes. Contact us if you need any assistance';
-
-  useEffect(() => {
-    if (!user) {
-      router.push('/login');
-      return;
+export default async function DuePage() {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => (typeof cookieStore.getAll === 'function' ? cookieStore.getAll() : []),
+      },
     }
-    void loadOverdues();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, router]);
+  );
+  const { data: profiles } = await supabase
+    .from('user_profiles')
+    .select('id, retailer_id, role')
+    .in('role', ['ADMIN', 'STAFF'])
+    .limit(1);
+  const profile = profiles?.[0];
+  if (!profile) return <div>Access denied</div>;
 
-  useEffect(() => {
-    applyFilters();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, filterStatus, overdues]);
+  const { data: overdues } = await supabase
+    .from('overdue_enrollments')
+    .select('*')
+    .eq('retailer_id', profile.retailer_id);
 
-  async function loadOverdues() {
-    if (!user) return;
-
-    setLoading(true);
-
-    try {
-      // Note: overdue_billing_months view doesn't exist
-      // Query enrollment_billing_months directly instead
-      const today = new Date().toISOString().split('T')[0];
-      
-      const { data: billingData, error: billingError } = await supabase
-        .from('enrollment_billing_months')
-        .select('enrollment_id, billing_month, due_date, status, retailer_id')
-        .eq('primary_paid', false)
-        .lt('due_date', today)
-        .order('due_date', { ascending: true });
-
-      if (billingError) throw billingError;
-
-      // Get enrollment and customer details
-      if (!billingData || billingData.length === 0) {
-        setOverdues([]);
-        setLoading(false);
-        return;
-      }
-
-      const enrollmentIds = billingData.map(b => b.enrollment_id);
-      const { data: enrollments, error: enrollError } = await supabase
-        .from('enrollments')
-        .select(`
-          id,
-          customer_id,
-          plan_id,
-          commitment_amount,
-          customers(id, full_name, phone),
+  return <DueClient overdues={overdues} />;
+}
           scheme_templates(name, installment_amount)
         `)
         .in('id', enrollmentIds);

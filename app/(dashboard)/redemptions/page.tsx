@@ -28,15 +28,17 @@ type EligibleEnrollment = {
 };
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import RedemptionsClient from './RedemptionsClient';
 
 export default async function RedemptionsPage() {
+  const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookies: () => cookies(),
+      cookies: {
+        getAll: () => (typeof cookieStore.getAll === 'function' ? cookieStore.getAll() : []),
+      },
     }
   );
   // Simulate getting the current user's profile (replace with actual logic as needed)
@@ -65,25 +67,7 @@ export default async function RedemptionsPage() {
     .eq('retailer_id', profile.retailer_id)
     .order('effective_from', { ascending: false });
 
-  // ...existing code for rendering redemptions UI, using server-fetched data...
-  // You may need to adapt the rest of the component to use these variables
-
-  return (
-    <div>
-      <h1 className="text-3xl font-bold mb-4">Redemptions</h1>
-      {/* Render redemptions UI here using redemptions, eligibleEnrollments, currentRates */}
-    </div>
-  );
-  // ...existing code...
-    }
-  }, [profile?.retailer_id]);
-
-  async function loadCurrentRates() {
-    if (!profile?.retailer_id) return;
-
-    const [rate18K, rate22K, rate24K, rateSilver] = await Promise.all([
-      supabase
-        .from('gold_rates')
+  return <RedemptionsClient redemptions={redemptions} eligibleEnrollments={eligibleEnrollments} currentRates={currentRates} />;
         .select('rate_per_gram')
         .eq('retailer_id', profile.retailer_id)
         .eq('karat', '18K')

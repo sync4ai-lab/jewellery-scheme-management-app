@@ -1,5 +1,3 @@
-
-
 import { useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,6 +26,7 @@ import {
 type Customer = {
   id: string;
   full_name: string | null;
+import CollectionsClient from './CollectionsClient';
   phone: string | null;
 };
 
@@ -70,16 +69,11 @@ type MonthlyPaymentInfo = {
   total_paid: number;
   remaining: number;
   is_met: boolean;
-};
-
-const QUICK_AMOUNTS = [3000, 5000, 10000, 25000];
-
-export default async function CollectionsPage() {
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  return <CollectionsClient customers={customers} stores={stores} enrollments={enrollments} goldRates={goldRates} />;
     {
-      cookies: () => cookies(),
+      cookies: {
+        getAll: () => (typeof cookieStore.getAll === 'function' ? cookieStore.getAll() : []),
+      },
     }
   );
   // Simulate getting the current user's profile (replace with actual logic as needed)

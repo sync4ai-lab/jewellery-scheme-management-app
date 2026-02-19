@@ -28,11 +28,14 @@ import { Badge } from '@/components/ui/badge';
 const COLORS = ['#FCD34D', '#FBBF24', '#F59E0B', '#D97706', '#B45309'];
 
 export default async function PlansPage() {
+  const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookies: () => cookies(),
+      cookies: {
+        getAll: () => (typeof cookieStore.getAll === 'function' ? cookieStore.getAll() : []),
+      },
     }
   );
   // Simulate getting the current user's profile (replace with actual logic as needed)

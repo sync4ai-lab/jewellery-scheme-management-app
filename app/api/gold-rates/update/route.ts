@@ -52,7 +52,9 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
 
   if (insertError) {
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
+    // Log the full error for debugging
+    console.error('Gold rate insert error:', insertError);
+    return NextResponse.json({ error: insertError.message, details: insertError }, { status: 500 });
   }
 
   return NextResponse.json({ success: true, rate: data });
