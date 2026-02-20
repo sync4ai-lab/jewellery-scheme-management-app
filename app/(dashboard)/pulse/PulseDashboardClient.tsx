@@ -124,8 +124,9 @@ export default function PulseDashboardClient({
     };
   }
 
+  // Fetch metrics when top period filter changes
   React.useEffect(() => {
-    const fetchAll = async () => {
+    const fetchMetrics = async () => {
       const res = await fetch(`/api/dashboard/pulse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,12 +137,10 @@ export default function PulseDashboardClient({
           chartEnd: graphPeriod.end,
         }),
       });
-
       if (res.ok) {
         const result = await res.json();
         setAnalytics(result.analytics ?? {});
         setRates(result.analytics?.currentRates ?? {});
-
         if (result.diagnostics || result.__pulseDiagnostics) {
           setDiagnostics({
             ...result.diagnostics,
@@ -150,9 +149,37 @@ export default function PulseDashboardClient({
         }
       }
     };
+    fetchMetrics();
+  }, [period.start, period.end]);
 
-    fetchAll();
-  }, [period.start, period.end, graphPeriod.start, graphPeriod.end]);
+  // Fetch graphs when analytics period filter changes
+  React.useEffect(() => {
+    const fetchGraphs = async () => {
+      const res = await fetch(`/api/dashboard/pulse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          start: period.start,
+          end: period.end,
+          chartStart: graphPeriod.start,
+          chartEnd: graphPeriod.end,
+        }),
+      });
+      if (res.ok) {
+        const result = await res.json();
+        setAnalytics(prev => ({
+          ...prev,
+          revenueByMetal: result.analytics?.revenueByMetal ?? [],
+          goldAllocationTrend: result.analytics?.goldAllocationTrend ?? [],
+          customerMetrics: result.analytics?.customerMetrics ?? [],
+          paymentBehavior: result.analytics?.paymentBehavior ?? [],
+          schemeHealth: result.analytics?.schemeHealth ?? [],
+          staffPerformance: result.analytics?.staffPerformance ?? [],
+        }));
+      }
+    };
+    fetchGraphs();
+  }, [graphPeriod.start, graphPeriod.end]);
 
   const handlePeriodChange = (
     type: PeriodType,
@@ -341,13 +368,88 @@ export default function PulseDashboardClient({
         </DialogContent>
       </Dialog>
 
+      {/* Top period filter for metrics, aligned right */}
+      <div className="flex justify-end items-center mb-6">
+        <div className="w-full flex justify-end">
+          <PeriodFilter
+            periodType={periodType}
+            setPeriodType={setPeriodType}
+            customStart={customStart}
+            setCustomStart={setCustomStart}
+            customEnd={customEnd}
+            setCustomEnd={setCustomEnd}
+          />
+        </div>
+      </div>
+
+      {/* Business Analytics Section */}
       <div className="space-y-8 mt-8">
-        <PulseChart chartType="revenue" data={analytics?.revenueByMetal ?? []} />
-        <PulseChart chartType="allocation" data={analytics?.goldAllocationTrend ?? []} />
-        <PulseChart chartType="customers" data={analytics?.customerMetrics ?? []} />
-        <PulseChart chartType="payment" data={analytics?.paymentBehavior ?? []} />
-        <PulseChart chartType="scheme" data={analytics?.schemeHealth ?? []} />
-        <PulseChart chartType="staff" data={analytics?.staffPerformance ?? []} />
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold">Business Analytics</h2>
+          <PeriodFilter
+            periodType={graphPeriodType}
+            setPeriodType={setGraphPeriodType}
+            customStart={graphCustomStart}
+            setCustomStart={setGraphCustomStart}
+            customEnd={graphCustomEnd}
+            setCustomEnd={setGraphCustomEnd}
+          />
+        </div>
+        {/* Graph headings and info tooltips */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-semibold text-lg">Revenue Trend</span>
+            <span title="Shows monthly collections by metal type. Includes gold and silver payments.">
+              <svg className="inline w-4 h-4 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>
+            </span>
+          </div>
+          <PulseChart chartType="revenue" data={analytics?.revenueByMetal ?? []} />
+        </div>
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-semibold text-lg">Gold/Silver Allocation</span>
+            <span title="Shows grams allocated to customers by metal type over time.">
+              <svg className="inline w-4 h-4 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>
+            </span>
+          </div>
+          <PulseChart chartType="allocation" data={analytics?.goldAllocationTrend ?? []} />
+        </div>
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-semibold text-lg">Customer Metrics</span>
+            <span title="Shows new enrollments and active customers over time.">
+              <svg className="inline w-4 h-4 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>
+            </span>
+          </div>
+          <PulseChart chartType="customers" data={analytics?.customerMetrics ?? []} />
+        </div>
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-semibold text-lg">Payment Behavior</span>
+            <span title="Shows on-time and late payments, plus completion rate.">
+              <svg className="inline w-4 h-4 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>
+            </span>
+          </div>
+          <PulseChart chartType="payment" data={analytics?.paymentBehavior ?? []} />
+        </div>
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-semibold text-lg">Scheme Health</span>
+            <span title="Shows scheme status: on track, due, missed.">
+              <svg className="inline w-4 h-4 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>
+            </span>
+          </div>
+          <PulseChart chartType="scheme" data={analytics?.schemeHealth ?? []} />
+        </div>
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-semibold text-lg">Staff Performance</span>
+            <span title="Shows staff performance metrics based on collections.">
+              <svg className="inline w-4 h-4 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>
+            </span>
+          </div>
+          <PulseChart chartType="staff" data={analytics?.staffPerformance ?? []} />
+        </div>
       </div>
     </div>
   );

@@ -90,10 +90,11 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
     const createdAt = new Date(e.created_at);
     return createdAt >= startDate && createdAt <= endDate;
   });
+  // Fix: Use redemption_date and redemption_status for period filter
   const redemptionsPeriod = redemptions.filter(r => {
-    if (!r.redeemed_at) return false;
-    const redeemedAt = new Date(r.redeemed_at);
-    return redeemedAt >= startDate && redeemedAt <= endDate;
+    if (!r.redemption_date) return false;
+    const redemptionDate = new Date(r.redemption_date);
+    return redemptionDate >= startDate && redemptionDate <= endDate;
   });
 
   // Compute metrics for Pulse dashboard
