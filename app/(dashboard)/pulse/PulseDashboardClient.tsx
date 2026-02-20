@@ -250,6 +250,21 @@ export default function PulseDashboardClient({
               });
 
               if (res.ok) {
+                // Immediately refresh rates section
+                const ratesRes = await fetch(`/api/dashboard/pulse`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    start: period.start,
+                    end: period.end,
+                    chartStart: graphPeriod.start,
+                    chartEnd: graphPeriod.end,
+                  }),
+                });
+                if (ratesRes.ok) {
+                  const result = await ratesRes.json();
+                  setRates(result.analytics?.currentRates ?? {});
+                }
                 setShowRateDialog(false);
                 toast({
                   title: 'Rate updated!',
@@ -272,16 +287,15 @@ export default function PulseDashboardClient({
               <select
                 className="w-full border rounded p-2"
                 value={rateForm.karat}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const newKarat = e.target.value as 'k18' | 'k22' | 'k24' | 'silver';
+                  // Show latest rate for selected metal type
                   setRateForm((f) => ({
                     ...f,
-                    karat: e.target.value as
-                      | 'k18'
-                      | 'k22'
-                      | 'k24'
-                      | 'silver',
-                  }))
-                }
+                    karat: newKarat,
+                    rate: rates[newKarat]?.rate ? rates[newKarat].rate.toString() : '',
+                  }));
+                }}
                 required
               >
                 <option value="k18">18K</option>
@@ -289,6 +303,12 @@ export default function PulseDashboardClient({
                 <option value="k24">24K</option>
                 <option value="silver">SILVER</option>
               </select>
+              {/* Show latest rate info below dropdown */}
+              <div className="mt-2 text-xs text-muted-foreground">
+                {rates[rateForm.karat]?.rate
+                  ? `Current rate: ₹${rates[rateForm.karat].rate} /gram`
+                  : 'No rate set yet'}
+              </div>
             </div>
 
             <div>
