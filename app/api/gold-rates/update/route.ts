@@ -1,11 +1,11 @@
 
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClientWithSetAll } from '@/lib/supabase/server-client';
+import { createSupabaseServerClient } from '@/lib/supabase/server-client';
 
 export async function POST(req: NextRequest) {
   // Get Supabase client (async)
-  const supabase = await createSupabaseServerClientWithSetAll();
+  const supabase = await createSupabaseServerClient();
 
   // Parse request body
   let karat, rate_per_gram;

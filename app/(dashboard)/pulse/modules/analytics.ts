@@ -8,67 +8,63 @@ import {
   getPaymentsData,
   getRedemptionsData,
 } from '@/lib/dashboard-metrics';
-import { createServerClient } from '@supabase/ssr';
+import { createSupabaseServerComponentClient } from '@/lib/supabase/ssr-clients';
 
 export async function getPulseAnalytics(retailerId: string, period: { start: string, end: string }) {
-    // Fetch current gold/silver rates for this retailer only
-    let currentRates = { k18: null, k22: null, k24: null, silver: null };
-    try {
-      const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-      // Diagnostics: log query parameters
-      globalThis.__pulseDiagnostics.gold_rates_query = {
-        table: 'gold_rates',
-        columns: 'karat, rate_per_gram, effective_from',
-        retailer_id: retailerId,
-        period,
-        sessionUser: (supabase.auth && supabase.auth.getUser) ? await supabase.auth.getUser() : null
-      };
-      // Fetch all rates for this retailer, order by karat and effective_from desc
-      const { data: rates, error: ratesError } = await supabase
-        .from('gold_rates')
-        .select('karat, rate_per_gram, effective_from')
-        .eq('retailer_id', retailerId)
-        .order('karat', { ascending: true })
-        .order('effective_from', { ascending: false });
-      globalThis.__pulseDiagnostics.gold_rates_raw = rates;
-      globalThis.__pulseDiagnostics.gold_rates_error = ratesError ? {
-        message: ratesError.message,
-        code: ratesError.code,
-        details: ratesError.details,
-        hint: ratesError.hint
-      } : null;
-      if (rates && Array.isArray(rates)) {
-        // Map DB enum values to frontend keys
-        const karatMap = {
-          '18K': 'k18',
-          '22K': 'k22',
-          '24K': 'k24',
-          'SILVER': 'silver',
-        } as const;
-        // For each karat, pick the first (latest) entry
-        for (const dbKarat of ['18K', '22K', '24K', 'SILVER']) {
-          const found = rates.find(r => r.karat === dbKarat);
-          if (found) {
-            const key = karatMap[dbKarat];
-            currentRates[key] = {
-              rate: typeof found.rate_per_gram === 'string' ? parseFloat(found.rate_per_gram) : found.rate_per_gram,
-              validFrom: found.effective_from
-            };
-          }
-        }
+  const supabase = await createSupabaseServerComponentClient();
+  // Fetch all rates for this retailer, order by karat and effective_from desc
+  const { data: rates, error: ratesError } = await supabase
+    .from('gold_rates')
+    .select('karat, rate_per_gram, effective_from')
+    .eq('retailer_id', retailerId)
+    .order('karat', { ascending: true })
+    .order('effective_from', { ascending: false });
+
+  // Diagnostics: log rates value and type after definition
+  globalThis.__pulseDiagnostics = globalThis.__pulseDiagnostics || {};
+  globalThis.__pulseDiagnostics.rates_type = Array.isArray(rates) ? 'array' : typeof rates;
+  globalThis.__pulseDiagnostics.rates_is_null = rates === null;
+  globalThis.__pulseDiagnostics.rates_value = rates;
+  globalThis.__pulseDiagnostics.rates_error = ratesError;
+  globalThis.__pulseDiagnostics.getPulseAnalytics_executed = true;
+  globalThis.__pulseDiagnostics.getPulseAnalytics_retailerId = retailerId;
+
+  // Map DB enum values to frontend keys
+  let currentRates = { k18: null, k22: null, k24: null, silver: null };
+  if (rates && Array.isArray(rates)) {
+    globalThis.__pulseDiagnostics.rates_mapping_entered = true;
+    const karatMap = {
+      '18K': 'k18',
+      '22K': 'k22',
+      '24K': 'k24',
+      'SILVER': 'silver',
+    } as const;
+    for (const dbKarat of ['18K', '22K', '24K', 'SILVER']) {
+      const found = rates.find(r => r.karat === dbKarat);
+      const key = karatMap[dbKarat];
+      let value = null;
+      let executed = false;
+      if (found) {
+        value = {
+          rate: typeof found.rate_per_gram === 'string' ? parseFloat(found.rate_per_gram) : found.rate_per_gram,
+          validFrom: found.effective_from
+        };
+        currentRates[key] = value;
+        executed = true;
       }
-      globalThis.__pulseDiagnostics.currentRates_mapped = currentRates;
-    } catch (e) {
-      globalThis.__pulseDiagnostics.gold_rates_exception = {
-        message: e?.message,
-        stack: e?.stack,
-        name: e?.name,
-        raw: e
-      };
+      // Diagnostics: log for every karat, even if not found
+      if (!globalThis.__pulseDiagnostics.currentRates_assignments) {
+        globalThis.__pulseDiagnostics.currentRates_assignments = [];
+      }
+      globalThis.__pulseDiagnostics.currentRates_assignments.push({
+        dbKarat,
+        key,
+        executed,
+        value
+      });
     }
+  }
+  globalThis.__pulseDiagnostics.currentRates_mapped = currentRates;
   // Use shared utilities for all metrics
   const customers = await getCustomersData(retailerId);
   const enrollments = await getEnrollmentsData(retailerId);
@@ -264,14 +260,11 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
 
     return {
       __pulseDiagnostics: {
+        ...globalThis.__pulseDiagnostics,
         customers,
         enrollments,
         payments,
         redemptions,
-        gold_rates: globalThis.__pulseDiagnostics?.gold_rates ?? null,
-        gold_rates_raw: globalThis.__pulseDiagnostics?.gold_rates_raw ?? null,
-        gold_rates_error: globalThis.__pulseDiagnostics?.gold_rates_error ?? null,
-        currentRates_mapped: globalThis.__pulseDiagnostics?.currentRates_mapped ?? null,
       },
       totalCustomersPeriod,
       activeCustomersPeriod,
