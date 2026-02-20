@@ -18,15 +18,28 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
       );
+      // Diagnostics: log query parameters
+      globalThis.__pulseDiagnostics.gold_rates_query = {
+        table: 'gold_rates',
+        columns: 'karat, rate_per_gram, effective_from',
+        retailer_id: retailerId,
+        period,
+        sessionUser: (supabase.auth && supabase.auth.getUser) ? await supabase.auth.getUser() : null
+      };
       // Fetch all rates for this retailer, order by karat and effective_from desc
-      const { data: rates } = await supabase
+      const { data: rates, error: ratesError } = await supabase
         .from('gold_rates')
         .select('karat, rate_per_gram, effective_from')
         .eq('retailer_id', retailerId)
         .order('karat', { ascending: true })
         .order('effective_from', { ascending: false });
-      globalThis.__pulseDiagnostics = globalThis.__pulseDiagnostics || {};
-      globalThis.__pulseDiagnostics.gold_rates = rates;
+      globalThis.__pulseDiagnostics.gold_rates_raw = rates;
+      globalThis.__pulseDiagnostics.gold_rates_error = ratesError ? {
+        message: ratesError.message,
+        code: ratesError.code,
+        details: ratesError.details,
+        hint: ratesError.hint
+      } : null;
       if (rates && Array.isArray(rates)) {
         // Map DB enum values to frontend keys
         const karatMap = {
@@ -40,12 +53,21 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
           const found = rates.find(r => r.karat === dbKarat);
           if (found) {
             const key = karatMap[dbKarat];
-            currentRates[key] = { rate: found.rate_per_gram, validFrom: found.effective_from };
+            currentRates[key] = {
+              rate: typeof found.rate_per_gram === 'string' ? parseFloat(found.rate_per_gram) : found.rate_per_gram,
+              validFrom: found.effective_from
+            };
           }
         }
       }
+      globalThis.__pulseDiagnostics.currentRates_mapped = currentRates;
     } catch (e) {
-      // ignore
+      globalThis.__pulseDiagnostics.gold_rates_exception = {
+        message: e?.message,
+        stack: e?.stack,
+        name: e?.name,
+        raw: e
+      };
     }
   // Use shared utilities for all metrics
   const customers = await getCustomersData(retailerId);
@@ -247,6 +269,9 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
         payments,
         redemptions,
         gold_rates: globalThis.__pulseDiagnostics?.gold_rates ?? null,
+        gold_rates_raw: globalThis.__pulseDiagnostics?.gold_rates_raw ?? null,
+        gold_rates_error: globalThis.__pulseDiagnostics?.gold_rates_error ?? null,
+        currentRates_mapped: globalThis.__pulseDiagnostics?.currentRates_mapped ?? null,
       },
       totalCustomersPeriod,
       activeCustomersPeriod,

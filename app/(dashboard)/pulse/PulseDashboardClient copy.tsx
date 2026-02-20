@@ -34,11 +34,9 @@ export default function PulseDashboardClient({
 
   const [updating, setUpdating] = useState(false);
   const { toast } = useToast();
-
-  // ✅ SAFE INITIALIZATION
-  const [analytics, setAnalytics] = useState<any>(initialAnalytics ?? {});
+  const [analytics, setAnalytics] = useState(initialAnalytics);
   const [diagnostics, setDiagnostics] = useState<any>(null);
-  const [rates, setRates] = useState(initialRates ?? {});
+  const [rates, setRates] = useState(initialRates);
 
   const [periodType, setPeriodType] = useState<PeriodType>('MONTH');
   const [customStart, setCustomStart] = useState('');
@@ -139,8 +137,8 @@ export default function PulseDashboardClient({
 
       if (res.ok) {
         const result = await res.json();
-        setAnalytics(result.analytics ?? {});
-        setRates(result.analytics?.currentRates ?? {});
+        setAnalytics(result.analytics);
+        setRates(result.analytics.currentRates);
 
         if (result.diagnostics || result.__pulseDiagnostics) {
           setDiagnostics({
@@ -176,11 +174,11 @@ export default function PulseDashboardClient({
     setGraphPeriod(getPeriodByType(type, start, end));
   };
 
+  // Diagnostics: show __pulseDiagnostics if present
   let pulseDiagnostics = null;
-  if (typeof window !== 'undefined' && typeof (window as any).__pulseDiagnostics !== 'undefined') {
-    pulseDiagnostics = (window as any).__pulseDiagnostics;
+  if (typeof window !== 'undefined' && typeof window.__pulseDiagnostics !== 'undefined') {
+    pulseDiagnostics = window.__pulseDiagnostics;
   }
-
   return (
     <div className="space-y-6">
       {pulseDiagnostics && (
@@ -189,7 +187,6 @@ export default function PulseDashboardClient({
           <pre className="whitespace-pre-wrap">{JSON.stringify(pulseDiagnostics, null, 2)}</pre>
         </div>
       )}
-
       {diagnostics && (
         <div className="bg-rose-50 border border-rose-200 rounded p-4 text-xs text-rose-700 mb-4">
           <strong>Diagnostics:</strong>
@@ -229,23 +226,13 @@ export default function PulseDashboardClient({
                 silver: 'SILVER',
               } as const;
 
-              const numericRate = parseFloat(rateForm.rate);
-
-              if (isNaN(numericRate)) {
-                toast({
-                  title: 'Invalid rate',
-                  description: 'Please enter a valid number',
-                });
-                setUpdating(false);
-                return;
-              }
-
               const res = await fetch('/api/gold-rates/update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  karat: karatMap[rateForm.karat],
-                  rate_per_gram: numericRate,
+                  karat:
+                    karatMap[rateForm.karat as keyof typeof karatMap],
+                  rate_per_gram: parseFloat(rateForm.rate),
                 }),
               });
 
@@ -253,7 +240,7 @@ export default function PulseDashboardClient({
                 setShowRateDialog(false);
                 toast({
                   title: 'Rate updated!',
-                  description: `${karatMap[rateForm.karat]} rate updated successfully`,
+                  description: `${karatMap[rateForm.karat as keyof typeof karatMap]} rate updated successfully`,
                 });
               } else {
                 toast({
@@ -322,12 +309,12 @@ export default function PulseDashboardClient({
       </Dialog>
 
       <div className="space-y-8 mt-8">
-        <PulseChart chartType="revenue" data={analytics?.revenueByMetal ?? []} />
-        <PulseChart chartType="allocation" data={analytics?.goldAllocationTrend ?? []} />
-        <PulseChart chartType="customers" data={analytics?.customerMetrics ?? []} />
-        <PulseChart chartType="payment" data={analytics?.paymentBehavior ?? []} />
-        <PulseChart chartType="scheme" data={analytics?.schemeHealth ?? []} />
-        <PulseChart chartType="staff" data={analytics?.staffPerformance ?? []} />
+        <PulseChart chartType="revenue" data={analytics.revenueByMetal} />
+        <PulseChart chartType="allocation" data={analytics.goldAllocationTrend} />
+        <PulseChart chartType="customers" data={analytics.customerMetrics} />
+        <PulseChart chartType="payment" data={analytics.paymentBehavior} />
+        <PulseChart chartType="scheme" data={analytics.schemeHealth} />
+        <PulseChart chartType="staff" data={analytics.staffPerformance} />
       </div>
     </div>
   );
