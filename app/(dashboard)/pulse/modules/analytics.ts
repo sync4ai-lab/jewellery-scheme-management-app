@@ -29,11 +29,13 @@ export async function getPulseAnalytics(
   const metricsEndDate = new Date(period.end);
 
 
-  // Use shared utilities for all metrics
-  const customers = await getCustomersData(retailerId, period);
-  const enrollments = await getEnrollmentsData(retailerId, period);
-  const payments = await getPaymentsData(retailerId, period);
-  const redemptions = await getRedemptionsData(retailerId, period);
+  // Fetch all data in parallel for performance
+  const [customers, enrollments, payments, redemptions] = await Promise.all([
+    getCustomersData(retailerId, period),
+    getEnrollmentsData(retailerId, period),
+    getPaymentsData(retailerId, period),
+    getRedemptionsData(retailerId, period)
+  ]);
 
   // Fetch all stores for this retailer (after payments, customers are available)
   const { data: stores } = await supabase
