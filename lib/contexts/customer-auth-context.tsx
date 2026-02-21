@@ -96,6 +96,11 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     let isMounted = true;
 
     const initializeAuth = async () => {
+      if (!supabaseCustomer || !supabaseCustomer.auth || typeof supabaseCustomer.auth.getSession !== 'function') {
+        setError('Supabase client not initialized');
+        setLoading(false);
+        return;
+      }
       const { data: { session } } = await supabaseCustomer.auth.getSession();
       if (!isMounted) return;
 
@@ -210,7 +215,33 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     void bootstrap();
 
     const { data: { subscription } } =
-      supabaseCustomer.auth.onAuthStateChange(async (_event, session) => {
+      supabaseCustomer && supabaseCustomer.auth && typeof supabaseCustomer.auth.onAuthStateChange === 'function' ?
+        supabaseCustomer.auth.onAuthStateChange((_event, session) => {
+          if (!isMounted) return;
+          setUser(session?.user ?? null);
+          if (session?.user) {
+            (async () => {
+              try {
+                await hydrateCustomer(session.user.id);
+              } catch (err: any) {
+                setError('Customer hydration error: ' + (err?.message || 'Unknown error'));
+              }
+            })();
+          } else {
+            if (pathname !== '/c/login') {
+              const bypassCustomer = getBypassPayload();
+              if (bypassCustomer) {
+                console.log('[CustomerAuth] Retaining bypass customer on auth change', {
+                  id: bypassCustomer.id,
+                  retailer_id: bypassCustomer.retailer_id,
+                });
+                setCustomer(bypassCustomer);
+                return;
+              }
+            }
+            setCustomer(null);
+          }
+        }) : { data: { subscription: { unsubscribe: () => {} } } };
         if (!isMounted) return;
 
         console.log('[CustomerAuth] Auth state change', {
@@ -225,11 +256,13 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          try {
-            await hydrateCustomer(session.user.id);
-          } catch (err: any) {
-            setError('Customer hydration error: ' + (err?.message || 'Unknown error'));
-          }
+          (async () => {
+            try {
+              await hydrateCustomer(session.user.id);
+            } catch (err: any) {
+              setError('Customer hydration error: ' + (err?.message || 'Unknown error'));
+            }
+          })();
         } else {
           if (pathname !== '/c/login') {
             const bypassCustomer = getBypassPayload();
