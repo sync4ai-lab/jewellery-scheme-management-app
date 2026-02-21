@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
-import { supabaseCustomer } from '@/lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 import { useRouter, usePathname } from 'next/navigation';
 
 type CustomerProfile = {
@@ -26,7 +26,7 @@ type CustomerAuthContextType = {
 const CustomerAuthContext = createContext<CustomerAuthContextType | undefined>(undefined);
 
 export function CustomerAuthProvider({ children }: { children: React.ReactNode }) {
-    const [signOutLock, setSignOutLock] = useState(false);
+  const [signOutLock, setSignOutLock] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [customer, setCustomer] = useState<CustomerProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,7 +75,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     if (!retailerId) {
       return { data: null, error: null } as const;
     }
-    return supabaseCustomer.rpc('lookup_customer_by_phone', {
+    return supabase.rpc('lookup_customer_by_phone', {
       p_retailer_id: retailerId,
       p_phone: phone,
     });
@@ -96,12 +96,12 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     let isMounted = true;
 
     const initializeAuth = async () => {
-      if (!supabaseCustomer || !supabaseCustomer.auth || typeof supabaseCustomer.auth.getSession !== 'function') {
+      if (!supabase || !supabase.auth || typeof supabase.auth.getSession !== 'function') {
         setError('Supabase client not initialized');
         setLoading(false);
         return;
       }
-      const { data: { session } } = await supabaseCustomer.auth.getSession();
+      const { data: { session } } = await supabase.auth.getSession();
       if (!isMounted) return;
 
       if (session?.user) {
@@ -162,7 +162,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         let retailerId = null;
         try {
           const { useBranding } = await import('@/lib/contexts/branding-context');
-          retailerId = useBranding()?.branding?.retailer_id || useBranding()?.branding?.id;
+          retailerId = useBranding()?.branding?.retailer_id;
           console.log('[CustomerAuth] Branding context retailerId:', retailerId);
         } catch (e) {
           console.warn('[CustomerAuth] Branding context not available:', e);
@@ -214,15 +214,19 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
 
     void bootstrap();
 
+    // Only one onAuthStateChange callback, no duplicate logic
     const { data: { subscription } } =
-      supabaseCustomer && supabaseCustomer.auth && typeof supabaseCustomer.auth.onAuthStateChange === 'function' ?
-        supabaseCustomer.auth.onAuthStateChange((_event, session) => {
+      supabase && supabase.auth && typeof supabase.auth.onAuthStateChange === 'function' ?
+        supabase.auth.onAuthStateChange((
+          _event: string,
+          session: { user?: User } | null
+        ) => {
           if (!isMounted) return;
           setUser(session?.user ?? null);
-          if (session?.user) {
+          if (session && session.user && typeof session.user.id === 'string') {
             (async () => {
               try {
-                await hydrateCustomer(session.user.id);
+                await hydrateCustomer(session.user?.id!);
               } catch (err: any) {
                 setError('Customer hydration error: ' + (err?.message || 'Unknown error'));
               }
@@ -242,42 +246,6 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
             setCustomer(null);
           }
         }) : { data: { subscription: { unsubscribe: () => {} } } };
-        if (!isMounted) return;
-
-        console.log('[CustomerAuth] Auth state change', {
-          event: _event,
-          user: session?.user ? {
-            id: session.user.id,
-            email: session.user.email,
-            phone: session.user.phone,
-          } : null,
-        });
-
-        setUser(session?.user ?? null);
-
-        if (session?.user) {
-          (async () => {
-            try {
-              await hydrateCustomer(session.user.id);
-            } catch (err: any) {
-              setError('Customer hydration error: ' + (err?.message || 'Unknown error'));
-            }
-          })();
-        } else {
-          if (pathname !== '/c/login') {
-            const bypassCustomer = getBypassPayload();
-            if (bypassCustomer) {
-              console.log('[CustomerAuth] Retaining bypass customer on auth change', {
-                id: bypassCustomer.id,
-                retailer_id: bypassCustomer.retailer_id,
-              });
-              setCustomer(bypassCustomer);
-              return;
-            }
-          }
-          setCustomer(null);
-        }
-      });
 
     return () => {
       isMounted = false;
@@ -290,7 +258,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
    */
   const hydrateCustomer = async (userId: string) => {
     // Get the current user session to access phone/email
-    const { data: { user } } = await supabaseCustomer.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       setCustomer(null);
       return;
@@ -298,14 +266,14 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
 
     // Prefer user_profiles link (customer_id)
     try {
-      const { data: profile } = await supabaseCustomer
+      const { data: profile } = await supabase
         .from('user_profiles')
         .select('id, retailer_id, customer_id, full_name, phone')
         .eq('id', userId)
         .maybeSingle();
 
       if (profile?.customer_id) {
-        const { data: customerData, error: customerError } = await supabaseCustomer
+        const { data: customerData, error: customerError } = await supabase
           .from('customers')
           .select('id, retailer_id, full_name, phone, email')
           .eq('id', profile.customer_id)
@@ -330,7 +298,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         `+91${normalizedPhone}`,
         `91${normalizedPhone}`,
       ].filter(Boolean);
-      const { data, error } = await supabaseCustomer
+      const { data, error } = await supabase
         .from('customers')
         .select('id, retailer_id, full_name, phone, email')
         .in('phone', phoneCandidates)
@@ -346,9 +314,9 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     }
 
     if (user.email) {
-      const { data, error } = await supabaseCustomer
+      const { data, error } = await supabase
         .from('customers')
-        .select('id, retailer_id, full_name, email')
+        .select('id, retailer_id, full_name, phone, email')
         .eq('email', user.email)
         .maybeSingle();
       if (error) {
@@ -417,7 +385,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
         return { success: false, error: 'Invalid login response' };
       }
 
-      const { error } = await supabaseCustomer.auth.setSession({
+      const { error } = await supabase.auth.setSession({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
       });
@@ -442,7 +410,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
       const normalizedPhone = phone.replace(/\D/g, '');
       const email = `${normalizedPhone}@customer.goldsaver.app`;
 
-      const { data, error } = await supabaseCustomer.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password: pin,
       });
@@ -463,7 +431,7 @@ export function CustomerAuthProvider({ children }: { children: React.ReactNode }
     setSignOutLock(true);
     setLoading(true);
     try {
-      await supabaseCustomer.auth.signOut();
+      await supabase.auth.signOut();
       setUser(null);
       setCustomer(null);
       // Clear all bypass values
