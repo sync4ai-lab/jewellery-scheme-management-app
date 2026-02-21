@@ -177,7 +177,11 @@ export default function CustomersClient({ customers }: { customers: any[] }) {
                     // If customer has no enrollments, show one row
                     if (!customer.enrollments || customer.enrollments.length === 0) {
                       return (
-                        <TableRow key={customer.customer_id || customer.id}>
+                        <TableRow 
+                          key={customer.customer_id || customer.id}
+                          className="cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => window.location.href = `/dashboard/customers/${customer.customer_id || customer.id}`}
+                        >
                           <TableCell>
                             <div>
                               <div className="font-medium">{customer.customer_name || customer.full_name}</div>
