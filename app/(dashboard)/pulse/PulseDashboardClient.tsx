@@ -55,20 +55,7 @@ export default function PulseDashboardClient({
 
   const periodLabel = `${period.start} to ${period.end}`;
 
-  const [graphPeriodType, setGraphPeriodType] = useState<PeriodType>('MONTH');
-  const [graphCustomStart, setGraphCustomStart] = useState('');
-  const [graphCustomEnd, setGraphCustomEnd] = useState('');
-  const [graphPeriod, setGraphPeriod] = useState<{ start: string; end: string }>(
-    () => {
-      const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      return {
-        start: start.toISOString().split('T')[0],
-        end: end.toISOString().split('T')[0],
-      };
-    }
-  );
+  // Removed graph period state
 
   function getPeriodByType(
     type: PeriodType,
@@ -131,10 +118,7 @@ export default function PulseDashboardClient({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          start: period.start,
-          end: period.end,
-          chartStart: graphPeriod.start,
-          chartEnd: graphPeriod.end,
+          period,
         }),
       });
       if (res.ok) {
@@ -153,55 +137,17 @@ export default function PulseDashboardClient({
   }, [period.start, period.end]);
 
   // Fetch graphs when analytics period filter changes
-  React.useEffect(() => {
-    const fetchGraphs = async () => {
-      const res = await fetch(`/api/dashboard/pulse`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          start: period.start,
-          end: period.end,
-          chartStart: graphPeriod.start,
-          chartEnd: graphPeriod.end,
-        }),
-      });
-      if (res.ok) {
-        const result = await res.json();
-        setAnalytics(prev => ({
-          ...prev,
-          revenueByMetal: result.analytics?.revenueByMetal ?? [],
-          goldAllocationTrend: result.analytics?.goldAllocationTrend ?? [],
-          customerMetrics: result.analytics?.customerMetrics ?? [],
-          paymentBehavior: result.analytics?.paymentBehavior ?? [],
-          schemeHealth: result.analytics?.schemeHealth ?? [],
-          staffPerformance: result.analytics?.staffPerformance ?? [],
-        }));
-      }
-    };
-    fetchGraphs();
-  }, [graphPeriod.start, graphPeriod.end]);
+  // Removed graphPeriod effect; unified period filter updates all stats and graphs
 
-  const handlePeriodChange = (
-    type: PeriodType,
-    start: string,
-    end: string
-  ) => {
+  // Unified period change handler for metrics
+  const handlePeriodChange = (type: PeriodType, start: string, end: string) => {
     setPeriodType(type);
     setCustomStart(start);
     setCustomEnd(end);
     setPeriod(getPeriodByType(type, start, end));
   };
 
-  const handleGraphPeriodChange = (
-    type: PeriodType,
-    start: string,
-    end: string
-  ) => {
-    setGraphPeriodType(type);
-    setGraphCustomStart(start);
-    setGraphCustomEnd(end);
-    setGraphPeriod(getPeriodByType(type, start, end));
-  };
+  // Removed graph period handler
 
   let pulseDiagnostics = null;
   if (typeof window !== 'undefined' && typeof (window as any).__pulseDiagnostics !== 'undefined') {
@@ -284,8 +230,8 @@ export default function PulseDashboardClient({
                   body: JSON.stringify({
                     start: period.start,
                     end: period.end,
-                    chartStart: graphPeriod.start,
-                    chartEnd: graphPeriod.end,
+                    chartStart: period.start,
+                    chartEnd: period.end,
                   }),
                 });
                 if (ratesRes.ok) {
@@ -386,14 +332,6 @@ export default function PulseDashboardClient({
       <div className="space-y-8 mt-8">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">Business Analytics</h2>
-          <PeriodFilter
-            periodType={graphPeriodType}
-            setPeriodType={setGraphPeriodType}
-            customStart={graphCustomStart}
-            setCustomStart={setGraphCustomStart}
-            customEnd={graphCustomEnd}
-            setCustomEnd={setGraphCustomEnd}
-          />
         </div>
         {/* Graph headings and info tooltips */}
         <div className="mb-6">

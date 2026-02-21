@@ -78,9 +78,14 @@ export async function POST() {
   let analytics = null;
   let analyticsError = null;
   try {
-    analytics = await getPulseAnalytics(profile.retailer_id, period);
+    // Accept separate periods for metrics and graphs
+    const metricsPeriod = req.body?.metricsPeriod || period;
+    const graphPeriod = req.body?.graphPeriod || period;
+    // Ensure both periods are always defined
+    if (!metricsPeriod || !metricsPeriod.start || !metricsPeriod.end) metricsPeriod = period;
+    if (!graphPeriod || !graphPeriod.start || !graphPeriod.end) graphPeriod = period;
+    analytics = await getPulseAnalytics(profile.retailer_id, metricsPeriod, graphPeriod);
     diagnostics.analytics = analytics;
-    // Add query results diagnostics
     diagnostics.paymentsPeriod = analytics.revenueByMetal;
     diagnostics.enrollmentsPeriod = analytics.customerMetrics;
     diagnostics.redemptionsPeriod = analytics.schemeHealth;

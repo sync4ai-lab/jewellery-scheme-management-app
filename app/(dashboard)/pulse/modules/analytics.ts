@@ -10,7 +10,19 @@ import {
 } from '@/lib/dashboard-metrics';
 import { createSupabaseServerComponentClient } from '@/lib/supabase/ssr-clients';
 
-export async function getPulseAnalytics(retailerId: string, period: { start: string, end: string }) {
+export async function getPulseAnalytics(
+  retailerId: string,
+  metricsPeriod?: { start: string, end: string },
+  graphPeriod?: { start: string, end: string }
+) {
+  // Fallback to current month if periods are undefined
+  const now = new Date();
+  const defaultPeriod = {
+    start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0],
+    end: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0],
+  };
+  metricsPeriod = metricsPeriod || defaultPeriod;
+  graphPeriod = graphPeriod || defaultPeriod;
   const supabase = await createSupabaseServerComponentClient();
   // Fetch all rates for this retailer, order by karat and effective_from desc
   const { data: rates, error: ratesError } = await supabase
@@ -77,24 +89,24 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
   globalThis.__pulseDiagnostics.payments = payments;
   globalThis.__pulseDiagnostics.redemptions = redemptions;
 
-  // Filter by period
-  const startDate = new Date(period.start);
-  const endDate = new Date(period.end);
+  // Filter by metrics period
+  const metricsStartDate = new Date(metricsPeriod.start);
+  const metricsEndDate = new Date(metricsPeriod.end);
   const paymentsPeriod = payments.filter(p => {
     if (!p.paid_at) return false;
     const paidAt = new Date(p.paid_at);
-    return paidAt >= startDate && paidAt <= endDate;
+    return paidAt >= metricsStartDate && paidAt <= metricsEndDate;
   });
   const enrollmentsPeriod = enrollments.filter(e => {
     if (!e.created_at) return false;
     const createdAt = new Date(e.created_at);
-    return createdAt >= startDate && createdAt <= endDate;
+    return createdAt >= metricsStartDate && createdAt <= metricsEndDate;
   });
   // Fix: Use redemption_date and redemption_status for period filter
   const redemptionsPeriod = redemptions.filter(r => {
     if (!r.redemption_date) return false;
     const redemptionDate = new Date(r.redemption_date);
-    return redemptionDate >= startDate && redemptionDate <= endDate;
+    return redemptionDate >= metricsStartDate && redemptionDate <= metricsEndDate;
   });
 
   // Compute metrics for Pulse dashboard
@@ -137,11 +149,11 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
   for (const e of enrollments) {
     if (e.status !== 'ACTIVE') continue;
     // Find all payments for this enrollment in the period
-    const enrollmentPayments = payments.filter(p => p.enrollment_id === e.id && p.paid_at && new Date(p.paid_at) >= startDate && new Date(p.paid_at) <= endDate);
+    const enrollmentPayments = payments.filter(p => p.enrollment_id === e.id && p.paid_at && new Date(p.paid_at) >= metricsStartDate && new Date(p.paid_at) <= metricsEndDate);
     // Assume monthly_amount is available in e (or fetch from scheme_templates if needed)
     const monthlyAmount = e.commitment_amount || (e.scheme_templates?.installment_amount ?? 0) || 1000; // fallback
     // Count months in period
-    const months = Math.max(1, (endDate.getFullYear() - startDate.getFullYear()) * 12 + endDate.getMonth() - startDate.getMonth() + 1);
+    const months = Math.max(1, (metricsEndDate.getFullYear() - metricsStartDate.getFullYear()) * 12 + metricsEndDate.getMonth() - metricsStartDate.getMonth() + 1);
     // Count paid months
     const paidMonths = new Set(enrollmentPayments.map(p => {
       const paidAt = new Date(p.paid_at);
@@ -151,8 +163,8 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
     const dueMonths = months - paidMonths.size;
     if (dueMonths > 0) {
       duesOutstanding += dueMonths * monthlyAmount;
-      // Overdue: if endDate is past today and dues exist
-      if (endDate < today) overdueCount += 1;
+      // Overdue: if metricsEndDate is past today and dues exist
+      if (metricsEndDate < today) overdueCount += 1;
     }
   }
 
@@ -174,7 +186,10 @@ export async function getPulseAnalytics(retailerId: string, period: { start: str
       }
       return keys;
     }
-    const monthKeys = getMonthKeys(startDate, endDate);
+    // Use graph period for chart data
+    const graphStartDate = new Date(graphPeriod.start);
+    const graphEndDate = new Date(graphPeriod.end);
+    const monthKeys = getMonthKeys(graphStartDate, graphEndDate);
 
     // Revenue by metal (monthly)
     const paymentsByMonth = {};
