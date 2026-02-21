@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import { createSupabaseServerRouteClient } from '@/lib/supabase/ssr-clients';
 import { getPulseAnalytics } from '@/app/(dashboard)/pulse/modules/analytics';
 
-export async function POST() {
+export async function POST(request: Request) {
   // Log incoming cookies for diagnostics
   const cookieStore = await cookies();
   const allCookies = cookieStore.getAll();
@@ -11,7 +11,7 @@ export async function POST() {
 
   const supabase = await createSupabaseServerRouteClient();
   // Diagnostics object
-  let diagnostics = {};
+  let diagnostics: { [key: string]: any } = {};
   // Get the current authenticated user from the session
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   diagnostics.sessionUser = user;
@@ -55,17 +55,14 @@ export async function POST() {
   let period = null;
   let now = new Date();
   try {
-    const req = arguments[0];
-    diagnostics.requestType = typeof req;
-    if (req && typeof req.json === 'function') {
-      const body = await req.json();
-      diagnostics.requestBody = body;
-      if (body && body.start && body.end) {
-        period = { start: body.start, end: body.end };
-      }
+    diagnostics.requestType = typeof request;
+    const body = await request.json();
+    diagnostics.requestBody = body;
+    if (body && body.start && body.end) {
+      period = { start: body.start, end: body.end };
     }
   } catch (e) {
-    diagnostics.periodParseError = e?.message || String(e);
+    diagnostics.periodParseError = String(e);
   }
   if (!period) {
     period = {
@@ -78,25 +75,21 @@ export async function POST() {
   let analytics = null;
   let analyticsError = null;
   try {
-    // Accept separate periods for metrics and graphs
-    const metricsPeriod = req.body?.metricsPeriod || period;
-    const graphPeriod = req.body?.graphPeriod || period;
-    // Ensure both periods are always defined
+    let metricsPeriod = period;
     if (!metricsPeriod || !metricsPeriod.start || !metricsPeriod.end) metricsPeriod = period;
-    if (!graphPeriod || !graphPeriod.start || !graphPeriod.end) graphPeriod = period;
-    analytics = await getPulseAnalytics(profile.retailer_id, metricsPeriod, graphPeriod);
+    analytics = await getPulseAnalytics(profile.retailer_id, metricsPeriod);
     diagnostics.analytics = analytics;
     diagnostics.paymentsPeriod = analytics.revenueByMetal;
     diagnostics.enrollmentsPeriod = analytics.customerMetrics;
     diagnostics.redemptionsPeriod = analytics.schemeHealth;
   } catch (err) {
     analyticsError = err;
-    diagnostics.analyticsError = err?.message || String(err);
+    diagnostics.analyticsError = String(err);
   }
   return NextResponse.json({
     analytics,
     diagnostics,
-    __pulseDiagnostics: analytics.__pulseDiagnostics,
+    __pulseDiagnostics: analytics && analytics.__pulseDiagnostics ? analytics.__pulseDiagnostics : null,
     todayLabel: now.toLocaleDateString('en-IN', {
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
     })
