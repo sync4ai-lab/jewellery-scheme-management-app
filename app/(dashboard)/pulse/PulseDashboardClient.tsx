@@ -118,7 +118,8 @@ export default function PulseDashboardClient({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          period,
+          start: period.start,
+          end: period.end,
         }),
       });
       if (res.ok) {
@@ -154,28 +155,29 @@ export default function PulseDashboardClient({
     pulseDiagnostics = (window as any).__pulseDiagnostics;
   }
 
+
   return (
     <div className="space-y-6">
-      {pulseDiagnostics && (
-        <div className="bg-blue-50 border border-blue-200 rounded p-4 text-xs text-blue-700 mb-4">
-          <strong>__pulseDiagnostics (global):</strong>
-          <pre className="whitespace-pre-wrap">{JSON.stringify(pulseDiagnostics, null, 2)}</pre>
+      {/* Top period filter for metrics, now above Update Rates button */}
+      <div className="flex justify-end items-center mb-2">
+        <div className="w-full flex justify-end">
+          <PeriodFilter
+            periodType={periodType}
+            setPeriodType={setPeriodType}
+            customStart={customStart}
+            setCustomStart={setCustomStart}
+            customEnd={customEnd}
+            setCustomEnd={setCustomEnd}
+            onChange={handlePeriodChange}
+          />
         </div>
-      )}
-
-      {diagnostics && (
-        <div className="bg-rose-50 border border-rose-200 rounded p-4 text-xs text-rose-700 mb-4">
-          <strong>Diagnostics:</strong>
-          <pre className="whitespace-pre-wrap">
-            {JSON.stringify(diagnostics, null, 2)}
-          </pre>
-        </div>
-      )}
+      </div>
 
       <GoldRatesCard
         currentRates={rates}
         onUpdate={() => setShowRateDialog(true)}
       />
+
 
       <MetricCards
         metrics={analytics}
@@ -185,6 +187,7 @@ export default function PulseDashboardClient({
         onEnrollClick={() => {}}
         onCustomersClick={() => {}}
       />
+
 
       <Dialog open={showRateDialog} onOpenChange={setShowRateDialog}>
         <DialogContent>
@@ -314,20 +317,6 @@ export default function PulseDashboardClient({
         </DialogContent>
       </Dialog>
 
-      {/* Top period filter for metrics, aligned right */}
-      <div className="flex justify-end items-center mb-6">
-        <div className="w-full flex justify-end">
-          <PeriodFilter
-            periodType={periodType}
-            setPeriodType={setPeriodType}
-            customStart={customStart}
-            setCustomStart={setCustomStart}
-            customEnd={customEnd}
-            setCustomEnd={setCustomEnd}
-          />
-        </div>
-      </div>
-
       {/* Business Analytics Section */}
       <div className="space-y-8 mt-8">
         <div className="flex items-center justify-between mb-4">
@@ -379,15 +368,7 @@ export default function PulseDashboardClient({
           </div>
           <PulseChart chartType="scheme" data={analytics?.schemeHealth ?? []} />
         </div>
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="font-semibold text-lg">Staff Performance</span>
-            <span title="Shows staff performance metrics based on collections.">
-              <svg className="inline w-4 h-4 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>
-            </span>
-          </div>
-          <PulseChart chartType="staff" data={analytics?.staffPerformance ?? []} />
-        </div>
+        {/* Staff Performance graph removed */}
       </div>
     </div>
   );

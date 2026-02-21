@@ -8,12 +8,12 @@ import {
   getPaymentsData,
   getRedemptionsData,
 } from '@/lib/dashboard-metrics';
+// import { createSupabaseServerComponentClient } from '@/lib/supabase/ssr-clients';
 import { createSupabaseServerComponentClient } from '@/lib/supabase/ssr-clients';
 
 export async function getPulseAnalytics(
   retailerId: string,
-  metricsPeriod?: { start: string, end: string },
-  graphPeriod?: { start: string, end: string }
+  period?: { start: string, end: string }
 ) {
   // Fallback to current month if periods are undefined
   const now = new Date();
@@ -21,9 +21,57 @@ export async function getPulseAnalytics(
     start: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0],
     end: new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0],
   };
-  metricsPeriod = metricsPeriod || defaultPeriod;
-  graphPeriod = graphPeriod || defaultPeriod;
+  period = period || defaultPeriod;
   const supabase = await createSupabaseServerComponentClient();
+
+  // Declare metricsStartDate and metricsEndDate once, immediately after period is set
+  const metricsStartDate = new Date(period.start);
+  const metricsEndDate = new Date(period.end);
+
+
+  // Use shared utilities for all metrics
+  const customers = await getCustomersData(retailerId, period);
+  const enrollments = await getEnrollmentsData(retailerId, period);
+  const payments = await getPaymentsData(retailerId, period);
+  const redemptions = await getRedemptionsData(retailerId, period);
+
+  // Fetch all stores for this retailer (after payments, customers are available)
+  const { data: stores } = await supabase
+    .from('stores')
+    .select('id, name')
+    .eq('retailer_id', retailerId)
+    .order('name');
+
+  // Store performance: payments and customers per store in selected period
+  // Only count payments and customers within the selected period
+  // metricsStartDate and metricsEndDate already declared above for store performance; reuse them here
+  const storePerformanceDiagnostics = [];
+  const storePerformance = (stores || []).map(store => {
+    // Payments for this store in period
+    const storePayments = payments.filter(p =>
+      p.store_id === store.id &&
+      p.paid_at &&
+      new Date(p.paid_at) >= metricsStartDate &&
+      new Date(p.paid_at) <= metricsEndDate
+    );
+    // Customers for this store: only active customers whose store_id matches the store
+    const storeActiveCustomers = customers.filter(c => c.store_id === store.id && c.status === 'ACTIVE');
+    storePerformanceDiagnostics.push({
+      storeId: store.id,
+      storeName: store.name,
+      paymentsCount: storePayments.length,
+      paymentIds: storePayments.map(p => p.id),
+      activeCustomerIds: storeActiveCustomers.map(c => c.id),
+      activeCustomerCount: storeActiveCustomers.length,
+    });
+    return {
+      storeId: store.id,
+      storeName: store.name,
+      payments: storePayments.reduce((sum, p) => sum + (p.amount_paid || 0), 0),
+      customers: storeActiveCustomers.length,
+      activeCustomers: storeActiveCustomers.length,
+    };
+  });
   // Fetch all rates for this retailer, order by karat and effective_from desc
   const { data: rates, error: ratesError } = await supabase
     .from('gold_rates')
@@ -32,19 +80,10 @@ export async function getPulseAnalytics(
     .order('karat', { ascending: true })
     .order('effective_from', { ascending: false });
 
-  // Diagnostics: log rates value and type after definition
-  globalThis.__pulseDiagnostics = globalThis.__pulseDiagnostics || {};
-  globalThis.__pulseDiagnostics.rates_type = Array.isArray(rates) ? 'array' : typeof rates;
-  globalThis.__pulseDiagnostics.rates_is_null = rates === null;
-  globalThis.__pulseDiagnostics.rates_value = rates;
-  globalThis.__pulseDiagnostics.rates_error = ratesError;
-  globalThis.__pulseDiagnostics.getPulseAnalytics_executed = true;
-  globalThis.__pulseDiagnostics.getPulseAnalytics_retailerId = retailerId;
 
   // Map DB enum values to frontend keys
   let currentRates = { k18: null, k22: null, k24: null, silver: null };
   if (rates && Array.isArray(rates)) {
-    globalThis.__pulseDiagnostics.rates_mapping_entered = true;
     const karatMap = {
       '18K': 'k18',
       '22K': 'k22',
@@ -54,44 +93,27 @@ export async function getPulseAnalytics(
     for (const dbKarat of ['18K', '22K', '24K', 'SILVER']) {
       const found = rates.find(r => r.karat === dbKarat);
       const key = karatMap[dbKarat];
-      let value = null;
-      let executed = false;
       if (found) {
-        value = {
+        currentRates[key] = {
           rate: typeof found.rate_per_gram === 'string' ? parseFloat(found.rate_per_gram) : found.rate_per_gram,
           validFrom: found.effective_from
         };
-        currentRates[key] = value;
-        executed = true;
       }
-      // Diagnostics: log for every karat, even if not found
-      if (!globalThis.__pulseDiagnostics.currentRates_assignments) {
-        globalThis.__pulseDiagnostics.currentRates_assignments = [];
-      }
-      globalThis.__pulseDiagnostics.currentRates_assignments.push({
-        dbKarat,
-        key,
-        executed,
-        value
-      });
     }
   }
-  globalThis.__pulseDiagnostics.currentRates_mapped = currentRates;
-  // Use shared utilities for all metrics
-  const customers = await getCustomersData(retailerId);
-  const enrollments = await getEnrollmentsData(retailerId);
-  const payments = await getPaymentsData(retailerId);
-  const redemptions = await getRedemptionsData(retailerId);
-  // Diagnostics: log raw DB results
-  globalThis.__pulseDiagnostics = globalThis.__pulseDiagnostics || {};
-  globalThis.__pulseDiagnostics.customers = customers;
-  globalThis.__pulseDiagnostics.enrollments = enrollments;
-  globalThis.__pulseDiagnostics.payments = payments;
-  globalThis.__pulseDiagnostics.redemptions = redemptions;
+
+  // Query billing months for scheme health
+  const supabase2 = await createSupabaseServerComponentClient();
+  const { data: billingMonths } = await supabase2
+    .from('enrollment_billing_months')
+    .select('billing_month, status')
+    .eq('retailer_id', retailerId)
+    .gte('billing_month', period.start)
+    .lte('billing_month', period.end);
+
 
   // Filter by metrics period
-  const metricsStartDate = new Date(metricsPeriod.start);
-  const metricsEndDate = new Date(metricsPeriod.end);
+  // metricsStartDate and metricsEndDate already declared above; reuse them here
   const paymentsPeriod = payments.filter(p => {
     if (!p.paid_at) return false;
     const paidAt = new Date(p.paid_at);
@@ -145,6 +167,8 @@ export async function getPulseAnalytics(
 
   // Dues and overdue logic (robust: check all enrollments, not just filtered period)
   let duesOutstanding = 0, overdueCount = 0;
+  let dues18K = 0, dues22K = 0, dues24K = 0, duesSilver = 0;
+  const duesDiagnostics = [];
   const today = new Date();
   for (const e of enrollments) {
     if (e.status !== 'ACTIVE') continue;
@@ -165,6 +189,21 @@ export async function getPulseAnalytics(
       duesOutstanding += dueMonths * monthlyAmount;
       // Overdue: if metricsEndDate is past today and dues exist
       if (metricsEndDate < today) overdueCount += 1;
+      // Breakdown by metal type
+      if (e.karat === '18K') dues18K += dueMonths * monthlyAmount;
+      else if (e.karat === '22K') dues22K += dueMonths * monthlyAmount;
+      else if (e.karat === '24K') dues24K += dueMonths * monthlyAmount;
+      else if (e.karat === 'SILVER') duesSilver += dueMonths * monthlyAmount;
+      // Diagnostics
+      duesDiagnostics.push({
+        enrollmentId: e.id,
+        karat: e.karat,
+        dueMonths,
+        monthlyAmount,
+        totalDue: dueMonths * monthlyAmount,
+        paidMonths: Array.from(paidMonths),
+        status: e.status,
+      });
     }
   }
 
@@ -186,10 +225,27 @@ export async function getPulseAnalytics(
       }
       return keys;
     }
-    // Use graph period for chart data
-    const graphStartDate = new Date(graphPeriod.start);
-    const graphEndDate = new Date(graphPeriod.end);
-    const monthKeys = getMonthKeys(graphStartDate, graphEndDate);
+    // Use unified period for chart data, but trim to today for YEAR period
+    let monthKeys = getMonthKeys(metricsStartDate, metricsEndDate);
+    if (
+      period &&
+      period.start &&
+      period.end &&
+      metricsStartDate.getFullYear() === metricsEndDate.getFullYear() &&
+      metricsStartDate.getMonth() === 0 &&
+      metricsStartDate.getDate() === 1 &&
+      metricsEndDate > new Date()
+    ) {
+      // If period is YEAR and end date is in the future, trim to today
+      const today = new Date();
+      monthKeys = monthKeys.filter(key => {
+        const [year, month] = key.split('-').map(Number);
+        return (
+          year < today.getFullYear() ||
+          (year === today.getFullYear() && month <= today.getMonth() + 1)
+        );
+      });
+    }
 
     // Revenue by metal (monthly)
     const paymentsByMonth = {};
@@ -245,43 +301,50 @@ export async function getPulseAnalytics(
     }
     const customerMetrics = monthKeys.map(key => customersByMonth[key]);
 
-    // Payment behavior (monthly)
+    // Payment behavior (monthly) from billing months
     const paymentBehaviorByMonth = {};
     for (const key of monthKeys) {
-      paymentBehaviorByMonth[key] = { payments: 0, date: key };
+      paymentBehaviorByMonth[key] = { onTime: 0, late: 0, completionRate: 0, date: key };
     }
-    payments.forEach(p => {
-      if (!p.paid_at) return;
-      const paidAt = new Date(p.paid_at);
-      const monthKey = `${paidAt.getFullYear()}-${paidAt.getMonth() + 1}`;
-      if (paymentBehaviorByMonth[monthKey]) paymentBehaviorByMonth[monthKey].payments += 1;
-    });
+    if (billingMonths && Array.isArray(billingMonths)) {
+      monthKeys.forEach(key => {
+        const bmInMonth = billingMonths.filter(bm => {
+          const bmDate = new Date(bm.billing_month);
+          const monthKey = `${bmDate.getFullYear()}-${bmDate.getMonth() + 1}`;
+          return monthKey === key;
+        });
+        const total = bmInMonth.length;
+        const onTime = bmInMonth.filter(bm => bm.status === 'PAID').length;
+        const late = bmInMonth.filter(bm => bm.status === 'MISSED').length;
+        paymentBehaviorByMonth[key].onTime = onTime;
+        paymentBehaviorByMonth[key].late = late;
+        paymentBehaviorByMonth[key].completionRate = total > 0 ? Math.round((onTime / total) * 100) : 0;
+      });
+    }
     const paymentBehavior = monthKeys.map(key => paymentBehaviorByMonth[key]);
 
-    // Scheme health (monthly)
+    // Scheme health (monthly) from billing months
     const schemeHealthByMonth = {};
     for (const key of monthKeys) {
-      schemeHealthByMonth[key] = { enrollments: 0, date: key };
+      schemeHealthByMonth[key] = { onTrack: 0, due: 0, missed: 0, date: key };
     }
-    enrollments.forEach(e => {
-      if (!e.created_at) return;
-      const createdAt = new Date(e.created_at);
-      const monthKey = `${createdAt.getFullYear()}-${createdAt.getMonth() + 1}`;
-      if (schemeHealthByMonth[monthKey]) schemeHealthByMonth[monthKey].enrollments += 1;
-    });
+    if (billingMonths && Array.isArray(billingMonths)) {
+      billingMonths.forEach(bm => {
+        const bmDate = new Date(bm.billing_month);
+        const monthKey = `${bmDate.getFullYear()}-${bmDate.getMonth() + 1}`;
+        if (schemeHealthByMonth[monthKey]) {
+          if (bm.status === 'PAID') schemeHealthByMonth[monthKey].onTrack += 1;
+          else if (bm.status === 'DUE') schemeHealthByMonth[monthKey].due += 1;
+          else if (bm.status === 'MISSED') schemeHealthByMonth[monthKey].missed += 1;
+        }
+      });
+    }
     const schemeHealth = monthKeys.map(key => schemeHealthByMonth[key]);
 
     // Staff performance (stub)
     const staffPerformance = monthKeys.map(key => ({ date: key, performance: 0 }));
 
     return {
-      __pulseDiagnostics: {
-        ...globalThis.__pulseDiagnostics,
-        customers,
-        enrollments,
-        payments,
-        redemptions,
-      },
       totalCustomersPeriod,
       activeCustomersPeriod,
       totalEnrollmentsPeriod,
@@ -299,6 +362,10 @@ export async function getPulseAnalytics(
       silverAllocated,
       duesOutstanding,
       overdueCount,
+      dues18K,
+      dues22K,
+      dues24K,
+      duesSilver,
       readyToRedeemPeriod,
       // Chart data
       revenueByMetal,
@@ -307,7 +374,17 @@ export async function getPulseAnalytics(
       paymentBehavior,
       schemeHealth,
       staffPerformance,
+      storePerformance,
       currentRates,
+      periodFilterDiagnostics: {
+        period,
+        metricsStartDate,
+        metricsEndDate,
+        paymentsPeriodCount: paymentsPeriod.length,
+        enrollmentsPeriodCount: enrollmentsPeriod.length,
+        redemptionsPeriodCount: redemptionsPeriod.length,
+        duesDiagnostics,
+      },
     };
 }
 

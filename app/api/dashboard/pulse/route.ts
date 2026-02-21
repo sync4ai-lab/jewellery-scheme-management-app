@@ -78,10 +78,7 @@ export async function POST(request: Request) {
     let metricsPeriod = period;
     if (!metricsPeriod || !metricsPeriod.start || !metricsPeriod.end) metricsPeriod = period;
     analytics = await getPulseAnalytics(profile.retailer_id, metricsPeriod);
-    diagnostics.analytics = analytics;
-    diagnostics.paymentsPeriod = analytics.revenueByMetal;
-    diagnostics.enrollmentsPeriod = analytics.customerMetrics;
-    diagnostics.redemptionsPeriod = analytics.schemeHealth;
+    diagnostics.periodFilter = analytics.periodFilterDiagnostics;
   } catch (err) {
     analyticsError = err;
     diagnostics.analyticsError = String(err);
@@ -89,7 +86,6 @@ export async function POST(request: Request) {
   return NextResponse.json({
     analytics,
     diagnostics,
-    __pulseDiagnostics: analytics && analytics.__pulseDiagnostics ? analytics.__pulseDiagnostics : null,
     todayLabel: now.toLocaleDateString('en-IN', {
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
     })

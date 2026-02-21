@@ -13,6 +13,7 @@ export function PeriodFilter({
   setCustomStart,
   customEnd,
   setCustomEnd,
+  onChange,
 }: {
   periodType: PeriodType;
   setPeriodType: (v: PeriodType) => void;
@@ -20,11 +21,24 @@ export function PeriodFilter({
   setCustomStart: (v: string) => void;
   customEnd: string;
   setCustomEnd: (v: string) => void;
+  onChange: (type: PeriodType, start: string, end: string) => void;
 }) {
+  const handlePeriodTypeChange = (v: string) => {
+    setPeriodType(v as PeriodType);
+    onChange(v as PeriodType, customStart, customEnd);
+  };
+  const handleCustomStartChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCustomStart(e.target.value);
+    onChange(periodType, e.target.value, customEnd);
+  };
+  const handleCustomEndChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCustomEnd(e.target.value);
+    onChange(periodType, customStart, e.target.value);
+  };
   return (
     <div className="flex items-center gap-2">
       <Label className="text-xs">Period</Label>
-      <Select value={periodType} onValueChange={v => setPeriodType(v as PeriodType)}>
+      <Select value={periodType} onValueChange={handlePeriodTypeChange}>
         <SelectTrigger className="w-28">
           <SelectValue placeholder="Period" />
         </SelectTrigger>
@@ -38,9 +52,9 @@ export function PeriodFilter({
       </Select>
       {periodType === 'RANGE' && (
         <>
-          <Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+          <Input type="date" value={customStart} onChange={handleCustomStartChange} />
           <span className="text-muted-foreground">to</span>
-          <Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+          <Input type="date" value={customEnd} onChange={handleCustomEndChange} />
         </>
       )}
     </div>

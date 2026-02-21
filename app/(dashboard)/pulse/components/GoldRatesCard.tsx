@@ -31,11 +31,6 @@ export function GoldRatesCard({
               Update Rates
             </Button>
           </div>
-          {/* Diagnostics: show incoming currentRates object */}
-          <div className="bg-rose-50 border border-rose-200 rounded p-2 text-xs text-rose-700 mb-2">
-            <strong>Diagnostics:</strong>
-            <pre className="whitespace-pre-wrap">{JSON.stringify(currentRates, null, 2)}</pre>
-          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* 18K Gold */}
             <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-900/20 dark:to-amber-800/10 border-2 border-amber-200/50 dark:border-amber-700/30">
@@ -49,7 +44,7 @@ export function GoldRatesCard({
                     <span className="text-sm text-muted-foreground">/gram</span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Updated: {new Date(currentRates.k18.validFrom).toLocaleTimeString('en-IN')}
+                    Updated: {new Date(currentRates.k18.validFrom).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </>
               ) : (
@@ -68,7 +63,7 @@ export function GoldRatesCard({
                     <span className="text-sm text-muted-foreground">/gram</span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Updated: {new Date(currentRates.k22.validFrom).toLocaleTimeString('en-IN')}
+                    Updated: {new Date(currentRates.k22.validFrom).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </>
               ) : (
@@ -87,7 +82,7 @@ export function GoldRatesCard({
                     <span className="text-sm text-muted-foreground">/gram</span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Updated: {new Date(currentRates.k24.validFrom).toLocaleTimeString('en-IN')}
+                    Updated: {new Date(currentRates.k24.validFrom).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </>
               ) : (
@@ -106,7 +101,7 @@ export function GoldRatesCard({
                     <span className="text-sm text-muted-foreground">/gram</span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Updated: {new Date(currentRates.silver.validFrom).toLocaleTimeString('en-IN')}
+                    Updated: {new Date(currentRates.silver.validFrom).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </>
               ) : (
