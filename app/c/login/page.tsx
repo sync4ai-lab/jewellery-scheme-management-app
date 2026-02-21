@@ -1,9 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabaseCustomer as supabase } from '@/lib/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 import { useCustomerAuth } from '@/lib/contexts/customer-auth-context';
-import { useAuth } from '@/lib/contexts/auth-context';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -17,8 +16,6 @@ type Retailer = {
 };
 
 export default function CustomerLoginPage() {
-
-  const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
   const { signInWithPhone } = useCustomerAuth();
   const [retailers, setRetailers] = useState<Retailer[] | null>(null);
@@ -44,12 +41,6 @@ export default function CustomerLoginPage() {
   };
 
   useEffect(() => {
-    if (!authLoading && user && profile) {
-      if (profile.role === 'ADMIN' || profile.role === 'STAFF') {
-        window.location.assign('/pulse');
-      }
-    }
-
     const resetLoginState = async () => {
       try {
         localStorage.removeItem('customer_phone_bypass');
@@ -75,7 +66,7 @@ export default function CustomerLoginPage() {
     };
 
     void resetLoginState();
-  }, [user, profile, authLoading]);
+  }, []);
 
   useEffect(() => {
     if (!mounted) return;
