@@ -91,9 +91,9 @@ export default function CustomersClient({ customers }: { customers: any[] }) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {customers.filter(c => c.active_enrollments > 0).length}
+              {customers.filter(c => c.customer_status === 'ACTIVE').length}
             </div>
-            <p className="text-xs text-muted-foreground">With active enrollments</p>
+            <p className="text-xs text-muted-foreground">Status: ACTIVE</p>
           </CardContent>
         </Card>
 
