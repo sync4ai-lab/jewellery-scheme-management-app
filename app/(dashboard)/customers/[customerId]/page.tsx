@@ -18,11 +18,15 @@ export default function CustomerDetailPage() {
   useEffect(() => {
     if (!customerId) return;
     setLoadingDetail(true);
+    console.log('[CustomerDetailPage] Fetching for customerId:', customerId);
     Promise.all([
       supabase.from('customers').select('*').eq('id', customerId).maybeSingle(),
       supabase.from('enrollments').select('*').eq('customer_id', customerId),
       supabase.from('transactions').select('*').eq('customer_id', customerId).order('paid_at', { ascending: false })
     ]).then(([profileRes, enrollmentsRes, transactionsRes]) => {
+      console.log('[CustomerDetailPage] profileRes:', profileRes);
+      console.log('[CustomerDetailPage] enrollmentsRes:', enrollmentsRes);
+      console.log('[CustomerDetailPage] transactionsRes:', transactionsRes);
       setProfile(profileRes.data || null);
       setEnrollments(enrollmentsRes.data || []);
       setTransactions(transactionsRes.data || []);
