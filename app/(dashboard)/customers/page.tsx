@@ -114,7 +114,7 @@ export default async function CustomersPage({
   const { data: enrollmentsData, error: enrollmentsError } = await supabase
     .from('enrollments')
     .select(
-      'id, customer_id, plan_id, karat, status, created_at, scheme_templates (name), total_paid, total_grams'
+      'id, customer_id, plan_id, karat, status, created_at, scheme_templates (name), total_grams'
     )
     .eq('retailer_id', profile.retailer_id)
     .limit(1000);
