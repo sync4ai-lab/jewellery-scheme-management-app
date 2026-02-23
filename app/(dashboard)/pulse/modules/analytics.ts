@@ -56,7 +56,7 @@ export async function getPulseAnalytics(
       new Date(p.paid_at) >= metricsStartDate &&
       new Date(p.paid_at) <= metricsEndDate
     );
-    // Customers for this store: only active customers whose store_id matches the store
+    // Customers for this store: only active customers whose main store matches the store
     const storeActiveCustomers = customers.filter(c => c.store_id === store.id && c.status === 'ACTIVE');
     storePerformanceDiagnostics.push({
       storeId: store.id,

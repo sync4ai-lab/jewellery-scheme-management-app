@@ -114,7 +114,7 @@ export default async function CustomersPage({
   const { data: enrollmentsData, error: enrollmentsError } = await supabase
     .from('enrollments')
     .select(
-      'id, customer_id, plan_id, karat, status, created_at, scheme_templates (name), total_grams'
+      'id, customer_id, plan_id, karat, status, created_at, scheme_templates (name)'
     )
     .eq('retailer_id', profile.retailer_id)
     .limit(1000);
@@ -194,17 +194,11 @@ export default async function CustomersPage({
       console.log('[CustomerRow] Enrollments:', enrollments);
     }
 
+    // Restore full metrics aggregation
     const enrollmentRows = enrollments.map((e) => {
       const plan = e.scheme_templates || {};
       const transactions = txnsByEnrollment.get(e.id) || [];
       const monthsPaid = paidMonthsMap.get(e.id) || 0;
-
-      // Diagnostics: Log enrollment metrics
-      console.log('[CustomerRow] Enrollment:', e);
-      console.log('[CustomerRow] Plan:', plan);
-      console.log('[CustomerRow] Transactions:', transactions);
-      console.log('[CustomerRow] Months Paid:', monthsPaid);
-
       const totalPaid = transactions.reduce(
         (sum, t) => sum + (t.amount_paid || 0),
         0
@@ -213,17 +207,8 @@ export default async function CustomersPage({
         (sum, t) => sum + (t.grams_allocated_snapshot || 0),
         0
       );
-      const durationMonths = e.duration_months || 0;
-      const monthsRemaining = Math.max(0, durationMonths - monthsPaid);
-
-      // Diagnostics: Log calculated metrics
-      console.log('[CustomerRow] Calculated Metrics:', {
-        totalPaid,
-        totalGrams,
-        durationMonths,
-        monthsRemaining,
-      });
-
+      const monthsRemaining = Math.max(0, (plan.duration_months || 0) - monthsPaid);
+      const redeemed = e.status === 'REDEEMED' || e.status === 'COMPLETED';
       return {
         id: e.id,
         plan_name: plan.name || 'Unknown Plan',
@@ -233,45 +218,16 @@ export default async function CustomersPage({
         total_grams: totalGrams,
         months_paid: monthsPaid,
         months_remaining: monthsRemaining,
-        duration_months: durationMonths,
+        redeemed,
       };
     });
 
-    if (enrollmentRows.length === 0) {
-      console.warn('[CustomerRow] No enrollment metrics for customer:', customer.id);
-    }
-
-    const active_enrollments = enrollmentRows.filter(
-      (e) => e.status === 'ACTIVE'
-    ).length;
-    const total_amount_paid = enrollmentRows.reduce(
-      (sum, e) => sum + (e.total_paid || 0),
-      0
-    );
-    const gold_18k_accumulated = enrollmentRows
-      .filter((e) => e.karat === '18K')
-      .reduce((sum, e) => sum + (e.total_grams || 0), 0);
-    const gold_22k_accumulated = enrollmentRows
-      .filter((e) => e.karat === '22K')
-      .reduce((sum, e) => sum + (e.total_grams || 0), 0);
-    const gold_24k_accumulated = enrollmentRows
-      .filter((e) => e.karat === '24K')
-      .reduce((sum, e) => sum + (e.total_grams || 0), 0);
-    const silver_accumulated = enrollmentRows
-      .filter((e) => e.karat === 'SILVER')
-      .reduce((sum, e) => sum + (e.total_grams || 0), 0);
-
-    // Diagnostics: Log final customer metrics
-    console.log('[CustomerRow] Final Metrics:', {
-      customer_id: customer.id,
-      customer_name: customer.full_name,
-      active_enrollments,
-      total_amount_paid,
-      gold_18k_accumulated,
-      gold_22k_accumulated,
-      gold_24k_accumulated,
-      silver_accumulated,
-    });
+    const active_enrollments = enrollmentRows.filter((e) => e.status === 'ACTIVE').length;
+    const total_amount_paid = enrollmentRows.reduce((sum, e) => sum + (e.total_paid || 0), 0);
+    const gold_accumulated = enrollmentRows.reduce((sum, e) => sum + (e.total_grams || 0), 0);
+    const months_paid = enrollmentRows.reduce((sum, e) => sum + (e.months_paid || 0), 0);
+    const months_due = enrollmentRows.reduce((sum, e) => sum + (e.months_remaining || 0), 0);
+    const redeemed_count = enrollmentRows.filter((e) => e.redeemed).length;
 
     return {
       customer_id: customer.id,
@@ -281,10 +237,10 @@ export default async function CustomersPage({
       enrollments: enrollmentRows,
       active_enrollments,
       total_amount_paid,
-      gold_18k_accumulated,
-      gold_22k_accumulated,
-      gold_24k_accumulated,
-      silver_accumulated,
+      gold_accumulated,
+      months_paid,
+      months_due,
+      redeemed_count,
     };
   });
 

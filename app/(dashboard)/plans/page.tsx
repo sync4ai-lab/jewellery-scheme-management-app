@@ -20,12 +20,11 @@ type Store = {
   code: string | null;
   is_active: boolean;
 };
-const COLORS = ['#FCD34D', '#FBBF24', '#F59E0B', '#D97706', '#B45309'];
+
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-const COLORS = ['#FCD34D', '#FBBF24', '#F59E0B', '#D97706', '#B45309'];
 
 export default async function PlansPage() {
   const cookieStore = await cookies();
@@ -48,27 +47,82 @@ export default async function PlansPage() {
   if (!profile) return <div>Access denied</div>;
 
   // Fetch all scheme templates and stats server-side
-  const { data: schemes } = await supabase
-    .from('scheme_templates')
-    .select('id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll')
-    .eq('retailer_id', profile.retailer_id)
-    .order('name');
-  const { data: schemeStats } = await supabase
-    .from('schemes')
-    .select('id, name, total_enrollments, is_active')
-    .eq('retailer_id', profile.retailer_id);
-  const { data: stores } = await supabase
-    .from('stores')
-    .select('id, name, code, is_active')
-    .eq('retailer_id', profile.retailer_id)
-    .order('name');
+  let schemes = [];
+  let schemeStats = [];
+  let stores = [];
+  let fetchError = null;
+  try {
+    const schemesRes = await supabase
+      .from('scheme_templates')
+      .select('id, name, installment_amount, duration_months, bonus_percentage, description, is_active, allow_self_enroll')
+      .eq('retailer_id', profile.retailer_id)
+      .order('name');
+    if (schemesRes.error) throw schemesRes.error;
+    schemes = schemesRes.data || [];
 
-  // ...existing code for rendering plans UI, using server-fetched data...
-  // You may need to adapt the rest of the component to use these variables
+    const statsRes = await supabase
+      .from('enrollments')
+      .select('plan_id')
+      .eq('retailer_id', profile.retailer_id)
+      .eq('status', 'ACTIVE');
+    if (statsRes.error) throw statsRes.error;
+    // Count enrollments per scheme
+    const statsMap = new Map();
+    (statsRes.data || []).forEach((enrollment: any) => {
+      const count = statsMap.get(enrollment.plan_id) || 0;
+      statsMap.set(enrollment.plan_id, count + 1);
+    });
+    schemeStats = (schemes || []).map(scheme => ({
+      id: scheme.id,
+      name: scheme.name,
+      total_enrollments: statsMap.get(scheme.id) || 0,
+      is_active: scheme.is_active,
+    }));
+
+    const storesRes = await supabase
+      .from('stores')
+      .select('id, name, code, is_active')
+      .eq('retailer_id', profile.retailer_id)
+      .order('name');
+    if (storesRes.error) throw storesRes.error;
+    stores = storesRes.data || [];
+  } catch (error) {
+    fetchError = error;
+    console.error('Error loading plans page data:', error);
+  }
+
+  // Metrics
+  const totalPlans = schemes.length;
+  const activePlans = schemes.filter(s => s.is_active).length;
+  const inactivePlans = schemes.filter(s => !s.is_active).length;
+  const totalEnrollments = schemeStats.reduce((sum, s) => sum + s.total_enrollments, 0);
 
   return (
     <div>
       <h1 className="text-3xl font-bold mb-4">Plans</h1>
+      {fetchError && (
+        <div className="bg-red-100 text-red-700 p-2 rounded mb-4">
+          Error loading plans data: {fetchError.message || fetchError.toString()}
+        </div>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow p-4 border border-gold-200">
+          <div className="text-xs text-muted-foreground mb-1">Total Plans</div>
+          <div className="text-2xl font-bold">{totalPlans}</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4 border border-green-200">
+          <div className="text-xs text-muted-foreground mb-1">Active Plans</div>
+          <div className="text-2xl font-bold text-green-700">{activePlans}</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
+          <div className="text-xs text-muted-foreground mb-1">Inactive Plans</div>
+          <div className="text-2xl font-bold text-gray-500">{inactivePlans}</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4 border border-blue-200">
+          <div className="text-xs text-muted-foreground mb-1">Total Enrollments</div>
+          <div className="text-2xl font-bold text-blue-700">{totalEnrollments}</div>
+        </div>
+      </div>
       {/* Render plans UI here using schemes, schemeStats, stores */}
     </div>
   );

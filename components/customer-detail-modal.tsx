@@ -228,22 +228,28 @@ export function CustomerDetailModal({ customerId, open, onClose }: CustomerDetai
   const totalPlansEnrolled = enrollments.length;
   const totalPlanAmount = enrollments.reduce((sum, e) => sum + (e.commitment_amount * e.duration_months), 0);
   const totalAmountPaid = enrollments.reduce((sum, e) => sum + e.total_paid, 0);
-  const totalGramsAccumulated = enrollments.reduce((sum, e) => sum + e.total_grams, 0);
   const totalOutstanding = enrollments.reduce((sum, e) => sum + e.outstanding_amount, 0);
   const currentMaturityAmount = totalAmountPaid + (totalAmountPaid * 0.08);
+
+  // Asset split calculation (18K, 22K, 24K, Silver)
+  const assetSplit = { '18K': 0, '22K': 0, '24K': 0, 'SILVER': 0 };
+  enrollments.forEach(e => {
+    const karat = (e.karat || '').toUpperCase();
+    if (karat === '18K') assetSplit['18K'] += e.total_grams;
+    else if (karat === '22K') assetSplit['22K'] += e.total_grams;
+    else if (karat === '24K') assetSplit['24K'] += e.total_grams;
+    else if (karat === 'SILVER') assetSplit['SILVER'] += e.total_grams;
+  });
 
   const selectedEnrollmentDetail = enrollments.find(e => e.id === selectedEnrollment);
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
 
+        <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between">
-            <DialogTitle className="text-2xl font-bold">
-              Customer Details
-            </DialogTitle>
-
+            <DialogTitle className="text-2xl font-bold">Customer Details</DialogTitle>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
@@ -270,13 +276,75 @@ export function CustomerDetailModal({ customerId, open, onClose }: CustomerDetai
               >
                 🔐 Reset PIN
               </Button>
-
               <Button variant="ghost" size="icon" onClick={onClose}>
                 <X className="w-5 h-5" />
               </Button>
             </div>
           </div>
         </DialogHeader>
+
+        {/* Editable Customer Details Section */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Basic Details</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={async e => {
+              e.preventDefault();
+              // Save logic here (call API to update customer details)
+              // Only allow admin to edit (add your admin check as needed)
+              try {
+                const form = e.target as HTMLFormElement;
+                const formData = new FormData(form);
+                const updates: any = {
+                  id: customer.id,
+                  full_name: formData.get('full_name'),
+                  email: formData.get('email'),
+                  address: formData.get('address'),
+                  date_of_birth: formData.get('date_of_birth'),
+                };
+                const { error } = await supabase.from('customers').update(updates).eq('id', customer.id);
+                if (error) throw error;
+                toast.success('Customer details updated');
+                setCustomer({ ...customer, ...updates });
+              } catch (err) {
+                toast.error('Failed to update details');
+              }
+            }}>
+              <div>
+                <label className="block text-xs mb-1">Name</label>
+                <input name="full_name" defaultValue={customer.full_name} className="input input-bordered w-full" required />
+              </div>
+              <div>
+                <label className="block text-xs mb-1">Phone Number</label>
+                <input value={customer.phone} className="input input-bordered w-full bg-gray-100 cursor-not-allowed" disabled />
+              </div>
+              <div>
+                <label className="block text-xs mb-1">Email</label>
+                <input name="email" defaultValue={customer.email || ''} className="input input-bordered w-full" type="email" />
+              </div>
+              <div>
+                <label className="block text-xs mb-1">PAN</label>
+                <input value={customer.pan_number ? customer.pan_number.replace(/(.{2}).+(.{2})/, '$1****$2') : ''} className="input input-bordered w-full bg-gray-100 cursor-not-allowed" disabled />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs mb-1">Address</label>
+                <input name="address" defaultValue={customer.address || ''} className="input input-bordered w-full" />
+              </div>
+              <div>
+                <label className="block text-xs mb-1">Customer Since</label>
+                <input value={new Date(customer.created_at).toLocaleDateString()} className="input input-bordered w-full bg-gray-100 cursor-not-allowed" disabled />
+              </div>
+              <div>
+                <label className="block text-xs mb-1">Date of Birth</label>
+                <input name="date_of_birth" defaultValue={customer.date_of_birth || ''} className="input input-bordered w-full" type="date" />
+              </div>
+              <div className="md:col-span-2 flex justify-end mt-2">
+                <Button type="submit" className="px-6">Save</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
 
         {loading ? (
           <div className="py-12 text-center">
@@ -285,7 +353,161 @@ export function CustomerDetailModal({ customerId, open, onClose }: CustomerDetai
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Your entire UI below remains exactly the same */}
+            {/* Metrics Summary */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Customer Metrics</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <div className="text-sm text-muted-foreground">Total Plans Enrolled</div>
+                    <div className="font-bold text-lg">{totalPlansEnrolled}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Total Commitment Amount</div>
+                    <div className="font-bold text-lg">₹{totalPlanAmount.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Total Amount Paid</div>
+                    <div className="font-bold text-lg">₹{totalAmountPaid.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Total Outstanding</div>
+                    <div className="font-bold text-lg">₹{totalOutstanding.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Current Maturity Amount (est.)</div>
+                    <div className="font-bold text-lg">₹{currentMaturityAmount.toLocaleString()}</div>
+                  </div>
+                </div>
+                {/* Asset Split Section */}
+                <div className="mt-6">
+                  <div className="font-semibold mb-2">Asset Accumulated</div>
+                  <div className="flex flex-wrap gap-6">
+                    <div className="flex flex-col items-center">
+                      <span className="rounded-full border px-3 py-1 text-xs font-semibold mb-1">18K</span>
+                      <span className="font-bold">{assetSplit['18K'].toFixed(3)} g</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="rounded-full border px-3 py-1 text-xs font-semibold mb-1">22K</span>
+                      <span className="font-bold">{assetSplit['22K'].toFixed(3)} g</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="rounded-full border px-3 py-1 text-xs font-semibold mb-1">24K</span>
+                      <span className="font-bold">{assetSplit['24K'].toFixed(3)} g</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="rounded-full border px-3 py-1 text-xs font-semibold mb-1">SILVER</span>
+                      <span className="font-bold">{assetSplit['SILVER'].toFixed(3)} g</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Enrollment Details */}
+            <Separator className="my-4" />
+            <div className="space-y-4">
+              {enrollments.map(enrollment => (
+                <Card key={enrollment.id} className="border border-gold-200">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>
+                        {enrollment.plan_name} {' '}
+                        <span className="text-xs font-semibold text-gold-700 ml-2">
+                          {enrollment.karat && enrollment.karat.toUpperCase() === 'SILVER'
+                            ? 'Silver'
+                            : `Gold (${enrollment.karat})`}
+                        </span>
+                      </CardTitle>
+                      <Badge>{enrollment.status}</Badge>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Enrolled: {new Date(enrollment.enrolled_on).toLocaleDateString()} | Maturity: {new Date(enrollment.maturity_date).toLocaleDateString()} | Store: {enrollment.store_name || 'N/A'}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Commitment</div>
+                        <div className="font-bold">₹{enrollment.commitment_amount.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Duration</div>
+                        <div className="font-bold">{enrollment.duration_months} months</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Bonus</div>
+                        <div className="font-bold">{enrollment.bonus_percentage}%</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Months Paid</div>
+                        <div className="font-bold">{enrollment.months_paid}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Total Paid</div>
+                        <div className="font-bold">₹{enrollment.total_paid.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Gold Accumulated</div>
+                        <div className="font-bold">{enrollment.total_grams.toFixed(4)}g</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Outstanding</div>
+                        <div className="font-bold">₹{enrollment.outstanding_amount.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Months Remaining</div>
+                        <div className="font-bold">{enrollment.months_remaining}</div>
+                      </div>
+                    </div>
+                    {/* Transactions Table */}
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Asset (g)</TableHead>
+                          <TableHead>Rate/Gram</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {enrollment.transactions.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground">
+                              No payments yet
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          enrollment.transactions.map(txn => (
+                            <TableRow key={txn.id}>
+                              <TableCell>{new Date(txn.paid_at).toLocaleDateString()}</TableCell>
+                              <TableCell>{txn.txn_type}</TableCell>
+                              <TableCell>₹{txn.amount_paid.toLocaleString()}</TableCell>
+                              <TableCell>{txn.grams_allocated.toFixed(4)}</TableCell>
+                              <TableCell>₹{txn.rate_per_gram.toFixed(2)}</TableCell>
+                              <TableCell>
+                                {txn.payment_status === 'SUCCESS' ? (
+                                  <CheckCircle className="w-4 h-4 text-green-500 inline" />
+                                ) : txn.payment_status === 'FAILED' ? (
+                                  <AlertCircle className="w-4 h-4 text-red-500 inline" />
+                                ) : (
+                                  <Award className="w-4 h-4 text-yellow-500 inline" />
+                                )}
+                                <span className="ml-1 text-xs">{txn.payment_status}</span>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
         )}
 
