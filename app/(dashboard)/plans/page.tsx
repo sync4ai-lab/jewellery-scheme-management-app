@@ -25,6 +25,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import SchemesListClient from '@/components/SchemesListClient';
 
 export default async function PlansPage() {
   const cookieStore = await cookies();
@@ -99,23 +100,23 @@ export default async function PlansPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-4">Plans</h1>
+      <h1 className="text-3xl font-bold mb-4">Schemes</h1>
       {fetchError && (
         <div className="bg-red-100 text-red-700 p-2 rounded mb-4">
-          Error loading plans data: {fetchError.message || fetchError.toString()}
+          Error loading schemes data: {fetchError.message || fetchError.toString()}
         </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4 border border-gold-200">
-          <div className="text-xs text-muted-foreground mb-1">Total Plans</div>
+          <div className="text-xs text-muted-foreground mb-1">Total Schemes</div>
           <div className="text-2xl font-bold">{totalPlans}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border border-green-200">
-          <div className="text-xs text-muted-foreground mb-1">Active Plans</div>
+          <div className="text-xs text-muted-foreground mb-1">Active Schemes</div>
           <div className="text-2xl font-bold text-green-700">{activePlans}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-          <div className="text-xs text-muted-foreground mb-1">Inactive Plans</div>
+          <div className="text-xs text-muted-foreground mb-1">Inactive Schemes</div>
           <div className="text-2xl font-bold text-gray-500">{inactivePlans}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border border-blue-200">
@@ -123,7 +124,13 @@ export default async function PlansPage() {
           <div className="text-2xl font-bold text-blue-700">{totalEnrollments}</div>
         </div>
       </div>
-      {/* Render plans UI here using schemes, schemeStats, stores */}
+
+      {/* Schemes List UI (Client Component) */}
+      <SchemesListClient
+        schemes={schemes}
+        schemeStats={schemeStats}
+        retailerId={profile.retailer_id}
+      />
     </div>
   );
   // ...existing code...
