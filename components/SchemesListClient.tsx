@@ -5,13 +5,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useEffect } from 'react';
+import { supabase } from '@/lib/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Edit, Trash2 } from 'lucide-react';
 
-export default function SchemesListClient({ schemes, schemeStats, retailerId }) {
+export default function SchemesListClient({ schemes, schemeStats, retailerId, session }) {
+    // Hydrate Supabase session from SSR (if provided)
+    useEffect(() => {
+      if (session) {
+        supabase.auth.setSession(session);
+      }
+    }, [session]);
   const [localSchemes, setLocalSchemes] = useState(schemes);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -50,7 +57,14 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId }) 
     }
     setSaving(true);
     try {
-      const supabase = createClientComponentClient();
+      // use singleton supabase client
+      // Log session and user info for debugging
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      // eslint-disable-next-line no-console
+      console.log('Supabase user:', userData, 'User error:', userError);
+      // eslint-disable-next-line no-console
+      console.log('Supabase session:', sessionData, 'Session error:', sessionError);
       const insertData = {
         retailer_id: retailerId,
         name: newForm.name,
@@ -64,18 +78,18 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId }) 
       const { data, error } = await supabase
         .from('scheme_templates')
         .insert([insertData])
-        .select('*')
-        .single();
-      if (error) {
-        // Log full error and payload for debugging
+        .select('*');
+      // eslint-disable-next-line no-console
+      console.log('Supabase insert response:', { data, error, insertData });
+      if (error || !data || !data.length) {
         // eslint-disable-next-line no-console
-        console.error('Supabase insert error:', error, 'Payload:', insertData);
-        toast.error(`Failed to create scheme: ${error.message || error.details || 'Unknown error'}`);
+        console.error('Supabase insert error:', error, 'Payload:', insertData, 'Data:', data);
+        toast.error(`Failed to create scheme: ${error?.message || error?.details || 'Unknown error'}`);
         return;
       }
       toast.success('Scheme created successfully');
       setCreateDialogOpen(false);
-      setLocalSchemes(prev => [...prev, data]);
+      setLocalSchemes(prev => [...prev, ...data]);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('Unexpected error in handleCreateSave:', err);
@@ -119,6 +133,18 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId }) 
     alert(`Delete scheme with id: ${id}`);
   };
 
+  // Diagnostic: log session/user info
+  const handleLogSession = async () => {
+    const supabase = createClientComponentClient();
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    // eslint-disable-next-line no-console
+    console.log('DIAGNOSTIC Supabase user:', userData, 'User error:', userError);
+    // eslint-disable-next-line no-console
+    console.log('DIAGNOSTIC Supabase session:', sessionData, 'Session error:', sessionError);
+    alert('Check the browser console for Supabase session diagnostics.');
+  };
+
   return (
     <Card className="glass-card">
       <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
@@ -128,9 +154,14 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId }) 
             {localSchemes.length === 0 ? 'No schemes created yet. Click "Create New Plan" to add one.' : `${localSchemes.length} scheme(s) total`}
           </CardDescription>
         </div>
-        <Button variant="outline" className="border-gold-300" onClick={handleCreateOpen}>
-          + Create New Plan
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" className="border-gold-300" onClick={handleCreateOpen}>
+            + Create New Plan
+          </Button>
+          <Button variant="secondary" onClick={handleLogSession} title="Log Supabase session info for diagnostics">
+            Log Supabase Session
+          </Button>
+        </div>
       </CardHeader>
             {/* Create Scheme Dialog */}
             <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

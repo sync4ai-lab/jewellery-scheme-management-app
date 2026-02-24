@@ -47,6 +47,9 @@ export default async function PlansPage() {
   const profile = profiles?.[0];
   if (!profile) return <div>Access denied</div>;
 
+  // Get the current session (for hydration)
+  const { data: { session } } = await supabase.auth.getSession();
+
   // Fetch all scheme templates and stats server-side
   let schemes = [];
   let schemeStats = [];
@@ -130,6 +133,7 @@ export default async function PlansPage() {
         schemes={schemes}
         schemeStats={schemeStats}
         retailerId={profile.retailer_id}
+        session={session}
       />
     </div>
   );
