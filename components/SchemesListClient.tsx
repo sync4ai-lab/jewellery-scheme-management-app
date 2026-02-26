@@ -16,7 +16,22 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId, se
     // Hydrate Supabase session from SSR (if provided)
     useEffect(() => {
       if (session) {
-        supabase.auth.setSession(session);
+        (async () => {
+          try {
+            await supabase.auth.setSession(session);
+          } catch (error) {
+            if (
+              error?.name === 'AbortError' ||
+              (typeof error?.message === 'string' &&
+                (error.message.includes('AbortError') || error.message.includes('signal is aborted')))
+            ) {
+              // Ignore abort errors
+              return;
+            }
+            // Optionally log other errors
+            console.error('setSession error:', error);
+          }
+        })();
       }
     }, [session]);
   const [localSchemes, setLocalSchemes] = useState(schemes);
@@ -53,18 +68,25 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId, se
   const handleCreateSave = async () => {
     if (!newForm.name || !newForm.installment_amount || !newForm.duration_months || !newForm.karat) {
       toast.error('Please fill all required fields');
+      setSaving(false);
       return;
     }
+    // Diagnostic logging
+    console.log('[Scheme Create] retailerId:', retailerId);
+    if (!retailerId) {
+      toast.error('Retailer ID is missing. Cannot create scheme. Please contact admin.');
+      setSaving(false);
+      return;
+    }
+    // Diagnostic logging
+    console.log('[Scheme Create] newForm:', newForm);
     setSaving(true);
     try {
       // use singleton supabase client
-      // Log session and user info for debugging
       const { data: userData, error: userError } = await supabase.auth.getUser();
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      // eslint-disable-next-line no-console
-      console.log('Supabase user:', userData, 'User error:', userError);
-      // eslint-disable-next-line no-console
-      console.log('Supabase session:', sessionData, 'Session error:', sessionError);
+      console.log('[Scheme Create] Supabase user:', userData, 'User error:', userError);
+      console.log('[Scheme Create] Supabase session:', sessionData, 'Session error:', sessionError);
       const insertData = {
         retailer_id: retailerId,
         name: newForm.name,
@@ -75,25 +97,31 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId, se
         karat: newForm.karat,
         is_active: true,
       };
+      console.log('[Scheme Create] insertData:', insertData);
       const { data, error } = await supabase
         .from('scheme_templates')
         .insert([insertData])
         .select('*');
-      // eslint-disable-next-line no-console
-      console.log('Supabase insert response:', { data, error, insertData });
-      if (error || !data || !data.length) {
-        // eslint-disable-next-line no-console
-        console.error('Supabase insert error:', error, 'Payload:', insertData, 'Data:', data);
+      console.log('[Scheme Create] Supabase insert response:', { data, error, insertData });
+      if (error) {
+        console.error('[Scheme Create] Supabase insert error:', error, 'Payload:', insertData, 'Data:', data);
         toast.error(`Failed to create scheme: ${error?.message || error?.details || 'Unknown error'}`);
+        setSaving(false);
+        return;
+      }
+      if (!data || !data.length) {
+        console.error('[Scheme Create] No data returned from insert. Payload:', insertData);
+        toast.error('Failed to create scheme: No data returned. Possible RLS or DB error.');
+        setSaving(false);
         return;
       }
       toast.success('Scheme created successfully');
       setCreateDialogOpen(false);
       setLocalSchemes(prev => [...prev, ...data]);
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Unexpected error in handleCreateSave:', err);
+      console.error('[Scheme Create] Unexpected error in handleCreateSave:', err);
       toast.error('Failed to create scheme (unexpected error)');
+      setSaving(false);
     } finally {
       setSaving(false);
     }

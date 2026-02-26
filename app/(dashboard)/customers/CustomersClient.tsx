@@ -288,14 +288,16 @@ export default function CustomersClient({ customers }: { customers: any[] }) {
       </Card>
 
       {/* Customer Detail Modal */}
-      <CustomerDetailModal
-        customerId={selectedCustomerId}
-        open={detailModalOpen}
-        onClose={() => {
-          setDetailModalOpen(false);
-          setSelectedCustomerId(null);
-        }}
-      />
+      {detailModalOpen && selectedCustomerId && (
+        <CustomerDetailModal
+          customerId={selectedCustomerId}
+          open={true}
+          onClose={() => {
+            setDetailModalOpen(false);
+            setSelectedCustomerId(null);
+          }}
+        />
+      )}
     </div>
   );
 }
