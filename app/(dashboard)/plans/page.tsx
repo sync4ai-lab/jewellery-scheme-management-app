@@ -48,7 +48,20 @@ export default async function PlansPage() {
   if (!profile) return <div>Access denied</div>;
 
   // Get the current session (for hydration)
-  const { data: { session } } = await supabase.auth.getSession();
+  let session = null;
+  try {
+    const sessionRes = await supabase.auth.getSession();
+    if (sessionRes.error) {
+      console.error('[Server] Error fetching session:', sessionRes.error);
+    }
+    session = sessionRes.data?.session || null;
+    if (!session || !session.access_token) {
+      console.warn('[Server] Session is missing or invalid:', session);
+    }
+  } catch (err) {
+    console.error('[Server] Exception fetching session:', err);
+    session = null;
+  }
 
   // Fetch all scheme templates and stats server-side
   let schemes = [];

@@ -13,26 +13,59 @@ import { Button } from '@/components/ui/button';
 import { Edit, Trash2 } from 'lucide-react';
 
 export default function SchemesListClient({ schemes, schemeStats, retailerId, session }) {
-    // Hydrate Supabase session from SSR (if provided)
+        // Show session prop for diagnostics
+        const showSessionDebug = true;
+      // Diagnostic: show warning if session/user is missing
+      const [authWarning, setAuthWarning] = useState('');
+
+    // Step-by-step diagnostics for session hydration
+    // Helper to read cookie value by name
+    function getCookie(name) {
+      if (typeof document === 'undefined') return null;
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop().split(';').shift();
+      return null;
+    }
+
     useEffect(() => {
-      if (session) {
-        (async () => {
-          try {
-            await supabase.auth.setSession(session);
-          } catch (error) {
-            if (
-              error?.name === 'AbortError' ||
-              (typeof error?.message === 'string' &&
-                (error.message.includes('AbortError') || error.message.includes('signal is aborted')))
-            ) {
-              // Ignore abort errors
-              return;
-            }
-            // Optionally log other errors
-            console.error('setSession error:', error);
-          }
-        })();
+      let access_token = session?.access_token;
+      let refresh_token = session?.refresh_token;
+      // If session prop is missing, try to read from cookies
+      if (!access_token || !refresh_token) {
+        access_token = getCookie('sb-access-token');
+        refresh_token = getCookie('sb-refresh-token');
+        if (access_token && refresh_token) {
+          console.log('[Session Hydration] Using tokens from cookies.');
+        }
       }
+      if (!access_token || !refresh_token) {
+        setAuthWarning('Session is missing or invalid. Please log in again or contact admin.');
+        return;
+      }
+      (async () => {
+        try {
+          console.log('[Session Hydration] Calling supabase.auth.setSession with tokens...');
+          await supabase.auth.setSession({ access_token, refresh_token });
+          console.log('[Session Hydration] Session set successfully.');
+        } catch (error) {
+          console.error('[Session Hydration] setSession error:', error);
+          // Fallback: Try signInWithToken if available
+          if (typeof supabase.auth.signInWithToken === 'function') {
+            try {
+              console.log('[Session Hydration] Fallback: Calling supabase.auth.signInWithToken...');
+              await supabase.auth.signInWithToken({ access_token });
+              console.log('[Session Hydration] signInWithToken succeeded.');
+              setAuthWarning('');
+            } catch (fallbackError) {
+              console.error('[Session Hydration] signInWithToken error:', fallbackError);
+              setAuthWarning('Session hydration error: ' + (fallbackError?.message || 'Unknown error') + '. Please log in again or contact admin.');
+            }
+          } else {
+            setAuthWarning('Session hydration error: ' + (error?.message || 'Unknown error') + '. Please log in again or contact admin.');
+          }
+        }
+      })();
     }, [session]);
   const [localSchemes, setLocalSchemes] = useState(schemes);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -66,27 +99,68 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId, se
     setCreateDialogOpen(true);
   };
   const handleCreateSave = async () => {
+      setAuthWarning('');
+    // Step 1: Validate form
+    console.log('[Scheme Create] STEP 1: Validate form');
     if (!newForm.name || !newForm.installment_amount || !newForm.duration_months || !newForm.karat) {
       toast.error('Please fill all required fields');
       setSaving(false);
       return;
     }
-    // Diagnostic logging
-    console.log('[Scheme Create] retailerId:', retailerId);
+    // Step 2: Log retailerId
+    console.log('[Scheme Create] STEP 2: retailerId:', retailerId);
     if (!retailerId) {
       toast.error('Retailer ID is missing. Cannot create scheme. Please contact admin.');
       setSaving(false);
       return;
     }
-    // Diagnostic logging
-    console.log('[Scheme Create] newForm:', newForm);
+    // Step 3: Log form values
+    console.log('[Scheme Create] STEP 3: newForm:', newForm);
     setSaving(true);
     try {
-      // use singleton supabase client
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      console.log('[Scheme Create] Supabase user:', userData, 'User error:', userError);
-      console.log('[Scheme Create] Supabase session:', sessionData, 'Session error:', sessionError);
+      // Step 4: Log Supabase client config
+      console.log('[Scheme Create] STEP 4: Supabase client config:', supabase);
+      // Step 4: Log Supabase user/session with timeout
+      console.log('[Scheme Create] STEP 4: Getting Supabase user...');
+      let userData, userError;
+      try {
+        const getUserPromise = supabase.auth.getUser();
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('supabase.auth.getUser() timed out')), 8000));
+        const result = await Promise.race([getUserPromise, timeoutPromise]);
+        userData = result.data;
+        userError = result.error;
+        console.log('[Scheme Create] STEP 4a: Supabase user:', userData, 'User error:', userError);
+        if (!userData || userError) {
+          setAuthWarning('Authentication/session error: Please log in again or contact admin.');
+        }
+      } catch (err) {
+        console.error('[Scheme Create] STEP 4a: supabase.auth.getUser() error or timeout:', err);
+        setAuthWarning('Authentication/session error: Please log in again or contact admin.');
+        toast.error('Failed to get Supabase user: timed out or error. Check client config and session.');
+        setSaving(false);
+        return;
+      }
+      // Step 4b: Log Supabase session with timeout
+      console.log('[Scheme Create] STEP 4b: Getting Supabase session...');
+      let sessionData, sessionError;
+      try {
+        const getSessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('supabase.auth.getSession() timed out')), 8000));
+        const result = await Promise.race([getSessionPromise, timeoutPromise]);
+        sessionData = result.data;
+        sessionError = result.error;
+        console.log('[Scheme Create] STEP 4c: Supabase session:', sessionData, 'Session error:', sessionError);
+        if (!sessionData || sessionError) {
+          setAuthWarning('Authentication/session error: Please log in again or contact admin.');
+        }
+      } catch (err) {
+        console.error('[Scheme Create] STEP 4c: supabase.auth.getSession() error or timeout:', err);
+        setAuthWarning('Authentication/session error: Please log in again or contact admin.');
+        toast.error('Failed to get Supabase session: timed out or error. Check client config and session.');
+        setSaving(false);
+        return;
+      }
+      // Step 5: Prepare insertData
       const insertData = {
         retailer_id: retailerId,
         name: newForm.name,
@@ -97,29 +171,48 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId, se
         karat: newForm.karat,
         is_active: true,
       };
-      console.log('[Scheme Create] insertData:', insertData);
-      const { data, error } = await supabase
-        .from('scheme_templates')
-        .insert([insertData])
-        .select('*');
-      console.log('[Scheme Create] Supabase insert response:', { data, error, insertData });
+      console.log('[Scheme Create] STEP 5: insertData:', insertData);
+      let data, error;
+      try {
+        // Step 6: Start Supabase insert
+        console.log('[Scheme Create] STEP 6: Starting Supabase insert...');
+        const insertPromise = supabase
+          .from('scheme_templates')
+          .insert([insertData])
+          .select('*');
+        // Timeout after 10 seconds
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Supabase insert timed out')), 10000));
+        const result = await Promise.race([insertPromise, timeoutPromise]);
+        console.log('[Scheme Create] STEP 6a: Insert result:', result);
+        data = result.data;
+        error = result.error;
+      } catch (err) {
+        console.error('[Scheme Create] STEP 6b: Supabase insert error or timeout:', err, 'Payload:', insertData);
+        toast.error('Failed to create scheme: Supabase insert timed out or network error.');
+        setSaving(false);
+        return;
+      }
+      // Step 7: Log insert response
+      console.log('[Scheme Create] STEP 7: Supabase insert response:', { data, error, insertData });
       if (error) {
-        console.error('[Scheme Create] Supabase insert error:', error, 'Payload:', insertData, 'Data:', data);
+        console.error('[Scheme Create] STEP 7a: Supabase insert error:', error, 'Payload:', insertData, 'Data:', data);
         toast.error(`Failed to create scheme: ${error?.message || error?.details || 'Unknown error'}`);
         setSaving(false);
         return;
       }
       if (!data || !data.length) {
-        console.error('[Scheme Create] No data returned from insert. Payload:', insertData);
+        console.error('[Scheme Create] STEP 7b: No data returned from insert. Payload:', insertData);
         toast.error('Failed to create scheme: No data returned. Possible RLS or DB error.');
         setSaving(false);
         return;
       }
+      // Step 8: Success
+      console.log('[Scheme Create] STEP 8: Success!');
       toast.success('Scheme created successfully');
       setCreateDialogOpen(false);
       setLocalSchemes(prev => [...prev, ...data]);
     } catch (err) {
-      console.error('[Scheme Create] Unexpected error in handleCreateSave:', err);
+      console.error('[Scheme Create] STEP 9: Unexpected error in handleCreateSave:', err);
       toast.error('Failed to create scheme (unexpected error)');
       setSaving(false);
     } finally {
@@ -163,18 +256,27 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId, se
 
   // Diagnostic: log session/user info
   const handleLogSession = async () => {
-    const supabase = createClientComponentClient();
+    // Use the singleton supabase client already imported
     const { data: userData, error: userError } = await supabase.auth.getUser();
     const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    // eslint-disable-next-line no-console
     console.log('DIAGNOSTIC Supabase user:', userData, 'User error:', userError);
-    // eslint-disable-next-line no-console
     console.log('DIAGNOSTIC Supabase session:', sessionData, 'Session error:', sessionError);
     alert('Check the browser console for Supabase session diagnostics.');
   };
 
   return (
     <Card className="glass-card">
+      {showSessionDebug && (
+        <div className="bg-gray-100 text-gray-800 p-2 rounded mb-2 text-xs">
+          <strong>Session Debug:</strong>
+          <pre style={{ maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(session, null, 2)}</pre>
+        </div>
+      )}
+      {authWarning && (
+        <div className="bg-red-100 text-red-700 p-2 rounded mb-2 text-center font-semibold">
+          {authWarning}
+        </div>
+      )}
       <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
         <div>
           <CardTitle>Available Schemes</CardTitle>
