@@ -13,6 +13,40 @@ import { Button } from '@/components/ui/button';
 import { Edit, Trash2 } from 'lucide-react';
 
 export default function SchemesListClient({ schemes, schemeStats, retailerId, session }) {
+          // Live Supabase auth state debug
+          const [liveAuthState, setLiveAuthState] = useState({ user: null, session: null, cookies: {} });
+
+          // Helper to get all cookies as an object
+          function getAllCookies() {
+            if (typeof document === 'undefined') return {};
+            return Object.fromEntries(document.cookie.split('; ').map(c => c.split('=')));
+          }
+
+          // Watch Supabase auth state after hydration
+          useEffect(() => {
+            let mounted = true;
+            async function fetchAuthState() {
+              try {
+                const { data: userData, error: userError } = await supabase.auth.getUser();
+                const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+                if (mounted) {
+                  setLiveAuthState({
+                    user: userData?.user || null,
+                    session: sessionData?.session || null,
+                    cookies: getAllCookies(),
+                    userError,
+                    sessionError
+                  });
+                }
+              } catch (err) {
+                if (mounted) setLiveAuthState({ user: null, session: null, cookies: getAllCookies(), error: err });
+              }
+            }
+            fetchAuthState();
+            // Optionally, poll every 2s for live updates
+            const interval = setInterval(fetchAuthState, 2000);
+            return () => { mounted = false; clearInterval(interval); };
+          }, []);
         // Show session prop for diagnostics
         const showSessionDebug = true;
       // Diagnostic: show warning if session/user is missing
@@ -43,6 +77,12 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId, se
         setAuthWarning('Session is missing or invalid. Please log in again or contact admin.');
         return;
       }
+        // Explicitly set cookies for Supabase client
+        if (typeof document !== 'undefined') {
+          document.cookie = `sb-access-token=${access_token}; path=/; SameSite=Lax`;
+          document.cookie = `sb-refresh-token=${refresh_token}; path=/; SameSite=Lax`;
+          console.log('[Session Hydration] Set sb-access-token and sb-refresh-token cookies.');
+        }
       (async () => {
         try {
           console.log('[Session Hydration] Calling supabase.auth.setSession with tokens...');
@@ -266,6 +306,11 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId, se
 
   return (
     <Card className="glass-card">
+      {/* Live Supabase Auth State Debug Panel */}
+      <div className="bg-gray-100 text-xs p-2 mb-2 rounded border border-gray-300">
+        <b>Live Supabase Auth State</b>
+        <pre style={{ maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(liveAuthState, null, 2)}</pre>
+      </div>
       {showSessionDebug && (
         <div className="bg-gray-100 text-gray-800 p-2 rounded mb-2 text-xs">
           <strong>Session Debug:</strong>
