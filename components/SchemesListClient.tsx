@@ -123,6 +123,19 @@ export default function SchemesListClient({ schemes, schemeStats, retailerId, se
 
   const handleEdit = (scheme) => {
     setEditingScheme(scheme);
+      // Deep diagnostics: log Supabase client config and endpoints
+      try {
+        console.log('[DIAGNOSTIC] Supabase client:', supabase);
+        console.log('[DIAGNOSTIC] Supabase client options:', {
+          url: supabase?.rest?.url,
+          realtimeUrl: supabase?.realtime?.url,
+          authUrl: supabase?.auth?.url,
+          storageUrl: supabase?.storage?.url,
+          headers: supabase?.rest?.headers,
+        });
+      } catch (err) {
+        console.error('[DIAGNOSTIC] Error logging Supabase client config:', err);
+      }
     setForm({
       name: scheme.name,
       installment_amount: scheme.installment_amount.toString(),
